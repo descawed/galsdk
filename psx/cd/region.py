@@ -158,6 +158,18 @@ class CdRegion(ABC):
         """
         return self.byte_len if self.byte_len is not None else self.data_capacity
 
+    @property
+    def data(self) -> bytes:
+        """The user data contained in this region, excluding sector headers and error correction codes"""
+        data_size = self.data_size
+        buffer = bytearray(data_size)
+        i = 0
+        for sector in self.sectors:
+            size_to_copy = min(sector.data_size, data_size - i)
+            buffer[i:i+size_to_copy] = sector.data[:size_to_copy]
+            i += size_to_copy
+        return bytes(buffer)
+
     @abstractmethod
     def read(self, disc: Disc) -> list[CdRegion]:
         """
@@ -318,11 +330,13 @@ class VolumeDescriptor(CdRegion):
         TERMINATOR = 255
 
     type: Optional[Type]
+    root_dir: Optional[Directory]
     path_tables: list[PathTable]
 
     def __init__(self, start: int, end: int = None, name: str = None):
         super().__init__(start, end, name)
         self.type = None
+        self.root_dir = None
         self.space_size = 0
         self.path_tables = []
 
@@ -367,8 +381,8 @@ class VolumeDescriptor(CdRegion):
 
                 extent_loc = int.from_bytes(data[158:162], 'little')
                 data_len = int.from_bytes(data[166:170], 'little')
-                root_dir = Directory(extent_loc, name=f'{self.name}:\\', byte_len=data_len)
-                regions.extend(root_dir.read(disc))
+                self.root_dir = Directory(extent_loc, name=f'{self.name}:\\', byte_len=data_len)
+                regions.extend(self.root_dir.read(disc))
 
         if self.type != VolumeDescriptor.Type.TERMINATOR:
             next_vd = VolumeDescriptor(self.start+1)
@@ -390,7 +404,7 @@ class VolumeDescriptor(CdRegion):
     def update_paths(self, region: CdRegion):
         if self.is_filesystem and region.name.startswith(f'{self.name}:\\'):
             data = self.sectors[0].data
-            if isinstance(region, Directory) and region.name == f'{self.name}:\\':
+            if region.name == f'{self.name}:\\':
                 # this is the root directory of our volume; update directory record
                 data[158:162] = region.start.to_bytes(4, 'little')
                 data[162:166] = region.start.to_bytes(4, 'big')
@@ -406,6 +420,8 @@ class VolumeDescriptor(CdRegion):
                 # this region is a directory within our volume; update path tables
                 for path_table in self.path_tables:
                     path_table.update_paths(region)
+            # pass on to the root directory
+            self.root_dir.update_paths(region)
         elif self.type != VolumeDescriptor.Type.TERMINATOR:
             # this doesn't affect us; pass the message along to the next volume if there is one
             # next volume is always the last subregion
