@@ -42,6 +42,7 @@ def test_directory(sample_disc):
     d = Directory(28, name=f'{VOLUME_NAME}:\\')
     d.read(sample_disc)
     assert d.size == 1
+    assert next(iter(d.contents)).name == rf'{VOLUME_NAME}:\TEST.TXT'
 
 
 def test_file(sample_disc):
@@ -91,4 +92,3 @@ def test_patch(tmp_path, sample_disc):
             break
     else:
         raise FileNotFoundError('Output test file not found')
-

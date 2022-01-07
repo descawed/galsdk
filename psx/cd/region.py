@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import IntEnum
-from typing import ByteString, Literal, Optional
+from typing import ByteString, Iterable, Literal, Optional
 
 from psx.cd.disc import Disc, Sector
 
@@ -490,6 +490,13 @@ class Directory(CdRegion):
 
         self.sub_regions = regions[1:]
         return regions
+
+    @property
+    def contents(self) -> Iterable[CdRegion]:
+        """An iterator over the contents of this directory, excluding the current (.) and parent (..) directories"""
+        for _, __, region in self.name_map.values():
+            if region is not None and region is not self:
+                yield region
 
     def update_record(self, name: str, region: CdRegion = None):
         sector_index, record_pos, stored_region = self.name_map[name]
