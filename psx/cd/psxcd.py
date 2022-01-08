@@ -1,10 +1,12 @@
+import os.path
 import re
 
 from dataclasses import dataclass
 from math import ceil
-from typing import BinaryIO, ByteString
+from pathlib import Path
+from typing import BinaryIO, ByteString, Iterable, Optional
 
-from psx.cd.region import CdRegion, SystemArea, Free
+from psx.cd.region import CdRegion, SystemArea, Directory, File, Free
 from psx.cd.disc import Disc, Sector
 
 
@@ -14,13 +16,39 @@ DEFAULT_SECTOR_SIZE = 0x800
 
 @dataclass
 class Patch:
+    """New or updated data to be patched into a file on the CD."""
+
     path: str
-    raw: bool
+    is_data_raw_sectors: bool
     data: ByteString
 
 
+@dataclass
+class DirectoryEntry:
+    """Information about a file or directory within a directory"""
+
+    name: str
+    path: str
+    is_directory: bool
+
+
 class PsxCd:
+    """
+    A PSX CD image
+
+    This class enables extracting files from PSX CD images and patching files in such images. It does not support the
+    full range of CD-ROM XA functionality, only a subset sufficient to work with Galerians, so it may or may not be able
+    to successfully work with other PSX games.
+    """
+
     def __init__(self, source: BinaryIO):
+        """
+        Load a PSX CD image for patching or extracting
+
+        No reference to the source is retained; the entire image is loaded into memory.
+
+        :param source: A byte stream from which to read the CD image
+        """
         disc = Disc(source)
         self.system_area = SystemArea()
         self.regions = self.system_area.read(disc)
@@ -42,13 +70,12 @@ class PsxCd:
             new_region.read(disc)
             self.regions.append(new_region)
 
-        primary_volume = self.system_area.get_primary_volume()
-        if not primary_volume:
+        self.primary_volume = self.system_area.get_primary_volume()
+        if not self.primary_volume:
             raise LookupError('CD has no primary volume')
-        self.primary_volume_name = primary_volume.name
         self.name_map = {r.name.lower(): i for i, r in enumerate(self.regions) if r.name}
 
-    def remove_region(self, index: int):
+    def _remove_region(self, index: int):
         region = self.regions[index]
         if region.name:
             del self.name_map[region.name.lower()]
@@ -57,7 +84,7 @@ class PsxCd:
             if self.name_map[name] > index:
                 self.name_map[name] -= 1
 
-    def add_region(self, index: int, new_region: CdRegion):
+    def _add_region(self, index: int, new_region: CdRegion):
         self.regions.insert(index, new_region)
         for name in self.name_map:
             if self.name_map[name] >= index:
@@ -65,7 +92,7 @@ class PsxCd:
         if new_region.name:
             self.name_map[new_region.name.lower()] = index
 
-    def fit_region(self, index: int, new_size: int) -> set[CdRegion]:
+    def _fit_region(self, index: int, new_size: int) -> set[CdRegion]:
         f = self.regions[index]
         current_size = len(f.sectors)
         regions_changed = set()
@@ -76,7 +103,7 @@ class PsxCd:
                 sectors_available = len(free.sectors)
                 if sectors_available <= sectors_needed:
                     free_sectors = free.shrink_front(sectors_available)
-                    self.remove_region(index + 1)
+                    self._remove_region(index + 1)
                 else:
                     free_sectors = free.shrink_front(sectors_needed)
                 f.grow_back(free_sectors)
@@ -86,7 +113,7 @@ class PsxCd:
                 sectors_available = len(free.sectors)
                 if sectors_available <= sectors_needed:
                     free_sectors = free.shrink_back(sectors_available)
-                    self.remove_region(index - 1)
+                    self._remove_region(index - 1)
                     index -= 1
                 else:
                     free_sectors = free.shrink_back(sectors_needed)
@@ -104,7 +131,7 @@ class PsxCd:
                         sectors_available = len(candidate.sectors)
                         if sectors_available <= sectors_needed:
                             free_sectors = candidate.shrink_front(sectors_available)
-                            self.remove_region(i)
+                            self._remove_region(i)
                         else:
                             free_sectors = candidate.shrink_front(sectors_needed)
                             i += 1
@@ -134,7 +161,7 @@ class PsxCd:
                         sectors_available = len(candidate.sectors)
                         if sectors_available <= sectors_needed:
                             free_sectors = candidate.shrink_back(sectors_available)
-                            self.remove_region(i)
+                            self._remove_region(i)
                         else:
                             free_sectors = candidate.shrink_back(sectors_needed)
                             i -= 1
@@ -159,64 +186,122 @@ class PsxCd:
             if index + 1 < len(self.regions) and isinstance(self.regions[index + 1], Free):
                 self.regions[index + 1].grow_front(free_sectors, False)
             else:
-                self.add_region(index + 1, Free(f.end + 1, sectors=free_sectors))
+                self._add_region(index + 1, Free(f.end + 1, sectors=free_sectors))
 
         return regions_changed
 
-    def patch_raw(self, index: int, sectors: list[Sector]) -> set[CdRegion]:
+    def _patch_raw(self, index: int, sectors: list[Sector]) -> set[CdRegion]:
         f = self.regions[index]
         old_pos = (f.start, f.end)
         old_size = f.data_size
-        regions_changed = self.fit_region(index, len(sectors))
+        regions_changed = self._fit_region(index, len(sectors))
         f.patch_sectors(sectors)
         if old_pos != (f.start, f.end) or old_size != f.data_size:
             regions_changed.add(f)
         return regions_changed
 
-    def patch_data(self, index: int, data: ByteString) -> set[CdRegion]:
+    def _patch_data(self, index: int, data: ByteString) -> set[CdRegion]:
         f = self.regions[index]
         old_pos = (f.start, f.end)
         old_size = f.data_size
         # mode 2 form 2 isn't supported when patching data, so we assume a fixed data size of 0x800 bytes per sector
         sectors_needed = ceil(len(data) / DEFAULT_SECTOR_SIZE)
-        regions_changed = self.fit_region(index, sectors_needed)
+        regions_changed = self._fit_region(index, sectors_needed)
         f.patch_data(data)
         if old_pos != (f.start, f.end) or old_size != f.data_size:
             regions_changed.add(f)
         return regions_changed
 
     def patch(self, patches: list[Patch]):
+        """
+        Apply one or more patches to files on the CD
+
+        The contents of the CD image will be rearranged if necessary to make room for any files that have grown. This
+        method cannot be used to add or remove files, only change existing files.
+
+        :param patches: The set of patches to apply
+        """
         for patch in patches:
-            patch.path = PRIMARY_ALIAS.sub(f'{self.primary_volume_name}:\\\\', patch.path)
+            patch.path = self._clean_path(patch.path)
 
         # sort patches for files that are getting smaller before patches for files that are getting larger so we have
         # the maximum amount of free space available before trying to expand things
-        patches.sort(key=self.patch_sort)
+        patches.sort(key=self._patch_sort)
         regions_changed = set()
         for patch in patches:
-            path = patch.path.lower()
-            index = self.name_map[path]
-            if patch.raw:
+            index = self.name_map[patch.path]
+            if patch.is_data_raw_sectors:
                 if len(patch.data) % Sector.SIZE != 0:
                     raise ValueError(f'Raw patch {patch.path} does not contain a whole number of sectors')
                 sectors = [Sector(patch.data[i:i+Sector.SIZE]) for i in range(0, len(patch.data), Sector.SIZE)]
-                regions_changed.update(self.patch_raw(index, sectors))
+                regions_changed.update(self._patch_raw(index, sectors))
             else:
-                regions_changed.update(self.patch_data(index, patch.data))
+                regions_changed.update(self._patch_data(index, patch.data))
 
         # update filesystem with new locations and sizes for things that were moved
         for region in regions_changed:
             self.system_area.update_paths(region)
 
+    def _clean_path(self, path: Optional[str]) -> str:
+        if path is None:
+            path = f'{self.primary_volume.name}:\\'
+        path = PRIMARY_ALIAS.sub(f'{self.primary_volume.name}:\\\\', path)
+        if path[-1] == '\\' and path[-2] != ':':
+            # remove any trailing slash unless it's the root directory
+            path = path[:-1]
+        return path.lower()
+
+    def list_dir(self, path: str = None) -> Iterable[DirectoryEntry]:
+        """
+        List the contents of a directory on the primary volume of the CD
+
+        :param path: The path to the directory whose contents to list. If None, the root directory.
+        :return: A list of directory entries
+        """
+        cleaned_path = self._clean_path(path)
+        index = self.name_map.get(cleaned_path)
+        if index is None:
+            raise NotADirectoryError(f'{path} does not exist')
+        directory = self.regions[index]
+        if not isinstance(directory, Directory):
+            raise NotADirectoryError(f'{path} is not a directory')
+        for entry in directory.contents:
+            yield DirectoryEntry(os.path.basename(entry.name), entry.name, isinstance(entry, Directory))
+
+    def extract(self, path: str, destination: BinaryIO, raw: bool = False):
+        """
+        Extract a file at the given path to the provided destination byte stream
+
+        :param path: Path to the file to extract
+        :param destination: File-like object to write the extracted file to
+        :param raw: If True, the full raw sectors of the file will be extracted, including sector header and error
+            correction codes
+        """
+        cleaned_path = self._clean_path(path)
+        index = self.name_map.get(cleaned_path)
+        if index is None:
+            raise FileNotFoundError(f'{path} does not exist')
+        region = self.regions[index]
+        if raw:
+            disc = Disc(destination)
+            region.write(disc)
+        else:
+            region.write_data(destination)
+
     def write(self, destination: BinaryIO):
+        """
+        Write the contents of the CD, with any patches applied, to the given stream
+
+        :param destination: File-like object to write the CD image to
+        """
         out_disc = Disc(destination)
         for region in self.regions:
             region.write(out_disc)
 
-    def patch_sort(self, patch: Patch):
+    def _patch_sort(self, patch: Patch):
         path = patch.path.lower()
         index = self.name_map[path]
-        if patch.raw:
+        if patch.is_data_raw_sectors:
             new_num_sectors = len(patch.data) // Sector.SIZE
         else:
             new_num_sectors = ceil(len(patch.data) / DEFAULT_SECTOR_SIZE)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import IntEnum
-from typing import ByteString, Iterable, Literal, Optional
+from typing import BinaryIO, ByteString, Iterable, Literal, Optional
 
 from psx.cd.disc import Disc, Sector
 
@@ -47,7 +47,6 @@ class CdRegion(ABC):
         :param num_sectors: Number of sectors to remove
         :return: The sectors that were removed
         """
-
         if num_sectors > len(self.sectors):
             raise ValueError(f'Tried to shrink by {num_sectors} sectors but only {len(self.sectors)} available')
         index = len(self.sectors) - num_sectors
@@ -222,6 +221,18 @@ class CdRegion(ABC):
         """Write this region to the provided disc image"""
         for sector in self.sectors:
             disc.write_sector(sector)
+
+    def write_data(self, destination: BinaryIO):
+        """
+        Write the user data in this region to the destination, excluding sector headers and error correction codes
+
+        :param destination: File-like object to write the data to
+        """
+        data_size = self.data_size
+        for sector in self.sectors:
+            size_to_copy = min(sector.data_size, data_size)
+            destination.write(bytes(sector.data[:size_to_copy]))
+            data_size -= size_to_copy
 
 
 class SystemArea(CdRegion):
@@ -416,12 +427,10 @@ class VolumeDescriptor(CdRegion):
                 self.space_size = region.end - self.start
                 data[80:84] = self.space_size.to_bytes(4, 'little')
                 data[84:88] = self.space_size.to_bytes(4, 'big')
-            if isinstance(region, Directory):
-                # this region is a directory within our volume; update path tables
-                for path_table in self.path_tables:
-                    path_table.update_paths(region)
-            # pass on to the root directory
-            self.root_dir.update_paths(region)
+
+            # pass on to our path tables and root directory
+            for sub_region in self.sub_regions[:-1]:  # exclude next volume descriptor
+                sub_region.update_paths(region)
         elif self.type != VolumeDescriptor.Type.TERMINATOR:
             # this doesn't affect us; pass the message along to the next volume if there is one
             # next volume is always the last subregion
@@ -498,7 +507,7 @@ class Directory(CdRegion):
             if region is not None and region is not self:
                 yield region
 
-    def update_record(self, name: str, region: CdRegion = None):
+    def _update_record(self, name: str, region: CdRegion = None):
         sector_index, record_pos, stored_region = self.name_map[name]
         if region is None:
             region = stored_region
@@ -508,15 +517,15 @@ class Directory(CdRegion):
 
     def update_paths(self, region: CdRegion):
         if region.name == self.name:
-            self.update_record('.')
+            self._update_record('.')
             # if we're the root directory
             if self.name[-2:] == ':\\':
-                self.update_record('..', self)
+                self._update_record('..', self)
             # update any sub-directories
             for path in self.name_map:
                 sub_region = self.name_map[path][2]
                 if path not in ['.', '..'] and isinstance(sub_region, Directory):
-                    sub_region.update_record('..', self)
+                    sub_region._update_record('..', self)
         else:
             pieces = region.name.rsplit('\\', 1)
             if len(pieces) > 1:
@@ -524,7 +533,7 @@ class Directory(CdRegion):
                 if parent_dir[-1] == ':':
                     parent_dir += '\\'
                 if parent_dir == self.name:
-                    self.update_record(pieces[1])
+                    self._update_record(pieces[1])
 
 
 class File(CdRegion):

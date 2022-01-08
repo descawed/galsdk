@@ -179,7 +179,7 @@ class Sector:
 
     def copy(self, other: Sector):
         """Copy data and attributes from another sector while leaving location intact"""
-        self._raw[0x10:] = other._raw[0x10:]
+        self._raw[0xf:] = other._raw[0xf:]
 
 
 class Disc:
