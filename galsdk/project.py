@@ -193,7 +193,7 @@ class Project:
             project_info = json.load(f)
         version = GameVersion(**project_info['version'])
         last_export_date = datetime.datetime.fromisoformat(project_info['last_export_date'])
-        return Project(project_path, version, last_export_date)
+        return cls(project_path, version, last_export_date)
 
     def save(self):
         """Save project metadata"""
