@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import io
 import json
 import re
 import shutil
@@ -22,35 +23,36 @@ class Region(str, Enum):
 class GameVersion:
     """Information on the specific version of the game this project was created from and will be exported as"""
 
+    id: str
     region: Region
     language: str
     disc: int
     is_demo: bool = False
 
 
-VERSION_MAP = {
-    'SLUS-00986': GameVersion(Region.NTSC_U, 'en-US', 1),
-    'SLUS-01098': GameVersion(Region.NTSC_U, 'en-US', 2),
-    'SLUS-01099': GameVersion(Region.NTSC_U, 'en-US', 3),
+VERSIONS = [
+    GameVersion('SLUS-00986', Region.NTSC_U, 'en-US', 1),
+    GameVersion('SLUS-01098', Region.NTSC_U, 'en-US', 2),
+    GameVersion('SLUS-01099', Region.NTSC_U, 'en-US', 3),
 
-    'SLUS-90077': GameVersion(Region.NTSC_U, 'en-US', 1, True),
+    GameVersion('SLUS-90077', Region.NTSC_U, 'en-US', 1, True),
 
-    'SLPS-02192': GameVersion(Region.NTSC_J, 'ja', 1),
-    'SLPS-02193': GameVersion(Region.NTSC_J, 'ja', 2),
-    'SLPS-02194': GameVersion(Region.NTSC_J, 'ja', 3),
+    GameVersion('SLPS-02192', Region.NTSC_J, 'ja', 1),
+    GameVersion('SLPS-02193', Region.NTSC_J, 'ja', 2),
+    GameVersion('SLPS-02194', Region.NTSC_J, 'ja', 3),
 
-    'SLES-02328': GameVersion(Region.PAL, 'en-GB', 1),
-    'SLES-12328': GameVersion(Region.PAL, 'en-GB', 2),
-    'SLES-22328': GameVersion(Region.PAL, 'en-GB', 3),
+    GameVersion('SLES-02328', Region.PAL, 'en-GB', 1),
+    GameVersion('SLES-12328', Region.PAL, 'en-GB', 2),
+    GameVersion('SLES-22328', Region.PAL, 'en-GB', 3),
 
-    'SLES-02329': GameVersion(Region.PAL, 'fr', 1),
-    'SLES-12329': GameVersion(Region.PAL, 'fr', 2),
-    'SLES-22329': GameVersion(Region.PAL, 'fr', 3),
+    GameVersion('SLES-02329', Region.PAL, 'fr', 1),
+    GameVersion('SLES-12329', Region.PAL, 'fr', 2),
+    GameVersion('SLES-22329', Region.PAL, 'fr', 3),
 
-    'SLES-02330': GameVersion(Region.PAL, 'de', 1),
-    'SLES-12330': GameVersion(Region.PAL, 'de', 2),
-    'SLES-22330': GameVersion(Region.PAL, 'de', 3),
-}
+    GameVersion('SLES-02330', Region.PAL, 'de', 1),
+    GameVersion('SLES-12330', Region.PAL, 'de', 2),
+    GameVersion('SLES-22330', Region.PAL, 'de', 3),
+]
 
 
 class Project:
@@ -61,6 +63,9 @@ class Project:
     that isn't stored in the game's own data files. It also provides a version-agnostic interface for manipulating game
     objects and CD images.
     """
+
+    VERSION_MAP = {version.id: version for version in VERSIONS}
+
     def __init__(self, project_dir: Path, version: GameVersion, last_export_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
@@ -69,15 +74,40 @@ class Project:
     @classmethod
     def _extract_dir(cls, path: str, destination: Path, cd: PsxCd, raw: bool = False):
         for entry in cd.list_dir(path):
-            sub_path = destination / entry.name
             if entry.is_directory:
+                sub_path = destination / entry.name
                 sub_path.mkdir(exist_ok=True)
                 # raw extraction if this is the XA directory in the Japanese version or a movie directory in any version
                 cls._extract_dir(entry.path, sub_path, cd, entry.name == 'XA' or entry.name.startswith('MOV'))
             else:
+                # remove the CD file version number
+                base_name = entry.name.rsplit(';', 1)[0]
+                sub_path = destination / base_name
                 with sub_path.open('wb') as f:
                     # raw extraction if requested for the dir or if this is the XA archive in the NA version
                     cd.extract(entry.path, f, raw or entry.name == 'XA.MXA')
+
+    @classmethod
+    def _detect_version(cls, system_cnf: str) -> GameVersion:
+        boot_to_game_id = re.compile(r'^BOOT\s*=.+S([a-z]{3})_(\d{3})\.(\d{2});\d+$', re.IGNORECASE)
+        for line in system_cnf.splitlines():
+            game_id, matches = boot_to_game_id.subn(r'S\1-\2\3', line)
+            if matches > 0 and game_id in cls.VERSION_MAP:
+                return cls.VERSION_MAP[game_id]
+        else:
+            raise ValueError('Could not determine game version from SYSTEM.CNF')
+
+    @classmethod
+    def detect_files_version(cls, game_dir: str) -> GameVersion:
+        return cls._detect_version((Path(game_dir) / 'SYSTEM.CNF').read_text())
+
+    @classmethod
+    def detect_cd_version(cls, cd_path: str) -> GameVersion:
+        with open(cd_path, 'rb') as f:
+            cd = PsxCd(f)
+        with io.BytesIO() as buf:
+            cd.extract(r'\SYSTEM.CNF;1', buf)
+            return cls._detect_version(buf.getvalue().decode())
 
     @classmethod
     def create_from_cd(cls, cd_path: str, project_dir: str) -> Project:
@@ -113,16 +143,7 @@ class Project:
         game_path = Path(game_dir)
 
         # determine game version
-        config = (game_path / 'SYSTEM.CNF').read_text()
-        boot_to_game_id = re.compile(r'^BOOT\s*=.+S([a-z]{3})_(\d{3})\.(\d{2});\d+$', re.IGNORECASE)
-        for line in config.splitlines():
-            game_id, matches = boot_to_game_id.subn(r'S\1-\2\3', line)
-            if matches > 0:
-                version = VERSION_MAP[game_id]
-                break
-        else:
-            raise ValueError('Could not determine game version from SYSTEM.CNF')
-
+        version = cls.detect_files_version(game_dir)
         if version.region != Region.NTSC_U or version.is_demo:
             raise NotImplementedError('Currently only the US retail version of the game is supported')
 
@@ -148,7 +169,7 @@ class Project:
             movie_dir = stage_dir / 'movies'
             movie_dir.mkdir(exist_ok=True)
 
-            movie_src = game_data / 'MOV' if stage == 'A' else f'MOV_{stage}'
+            movie_src = game_data / ('MOV' if stage == 'A' else f'MOV_{stage}')
             # depending on which disc we're on, some of these directories won't exist
             if movie_src.exists():
                 shutil.copytree(movie_src, movie_dir)
@@ -160,6 +181,12 @@ class Project:
         actor_dir.mkdir(exist_ok=True)
 
         # TODO: extract actor models
+
+        item_dir = project_path / 'items'
+        item_dir.mkdir(exist_ok=True)
+
+        # TODO: extract item images
+        # TODO: extract item models
 
         room_dir = project_path / 'rooms'
         room_dir.mkdir(exist_ok=True)
