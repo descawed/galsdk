@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 
+from galsdk.db import Database
+from galsdk.manifest import Manifest
 from psx.cd import PsxCd
 
 
@@ -17,6 +19,19 @@ class Region(str, Enum):
     NTSC_U = 'NTSC-U'
     NTSC_J = 'NTSC-J'
     PAL = 'PAL'
+
+    def __str__(self):
+        return self.value
+
+
+class Stage(str, Enum):
+    A = 'A'
+    B = 'B'
+    C = 'C'
+    D = 'D'
+
+    def __str__(self):
+        return self.value
 
 
 @dataclass
@@ -122,8 +137,8 @@ class Project:
         with open(cd_path, 'rb') as f:
             cd = PsxCd(f)
         with tempfile.TemporaryDirectory() as d:
-            cls._extract_dir('\\', Path(d.name), cd)
-            return cls.create_from_directory(d.name, cd_path, project_dir)
+            cls._extract_dir('\\', Path(d), cd)
+            return cls.create_from_directory(d, cd_path, project_dir)
 
     @classmethod
     def create_from_directory(cls, game_dir: str, base_image: str, project_dir: str) -> Project:
@@ -149,33 +164,42 @@ class Project:
 
         # locate files we're interested in
         game_data = game_path / 'T4'
-        display_db = game_data / 'DISPLAY.CDB'
-        model_db = game_data / 'MODEL.CDB'
+        display_db_path = game_data / 'DISPLAY.CDB'
+        model_db_path = game_data / 'MODEL.CDB'
+
+        display_db = Database()
+        display_db.read(str(display_db_path))
 
         # prepare project directory
         export_dir = project_path / 'export'
         export_dir.mkdir(exist_ok=True)
         shutil.copy(base_image, export_dir / 'output.bin')
-        shutil.copy(display_db, export_dir)
-        shutil.copy(model_db, export_dir)
+        shutil.copy(display_db_path, export_dir)
+        shutil.copy(model_db_path, export_dir)
 
         stages_dir = project_path / 'stages'
         stages_dir.mkdir(exist_ok=True)
-        for stage in ['A', 'B', 'C', 'D']:
+        string_offset = 5
+        for i, stage in enumerate(Stage):
             stage_dir = stages_dir / stage
             stage_dir.mkdir(exist_ok=True)
             bg_dir = stage_dir / 'backgrounds'
             bg_dir.mkdir(exist_ok=True)
             movie_dir = stage_dir / 'movies'
-            movie_dir.mkdir(exist_ok=True)
+            if movie_dir.is_dir():
+                shutil.rmtree(movie_dir)
 
-            movie_src = game_data / ('MOV' if stage == 'A' else f'MOV_{stage}')
+            movie_src = game_data / ('MOV' if stage == Stage.A else f'MOV_{stage}')
             # depending on which disc we're on, some of these directories won't exist
             if movie_src.exists():
                 shutil.copytree(movie_src, movie_dir)
 
-            # TODO: extract backgrounds
-            # TODO: extract strings
+            bg_db_path = game_data / f'BGTIM_{stage}.CDB'
+            Manifest.from_database(bg_dir, bg_db_path, 'TDB')
+
+            string_path = stage_dir / 'strings.db'
+            with string_path.open('wb') as f:
+                f.write(display_db[string_offset + i])
 
         actor_dir = project_path / 'actors'
         actor_dir.mkdir(exist_ok=True)
@@ -192,6 +216,12 @@ class Project:
         room_dir.mkdir(exist_ok=True)
 
         # TODO: extract room data
+
+        menu_dir = project_path / 'menu'
+        menu_dir.mkdir(exist_ok=True)
+
+        menu_db_path = game_data / 'MENU.CDB'
+        Manifest.from_database(menu_dir, menu_db_path, 'TIM')
 
         sound_dir = project_path / 'sound'
         sound_dir.mkdir(exist_ok=True)
@@ -229,3 +259,14 @@ class Project:
                 'version': asdict(self.version),
                 'last_export_date': self.last_export_date.isoformat(),
             }, f)
+
+    def get_stage_backgrounds(self, stage: Stage) -> Manifest:
+        """
+        Get the background manifest for a particular stage
+
+        :param stage: The stage for which to get the background manifest
+        :return: The manifest of background files
+        """
+        manifest = Manifest(self.project_dir / 'stages' / stage / 'backgrounds')
+        manifest.load()
+        return manifest

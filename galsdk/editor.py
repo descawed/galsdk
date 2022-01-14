@@ -5,6 +5,7 @@ from tkinter import ttk
 from typing import Optional
 
 from galsdk.project import GameVersion, Project
+from galsdk.ui import BackgroundTab
 
 
 class Editor(tk.Tk):
@@ -25,7 +26,7 @@ class Editor(tk.Tk):
         file_menu = tk.Menu(menu_bar, tearoff=False)
 
         file_menu.add_cascade(label='New Project...', underline=0, command=self.ask_new_project)
-        file_menu.add_command(label='Open Project...', underline=0)
+        file_menu.add_command(label='Open Project...', underline=0, command=self.ask_open_project)
         file_menu.add_separator()
         file_menu.add_command(label='Exit', underline=1, command=self.exit)
 
@@ -67,7 +68,8 @@ class Editor(tk.Tk):
         project_path = ttk.Entry(self.new_project_view, textvariable=self.project_path_var)
         browse_project_path = ttk.Button(self.new_project_view, text='Browse...', command=self.ask_project_dir)
 
-        self.create_project_button = ttk.Button(self.new_project_view, text='Create Project')
+        self.create_project_button = ttk.Button(self.new_project_view, text='Create Project',
+                                                command=self.create_project)
 
         self.new_project_view.grid_rowconfigure(0, weight=1)
         self.new_project_view.grid_rowconfigure(7, weight=1)
@@ -111,6 +113,16 @@ class Editor(tk.Tk):
 
         self.show_new_project(image_path, version)
 
+    def ask_open_project(self):
+        project_dir = tkfile.askdirectory()
+        try:
+            self.project = Project.open(project_dir)
+        except Exception as e:
+            tkmsg.showerror('Failed to open project', str(e))
+            return
+
+        self.open_project()
+
     def ask_project_dir(self):
         project_dir = tkfile.askdirectory(mustexist=False)
         self.project_path_var.set(project_dir)
@@ -133,6 +145,26 @@ class Editor(tk.Tk):
         self.default_message.pack_forget()
         self.tabs.pack_forget()
         self.new_project_view.pack(expand=1, fill=tk.BOTH, padx=5, pady=(0, 5))
+
+    def create_project(self):
+        image_path = self.image_path_var.get()
+        project_path = self.project_path_var.get()
+        try:
+            self.project = Project.create_from_cd(image_path, project_path)
+        except Exception as e:
+            tkmsg.showerror('Failed to create project', str(e))
+            return
+
+        self.open_project()
+
+    def open_project(self):
+        self.default_message.pack_forget()
+        self.new_project_view.pack_forget()
+
+        bg_tab = BackgroundTab(self.project)
+        self.tabs.add(bg_tab, text=bg_tab.name)
+
+        self.tabs.pack(expand=1, fill=tk.BOTH)
 
     def exit(self):
         """Exit the editor application"""
