@@ -90,6 +90,18 @@ class Manifest:
             self.name_map[name] = mf
 
     @classmethod
+    def load_from(cls, path: Path) -> Manifest:
+        """
+        Load a manifest from a given path
+
+        :param path: Path where the manifest is stored
+        :return: The manifest object
+        """
+        manifest = cls(path)
+        manifest.load()
+        return manifest
+
+    @classmethod
     def from_database(cls, manifest_path: Path, db_path: Path, extension: str = None) -> Manifest:
         """
         Create a new manifest at a given path from a database at a given path
@@ -99,7 +111,7 @@ class Manifest:
         :param extension: If not None, a file extension to use for the files unpacked from the database
         :return: The new manifest
         """
-        manifest = Manifest(manifest_path, db_path.stem)
+        manifest = cls(manifest_path, db_path.stem)
         db = Database()
         db.read(str(db_path))
         manifest.unpack_database(db, extension)

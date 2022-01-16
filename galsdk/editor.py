@@ -5,7 +5,7 @@ from tkinter import ttk
 from typing import Optional
 
 from galsdk.project import GameVersion, Project
-from galsdk.ui import BackgroundTab
+from galsdk.ui import BackgroundTab, Tab
 
 
 class Editor(tk.Tk):
@@ -161,8 +161,9 @@ class Editor(tk.Tk):
         self.default_message.pack_forget()
         self.new_project_view.pack_forget()
 
-        bg_tab = BackgroundTab(self.project)
-        self.tabs.add(bg_tab, text=bg_tab.name)
+        tabs: list[Tab] = [BackgroundTab(self.project)]
+        for tab in tabs:
+            self.tabs.add(tab, text=tab.name)
 
         self.tabs.pack(expand=1, fill=tk.BOTH)
 

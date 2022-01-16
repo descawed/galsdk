@@ -267,6 +267,12 @@ class Project:
         :param stage: The stage for which to get the background manifest
         :return: The manifest of background files
         """
-        manifest = Manifest(self.project_dir / 'stages' / stage / 'backgrounds')
-        manifest.load()
-        return manifest
+        return Manifest.load_from(self.project_dir / 'stages' / stage / 'backgrounds')
+
+    def get_menus(self) -> Manifest:
+        """
+        Get the manifest of menu images
+
+        :return: The manifest of menu images
+        """
+        return Manifest.load_from(self.project_dir / 'menu')
