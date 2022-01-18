@@ -4,24 +4,27 @@ import tkinter.messagebox as tkmsg
 from tkinter import ttk
 from typing import Optional
 
+from direct.showbase.ShowBase import ShowBase
+
 from galsdk.project import GameVersion, Project
-from galsdk.ui import BackgroundTab, Tab
+from galsdk.ui import BackgroundTab, MovieTab, Tab
 
 
-class Editor(tk.Tk):
+class Editor(ShowBase):
     """The main editor window"""
 
     project: Optional[Project]
 
     def __init__(self):
-        super().__init__()
+        super().__init__(windowType='none')
         self.project = None
 
-        self.title('galsdk')
+        self.startTk()
+        self.tkRoot.title('galsdk')
 
         # top menu
-        menu_bar = tk.Menu(self)
-        self.config(menu=menu_bar)
+        menu_bar = tk.Menu(self.tkRoot)
+        self.tkRoot.config(menu=menu_bar)
 
         file_menu = tk.Menu(menu_bar, tearoff=False)
 
@@ -33,10 +36,10 @@ class Editor(tk.Tk):
         menu_bar.add_cascade(label='File', menu=file_menu, underline=0)
 
         # tabs for open project (will be populated later)
-        self.tabs = ttk.Notebook(self)
+        self.tabs = ttk.Notebook(self.tkRoot)
 
         # create new project view
-        self.new_project_view = ttk.LabelFrame(self, text='New Project')
+        self.new_project_view = ttk.LabelFrame(self.tkRoot, text='New Project')
         self.game_id_var = tk.StringVar()
         self.region_var = tk.StringVar()
         self.language_var = tk.StringVar()
@@ -99,13 +102,16 @@ class Editor(tk.Tk):
             self.new_project_view.grid_columnconfigure(i, minsize=20, pad=5)
 
         # initial starting view
-        self.default_message = ttk.Label(self, text='Open or create a project from the File menu to begin')
+        self.default_message = ttk.Label(self.tkRoot, text='Open or create a project from the File menu to begin')
         self.default_message.pack(expand=1, fill=tk.BOTH, padx=50, pady=20)
 
-    def ask_new_project(self):
+        self.tkRoot.bind('<Control-n>', self.ask_new_project)
+        self.tkRoot.bind('<Control-o>', self.ask_open_project)
+
+    def ask_new_project(self, *_):
         image_path = tkfile.askopenfilename(filetypes=[('CD images', '*.bin *.img'), ('All files', '*.*')])
         try:
-            # FIXME: this is slow because we read the whole CD image. find a better way
+            # TODO: this is slow because we read the whole CD image. find a better way
             version = Project.detect_cd_version(image_path)
         except Exception as e:
             tkmsg.showerror('Failed to open image', str(e))
@@ -113,7 +119,7 @@ class Editor(tk.Tk):
 
         self.show_new_project(image_path, version)
 
-    def ask_open_project(self):
+    def ask_open_project(self, *_):
         project_dir = tkfile.askdirectory()
         try:
             self.project = Project.open(project_dir)
@@ -161,7 +167,9 @@ class Editor(tk.Tk):
         self.default_message.pack_forget()
         self.new_project_view.pack_forget()
 
-        tabs: list[Tab] = [BackgroundTab(self.project)]
+        self.makeDefaultPipe()
+
+        tabs: list[Tab] = [BackgroundTab(self.project), MovieTab(self.project, self)]
         for tab in tabs:
             self.tabs.add(tab, text=tab.name)
 
@@ -174,4 +182,4 @@ class Editor(tk.Tk):
 
 if __name__ == '__main__':
     editor = Editor()
-    editor.mainloop()
+    editor.run()

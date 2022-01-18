@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Iterable
 
 from galsdk.db import Database
 from galsdk.manifest import Manifest
@@ -268,6 +269,9 @@ class Project:
         :return: The manifest of background files
         """
         return Manifest.load_from(self.project_dir / 'stages' / stage / 'backgrounds')
+
+    def get_stage_movies(self, stage: Stage) -> Iterable[Path]:
+        return (self.project_dir / 'stages' / stage / 'movies').glob('*.STR')
 
     def get_menus(self) -> Manifest:
         """
