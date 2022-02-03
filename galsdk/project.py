@@ -13,6 +13,7 @@ from typing import Iterable
 
 from galsdk.db import Database
 from galsdk.manifest import Manifest
+from galsdk.movie import Movie
 from psx.cd import PsxCd
 
 
@@ -270,8 +271,9 @@ class Project:
         """
         return Manifest.load_from(self.project_dir / 'stages' / stage / 'backgrounds')
 
-    def get_stage_movies(self, stage: Stage) -> Iterable[Path]:
-        return (self.project_dir / 'stages' / stage / 'movies').glob('*.STR')
+    def get_stage_movies(self, stage: Stage) -> Iterable[Movie]:
+        for path in (self.project_dir / 'stages' / stage / 'movies').glob('*.STR'):
+            yield Movie(path)
 
     def get_menus(self) -> Manifest:
         """

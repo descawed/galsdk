@@ -2,3 +2,4 @@ panda3d==1.10.*
 pytest==6.2.*
 pillow==9.0.*
 Pmw==2.0.*
+ffmpeg-python==0.2.*
