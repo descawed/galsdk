@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import argparse
+import os.path
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import BinaryIO, ByteString, Iterable
@@ -233,3 +236,35 @@ class Tim:
 
         x, y, w, h = self.raw_image_bounds
         self._write_block(Block(x, y, w, h, self.image_data), destination)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Convert TIM images to another format')
+    parser.add_argument('-n', '--no-transparency', help='Disable transparency', action='store_false',
+                        dest='with_transparency')
+    parser.add_argument('-c', '--combine', help='Combine all selected palettes into a single image',
+                        action='store_true')
+    parser.add_argument('-p', '--palettes', help='Palette indexes to extract; default is all', nargs='+', type=int)
+    parser.add_argument('input', help='Path to TIM file to convert')
+    parser.add_argument('output', help='Path at which to store the converted image(s). If not using the --combine '
+                        'option, this may include a Python format specifier to format the palette index.')
+
+    args = parser.parse_args()
+    with open(args.input, 'rb') as f:
+        input_tim = Tim.read(f)
+    palette_indexes = args.palettes or range(input_tim.num_palettes or 1)
+    images = [(i, input_tim.to_image(i, args.with_transparency)) for i in palette_indexes]
+    if args.combine:
+        combined_image = Image.new('RGBA', (input_tim.width, input_tim.height*len(palette_indexes)))
+        for i, (_, im) in enumerate(images):
+            combined_image.paste(im, (0, input_tim.height*i))
+        combined_image.save(args.output)
+    else:
+        output_filename = args.output
+        # was an index format provided?
+        if output_filename.format(1) == output_filename:
+            filename, ext = os.path.splitext(output_filename)
+            output_filename = filename + '_{:02d}' + ext
+        for index, im in images:
+            image_filename = output_filename.format(index)
+            im.save(image_filename)
