@@ -84,6 +84,11 @@ class StringDb:
         """Iterate over the strings as raw (un-decoded) bytes"""
         yield from self.strings
 
+    def iter_both(self) -> Iterable[tuple[bytes, str]]:
+        """Iterate over the strings as both raw and decoded strings"""
+        for string in self.strings:
+            yield string, string.decode(self.encoding, 'replace')
+
     def append(self, string: str):
         """
         Append a string to the database

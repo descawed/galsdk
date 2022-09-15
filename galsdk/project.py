@@ -12,18 +12,14 @@ from pathlib import Path
 from typing import Iterable
 
 from galsdk.db import Database
+from galsdk.font import Font
 from galsdk.manifest import Manifest
 from galsdk.movie import Movie
+from galsdk.string import StringDb
+from psx import Region
 from psx.cd import PsxCd
-
-
-class Region(str, Enum):
-    NTSC_U = 'NTSC-U'
-    NTSC_J = 'NTSC-J'
-    PAL = 'PAL'
-
-    def __str__(self):
-        return self.value
+from psx.config import Config
+from psx.exe import Exe
 
 
 class Stage(str, Enum):
@@ -52,7 +48,7 @@ VERSIONS = [
     GameVersion('SLUS-01098', Region.NTSC_U, 'en-US', 2),
     GameVersion('SLUS-01099', Region.NTSC_U, 'en-US', 3),
 
-    GameVersion('SLUS-90077', Region.NTSC_U, 'en-US', 1, True),
+    GameVersion('SLUS-90077', Region.NTSC_U, 'en-US', 1, is_demo=True),
 
     GameVersion('SLPS-02192', Region.NTSC_J, 'ja', 1),
     GameVersion('SLPS-02193', Region.NTSC_J, 'ja', 2),
@@ -70,6 +66,12 @@ VERSIONS = [
     GameVersion('SLES-12330', Region.PAL, 'de', 2),
     GameVersion('SLES-22330', Region.PAL, 'de', 3),
 ]
+
+ADDRESSES = {
+    'SLUS-00986': {
+        'FontMetrics': 0x80191364,
+    }
+}
 
 
 class Project:
@@ -164,10 +166,19 @@ class Project:
         if version.region != Region.NTSC_U or version.is_demo:
             raise NotImplementedError('Currently only the US retail version of the game is supported')
 
+        addresses = ADDRESSES[version.id]
         # locate files we're interested in
+        config_path = game_path / 'SYSTEM.CNF'
         game_data = game_path / 'T4'
         display_db_path = game_data / 'DISPLAY.CDB'
         model_db_path = game_data / 'MODEL.CDB'
+
+        with config_path.open() as f:
+            config = Config.read(f)
+        boot_path = config.boot.split(':\\')[1].rsplit(';')[0].replace('\\', '/')
+        exe_path = game_path / boot_path
+        with exe_path.open('rb') as f:
+            exe = Exe.read(f)
 
         display_db = Database()
         display_db.read(str(display_db_path))
@@ -178,6 +189,17 @@ class Project:
         shutil.copy(base_image, export_dir / 'output.bin')
         shutil.copy(display_db_path, export_dir)
         shutil.copy(model_db_path, export_dir)
+
+        font_image_path = project_path / 'font.tim'
+        with font_image_path.open('wb') as f:
+            f.write(display_db[4])
+        font_path = project_path / 'font.json'
+        font_metrics = exe[addresses['FontMetrics']:addresses['FontMetrics']+224]
+        font = {'image': 'font.tim', 'widths': {}}
+        for i, width in enumerate(font_metrics):
+            font['widths'][i + 0x20] = width
+        with font_path.open('w') as f:
+            json.dump(font, f)
 
         stages_dir = project_path / 'stages'
         stages_dir.mkdir(exist_ok=True)
@@ -282,3 +304,12 @@ class Project:
         :return: The manifest of menu images
         """
         return Manifest.load_from(self.project_dir / 'menu')
+
+    def get_font(self) -> Font:
+        return Font.load(self.project_dir)
+
+    def get_stage_strings(self, stage: Stage) -> StringDb:
+        path = self.project_dir / 'stages' / stage / 'strings.db'
+        db = StringDb()
+        db.read(str(path))
+        return db

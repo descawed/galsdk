@@ -1,10 +1,9 @@
 import tkinter as tk
-from pathlib import Path
 from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
-from panda3d.core import AudioSound, AudioManager, CardMaker, NodePath, MovieTexture, WindowProperties
+from panda3d.core import AudioSound, CardMaker, NodePath, MovieTexture, WindowProperties
 
 from galsdk.ui.tab import Tab
 from galsdk.project import Project, Stage
