@@ -131,7 +131,7 @@ def unpack(cdb: str, target: str, indexes: Container[int] = None):
     db = Database()
     db.read(cdb)
     for i, data in enumerate(db):
-        if indexes is not None and i not in indexes:
+        if indexes and i not in indexes:
             continue
         output_path = os.path.join(target, str(i))
         with open(output_path, 'wb') as f:

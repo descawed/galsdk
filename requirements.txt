@@ -1,5 +1,5 @@
 panda3d==1.10.*
-pytest==6.2.*
-pillow==9.0.*
-Pmw==2.0.*
+pytest==7.1.*
+pillow==9.2.*
+Pmw==2.1.*
 ffmpeg-python==0.2.*

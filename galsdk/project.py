@@ -5,6 +5,7 @@ import io
 import json
 import re
 import shutil
+import struct
 import tempfile
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -14,6 +15,7 @@ from typing import Iterable
 from galsdk.db import Database
 from galsdk.font import Font
 from galsdk.manifest import Manifest
+from galsdk.model import ACTORS, ActorModel
 from galsdk.movie import Movie
 from galsdk.string import StringDb
 from psx import Region
@@ -58,6 +60,8 @@ VERSIONS = [
     GameVersion('SLES-12328', Region.PAL, 'en-GB', 2),
     GameVersion('SLES-22328', Region.PAL, 'en-GB', 3),
 
+    GameVersion('SLED-02869', Region.PAL, 'en-GB', 1, is_demo=True),
+
     GameVersion('SLES-02329', Region.PAL, 'fr', 1),
     GameVersion('SLES-12329', Region.PAL, 'fr', 2),
     GameVersion('SLES-22329', Region.PAL, 'fr', 3),
@@ -70,6 +74,7 @@ VERSIONS = [
 ADDRESSES = {
     'SLUS-00986': {
         'FontMetrics': 0x80191364,
+        'ActorModels': 0x80192F18,
     }
 }
 
@@ -85,10 +90,12 @@ class Project:
 
     VERSION_MAP = {version.id: version for version in VERSIONS}
 
-    def __init__(self, project_dir: Path, version: GameVersion, last_export_date: datetime.datetime = None):
+    def __init__(self, project_dir: Path, version: GameVersion, actor_models: list[int] = None,
+                 last_export_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
         self.last_export_date = last_export_date or datetime.datetime.utcnow()
+        self.actor_models = actor_models or []
 
     @classmethod
     def _extract_dir(cls, path: str, destination: Path, cd: PsxCd, raw: bool = False):
@@ -225,10 +232,13 @@ class Project:
             with string_path.open('wb') as f:
                 f.write(display_db[string_offset + i])
 
-        actor_dir = project_path / 'actors'
-        actor_dir.mkdir(exist_ok=True)
-
-        # TODO: extract actor models
+        model_dir = project_path / 'models'
+        model_dir.mkdir(exist_ok=True)
+        Manifest.from_database(model_dir, model_db_path)
+        num_actors = len(ACTORS)
+        actor_models = list(
+            struct.unpack(f'{num_actors}h', exe[addresses['ActorModels']:addresses['ActorModels'] + 2 * num_actors])
+        )
 
         item_dir = project_path / 'items'
         item_dir.mkdir(exist_ok=True)
@@ -245,6 +255,7 @@ class Project:
         menu_dir.mkdir(exist_ok=True)
 
         menu_db_path = game_data / 'MENU.CDB'
+        # FIXME: not everything in MENU.CDB is a TIM
         Manifest.from_database(menu_dir, menu_db_path, 'TIM')
 
         sound_dir = project_path / 'sound'
@@ -257,7 +268,7 @@ class Project:
 
         # TODO: extract XA audio
 
-        project = cls(project_path, version)
+        project = cls(project_path, version, actor_models)
         project.save()
         return project
 
@@ -274,7 +285,8 @@ class Project:
             project_info = json.load(f)
         version = GameVersion(**project_info['version'])
         last_export_date = datetime.datetime.fromisoformat(project_info['last_export_date'])
-        return cls(project_path, version, last_export_date)
+        actor_models = project_info['actor_models']
+        return cls(project_path, version, actor_models, last_export_date)
 
     def save(self):
         """Save project metadata"""
@@ -282,6 +294,7 @@ class Project:
             json.dump({
                 'version': asdict(self.version),
                 'last_export_date': self.last_export_date.isoformat(),
+                'actor_models': self.actor_models,
             }, f)
 
     def get_stage_backgrounds(self, stage: Stage) -> Manifest:
@@ -313,3 +326,10 @@ class Project:
         db = StringDb()
         db.read(str(path))
         return db
+
+    def get_actor_models(self) -> Iterable[ActorModel]:
+        manifest = Manifest.load_from(self.project_dir / 'models')
+        for actor in ACTORS:
+            model_file = manifest[self.actor_models[actor.id]]
+            with model_file.path.open('rb') as f:
+                yield ActorModel.read(actor, f)

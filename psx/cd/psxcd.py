@@ -3,10 +3,9 @@ import re
 
 from dataclasses import dataclass
 from math import ceil
-from pathlib import Path
 from typing import BinaryIO, ByteString, Iterable, Optional
 
-from psx.cd.region import CdRegion, SystemArea, Directory, File, Free
+from psx.cd.region import CdRegion, SystemArea, Directory, Free
 from psx.cd.disc import Disc, Sector
 
 
