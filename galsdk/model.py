@@ -23,6 +23,7 @@ class Actor:
     name: str
     id: int
     skeleton: dict[int, list[int]]
+    model_index: int = None
 
 
 RION = Actor('Rion', 0, {
@@ -89,7 +90,11 @@ GUARD_HOSPITAL_SKINNY = Actor('Hospital Guard (skinny)', 10, LILIA.skeleton)
 GUARD_HOSPITAL_BURLY = Actor('Hospital Guard (burly)', 11, LILIA.skeleton)
 GUARD_HOSPITAL_GLASSES = Actor('Hospital Guard (sunglasses)', 12, LILIA.skeleton)
 GUARD_MECH_SUIT = Actor('Mech Suit Guard', 13, LILIA.skeleton)
-GUARD_HAZARD_SUIT = Actor('Hazard Suit Guard', 14, LILIA.skeleton)
+GUARD_HAZARD_SUIT = Actor('Hazard Suit Guard', 14, {
+    **RION.skeleton,
+    14: [0, 1, 3, 4, 5],
+    17: [0, 1, 6, 7, 8],
+})
 SNIPER = Actor('Sniper', 15, LILIA.skeleton)
 DOCTOR_BROWN_HAIR = Actor('Doctor (brown hair)', 16, LILIA.skeleton)
 DOCTOR_BLONDE = Actor('Doctor (blonde)', 17, LILIA.skeleton)
@@ -137,15 +142,20 @@ RION_PHONE = Actor('Rion (with phone)', 36, RION.skeleton)
 RION_ALT_1 = Actor('Rion (alternate #1)', 37, RION.skeleton)
 RION_ALT_2 = Actor('Rion (alternate #2)', 38, RION.skeleton)
 
+DOCTOR_UNUSED_1 = Actor('Doctor (unused #1)', 39, RION.skeleton, 38)
+DOCTOR_UNUSED_2 = Actor('Doctor (unused #2)', 40, RION.skeleton, 40)
+DOCTOR_UNUSED_3 = Actor('Doctor (unused #3)', 41, RION.skeleton, 42)
+RION_UNUSED = Actor('Rion (unused)', 42, RION.skeleton, 77)
+
 ACTORS = [
     RION, LILIA, LEM, BIRDMAN, RAINHEART, RITA, CAIN, CROVIC, JOULE, LEM_ROBOT, GUARD_HOSPITAL_SKINNY,
     GUARD_HOSPITAL_BURLY, GUARD_HOSPITAL_GLASSES, GUARD_MECH_SUIT, GUARD_HAZARD_SUIT, SNIPER, DOCTOR_BROWN_HAIR,
     DOCTOR_BLONDE, DOCTOR_BALD, RABBIT_KNIFE, RABBIT_TRENCH_COAT, ARABESQUE_BIPED, HOTEL_KNOCK_GUY, DANCER,
     HOTEL_RECEPTIONIST, HOTEL_GUN_GUY, TERRORIST, PRIEST, RAINHEART_HAT, MECH_SUIT_ALT, RABBIT_UNARMED,
     ARABESQUE_QUADRUPED, HOTEL_KNOCK_GUY_2, UNKNOWN_ACTOR, CROVIC_ALT, DOROTHY_EYE, RION_PHONE, RION_ALT_1, RION_ALT_2,
+    DOCTOR_UNUSED_1, DOCTOR_UNUSED_2, DOCTOR_UNUSED_3, RION_UNUSED,
 ]
 
-NUM_BONES = 19
 CLUT_WIDTH = 16
 BLOCK_WIDTH = 64
 TEXTURE_WIDTH = 0x100
@@ -307,9 +317,81 @@ illum 0
                 tex.append((rest[m * 2], rest[m * 2 + 1]))
         return verts, tex
 
+    @staticmethod
+    def _read_tim(f: BinaryIO) -> Tim:
+        texture = f.read(0x8000)
+        clut = f.read(0x80)
+
+        tim = Tim()
+        tim.set_clut(clut, CLUT_WIDTH)
+        tim.set_image(texture, BitsPerPixel.BPP_4, BLOCK_WIDTH)
+        assert tim.num_palettes == 4
+
+        return tim
+
+    @classmethod
+    def _read_bone(cls, f: BinaryIO, vertices: dict[tuple[int, int, int], int],
+                   uvs: dict[tuple[int, int], int],
+                   triangles: list[tuple[Vertex, Vertex, Vertex]],
+                   quads: list[tuple[Vertex, Vertex, Vertex, Vertex]],
+                   offset: tuple[int, int, int] = (0, 0, 0)):
+        clut_index = int.from_bytes(f.read(2), 'little')
+        tri_verts = []
+        tri_uvs = []
+        quad_verts = []
+        quad_uvs = []
+        v, u = cls._read_chunk(f, 4)
+        quad_verts.extend(v)
+        quad_uvs.extend(u)
+        v, u = cls._read_chunk(f, 3)
+        tri_verts.extend(v)
+        tri_uvs.extend(u)
+        # TODO: the "extra" data is probably normals
+        v, u = cls._read_chunk(f, 4, 0x18)
+        quad_verts.extend(v)
+        quad_uvs.extend(u)
+        v, u = cls._read_chunk(f, 3, 0x12)
+        tri_verts.extend(v)
+        tri_uvs.extend(u)
+
+        tri_verts = [(tv[0] + offset[0], tv[1] + offset[1], tv[2] + offset[2]) for tv in tri_verts]
+        quad_verts = [(qv[0] + offset[0], qv[1] + offset[1], qv[2] + offset[2]) for qv in quad_verts]
+
+        # we'll stack each palette into one image
+        tri_uvs = [(tu[0], tu[1] + TEXTURE_HEIGHT * clut_index) for tu in tri_uvs]
+        quad_uvs = [(qu[0], qu[1] + TEXTURE_HEIGHT * clut_index) for qu in quad_uvs]
+
+        for j in range(len(tri_verts)):
+            if tri_verts[j] not in vertices:
+                vertices[tri_verts[j]] = len(vertices)
+            vert_index = vertices[tri_verts[j]]
+
+            if tri_uvs[j] not in uvs:
+                uvs[tri_uvs[j]] = len(uvs)
+            uv_index = uvs[tri_uvs[j]]
+            tri_verts[j] = Vertex(vert_index, uv_index)
+
+        for j in range(len(quad_verts)):
+            if quad_verts[j] not in vertices:
+                vertices[quad_verts[j]] = len(vertices)
+            vert_index = vertices[quad_verts[j]]
+
+            if quad_uvs[j] not in uvs:
+                uvs[quad_uvs[j]] = len(uvs)
+            uv_index = uvs[quad_uvs[j]]
+            quad_verts[j] = Vertex(vert_index, uv_index)
+
+        for j in range(0, len(tri_verts), 3):
+            triangles.append((tri_verts[j], tri_verts[j + 1], tri_verts[j + 2]))
+
+        for j in range(0, len(quad_verts), 4):
+            quads.append((quad_verts[j], quad_verts[j + 1], quad_verts[j + 2], quad_verts[j + 3]))
+
 
 class ActorModel(Model):
     """A 3D model of an actor (character)"""
+
+    NUM_BONES = 19
 
     def __init__(self, name: str, actor_id: int, vertices: list[tuple[int, int, int]],
                  uvs: list[tuple[int, int]], triangles: list[tuple[Vertex, Vertex, Vertex]],
@@ -320,25 +402,17 @@ class ActorModel(Model):
 
     @classmethod
     def read(cls, actor: Actor, f: BinaryIO) -> ActorModel:
+        # a list of the x/y/z positions of each bone relative to its parent
+        # the size of this list is not a multiple of 3, so the last number goes unused, and it also isn't long enough
+        # to have entries for every bone, so the last 4 bones can't be the parent of another bone
         offsets = struct.unpack('46h', f.read(0x5c))
-        texture = f.read(0x8000)
-        clut = f.read(0x80)
-
-        tim = Tim()
-        tim.set_clut(clut, CLUT_WIDTH)
-        tim.set_image(texture, BitsPerPixel.BPP_4, BLOCK_WIDTH)
-        assert tim.num_palettes == 4
+        tim = cls._read_tim(f)
 
         vertices = {}
         uvs = {}
         triangles: list[tuple[Vertex, Vertex, Vertex]] = []
         quads: list[tuple[Vertex, Vertex, Vertex, Vertex]] = []
-        for i in range(NUM_BONES):
-            clut_index = int.from_bytes(f.read(2), 'little')
-            tri_verts = []
-            tri_uvs = []
-            quad_verts = []
-            quad_uvs = []
+        for i in range(cls.NUM_BONES):
             match actor.skeleton.get(i):
                 case [*indexes]:
                     offset = (0, 0, 0)
@@ -349,54 +423,38 @@ class ActorModel(Model):
                             offset[2] + offsets[index * 3 + 2],
                         )
                 case None:
+                    # debug code to shift any unknown parts off to the side where we can get a better look at them
                     offset = (i * 0x80, -0x40 if (i & 1) == 1 else 0x40, 0)
                 case index:
                     offset = (offsets[index * 3], offsets[index * 3 + 1], offsets[index * 3 + 2])
-            v, u = cls._read_chunk(f, 4)
-            quad_verts.extend(v)
-            quad_uvs.extend(u)
-            v, u = cls._read_chunk(f, 3)
-            tri_verts.extend(v)
-            tri_uvs.extend(u)
-            # TODO: the "extra" data is probably normals
-            v, u = cls._read_chunk(f, 4, 0x18)
-            quad_verts.extend(v)
-            quad_uvs.extend(u)
-            v, u = cls._read_chunk(f, 3, 0x12)
-            tri_verts.extend(v)
-            tri_uvs.extend(u)
-
-            tri_verts = [(tv[0] + offset[0], tv[1] + offset[1], tv[2] + offset[2]) for tv in tri_verts]
-            quad_verts = [(qv[0] + offset[0], qv[1] + offset[1], qv[2] + offset[2]) for qv in quad_verts]
-
-            # we'll stack each palette into one image
-            tri_uvs = [(tu[0], tu[1] + 0x100 * clut_index) for tu in tri_uvs]
-            quad_uvs = [(qu[0], qu[1] + 0x100 * clut_index) for qu in quad_uvs]
-
-            for j in range(len(tri_verts)):
-                if tri_verts[j] not in vertices:
-                    vertices[tri_verts[j]] = len(vertices)
-                vert_index = vertices[tri_verts[j]]
-
-                if tri_uvs[j] not in uvs:
-                    uvs[tri_uvs[j]] = len(uvs)
-                uv_index = uvs[tri_uvs[j]]
-                tri_verts[j] = Vertex(vert_index, uv_index)
-
-            for j in range(len(quad_verts)):
-                if quad_verts[j] not in vertices:
-                    vertices[quad_verts[j]] = len(vertices)
-                vert_index = vertices[quad_verts[j]]
-
-                if quad_uvs[j] not in uvs:
-                    uvs[quad_uvs[j]] = len(uvs)
-                uv_index = uvs[quad_uvs[j]]
-                quad_verts[j] = Vertex(vert_index, uv_index)
-
-            for j in range(0, len(tri_verts), 3):
-                triangles.append((tri_verts[j], tri_verts[j + 1], tri_verts[j + 2]))
-
-            for j in range(0, len(quad_verts), 4):
-                quads.append((quad_verts[j], quad_verts[j + 1], quad_verts[j + 2], quad_verts[j + 3]))
+            cls._read_bone(f, vertices, uvs, triangles, quads, offset)
 
         return cls(actor.name, actor.id, list(vertices), list(uvs), triangles, quads, tim)
+
+
+class ItemModel(Model):
+    """A 3D model of an item"""
+
+    MAX_BONES = 19
+
+    def __init__(self, name: str, vertices: list[tuple[int, int, int]],
+                 uvs: list[tuple[int, int]], triangles: list[tuple[Vertex, Vertex, Vertex]],
+                 quads: list[tuple[Vertex, Vertex, Vertex, Vertex]], texture: Tim):
+        super().__init__(vertices, uvs, triangles, quads, texture)
+        self.name = name
+
+    @classmethod
+    def read(cls, name: str, f: BinaryIO) -> ItemModel:
+        # FIXME: some of these models should have partial transparency but I don't really get how that works
+        tim = cls._read_tim(f)
+
+        vertices = {}
+        uvs = {}
+        triangles = []
+        quads = []
+        for _ in range(cls.MAX_BONES):
+            try:
+                cls._read_bone(f, vertices, uvs, triangles, quads)
+            except struct.error:
+                break
+        return cls(name, list(vertices), list(uvs), triangles, quads, tim)

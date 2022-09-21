@@ -34,9 +34,17 @@ class ModelTab(Tab):
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
 
+        self.tree.insert('', tk.END, text='Actors', iid='actors')
         for model in self.project.get_actor_models():
+            model_id = len(self.models)
             self.models.append(model)
-            self.tree.insert('', tk.END, text=model.name, iid=str(model.id))
+            self.tree.insert('actors', tk.END, text=model.name, iid=str(model_id))
+
+        self.tree.insert('', tk.END, text='Items', iid='items')
+        for model in self.project.get_item_models():
+            model_id = len(self.models)
+            self.models.append(model)
+            self.tree.insert('items', tk.END, text=model.name, iid=str(model_id))
 
         self.model_frame = ttk.Frame(self, width=1280, height=720)
 
@@ -101,7 +109,7 @@ class ModelTab(Tab):
                 self.node_path.setP(self.node_path, y_diff * self.ROTATE_SCALE_Y % 360)
 
             if is_panning and self.was_panning_last_frame:
-                self.camera.setX(self.camera.getX() - x_diff * self.PAN_SCALE_X)
+                self.camera.setX(self.camera.getX() + x_diff * self.PAN_SCALE_X)
                 self.camera.setZ(self.camera.getZ() - y_diff * self.PAN_SCALE_Y)
 
             self.last_x = mouse_x

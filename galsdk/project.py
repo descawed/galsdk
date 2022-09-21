@@ -15,7 +15,7 @@ from typing import Iterable
 from galsdk.db import Database
 from galsdk.font import Font
 from galsdk.manifest import Manifest
-from galsdk.model import ACTORS, ActorModel
+from galsdk.model import ACTORS, ActorModel, ItemModel
 from galsdk.movie import Movie
 from galsdk.string import StringDb
 from psx import Region
@@ -235,7 +235,8 @@ class Project:
         model_dir = project_path / 'models'
         model_dir.mkdir(exist_ok=True)
         Manifest.from_database(model_dir, model_db_path)
-        num_actors = len(ACTORS)
+        # only actors without a manually-assigned model index are in the list
+        num_actors = sum(1 if actor.model_index is None else 0 for actor in ACTORS)
         actor_models = list(
             struct.unpack(f'{num_actors}h', exe[addresses['ActorModels']:addresses['ActorModels'] + 2 * num_actors])
         )
@@ -288,6 +289,14 @@ class Project:
         actor_models = project_info['actor_models']
         return cls(project_path, version, actor_models, last_export_date)
 
+    @property
+    def all_actor_models(self) -> set[int]:
+        all_actor_models = set(self.actor_models)
+        for actor in ACTORS:
+            if actor.model_index is not None:
+                all_actor_models.add(actor.model_index)
+        return all_actor_models
+
     def save(self):
         """Save project metadata"""
         with (self.project_dir / 'project.json').open('w') as f:
@@ -330,6 +339,18 @@ class Project:
     def get_actor_models(self) -> Iterable[ActorModel]:
         manifest = Manifest.load_from(self.project_dir / 'models')
         for actor in ACTORS:
-            model_file = manifest[self.actor_models[actor.id]]
+            if actor.model_index is None:
+                model_index = self.actor_models[actor.id]
+            else:
+                model_index = actor.model_index
+            model_file = manifest[model_index]
             with model_file.path.open('rb') as f:
                 yield ActorModel.read(actor, f)
+
+    def get_item_models(self) -> Iterable[ItemModel]:
+        all_actor_models = self.all_actor_models
+        manifest = Manifest.load_from(self.project_dir / 'models')
+        for i, model_file in enumerate(manifest):
+            if i not in all_actor_models:
+                with model_file.path.open('rb') as f:
+                    yield ItemModel.read(f'{i} ({i:03X})', f)
