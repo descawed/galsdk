@@ -142,10 +142,11 @@ RION_PHONE = Actor('Rion (with phone)', 36, RION.skeleton)
 RION_ALT_1 = Actor('Rion (alternate #1)', 37, RION.skeleton)
 RION_ALT_2 = Actor('Rion (alternate #2)', 38, RION.skeleton)
 
-DOCTOR_UNUSED_1 = Actor('Doctor (unused #1)', 39, RION.skeleton, 38)
-DOCTOR_UNUSED_2 = Actor('Doctor (unused #2)', 40, RION.skeleton, 40)
-DOCTOR_UNUSED_3 = Actor('Doctor (unused #3)', 41, RION.skeleton, 42)
-RION_UNUSED = Actor('Rion (unused)', 42, RION.skeleton, 77)
+UNKNOWN_UNUSED = Actor('Unknown (unused)', 39, RION.skeleton, 20)
+DOCTOR_UNUSED_1 = Actor('Doctor (unused #1)', 40, RION.skeleton, 38)
+DOCTOR_UNUSED_2 = Actor('Doctor (unused #2)', 41, RION.skeleton, 40)
+DOCTOR_UNUSED_3 = Actor('Doctor (unused #3)', 42, RION.skeleton, 42)
+RION_UNUSED = Actor('Rion (unused)', 43, RION.skeleton, 77)
 
 ACTORS = [
     RION, LILIA, LEM, BIRDMAN, RAINHEART, RITA, CAIN, CROVIC, JOULE, LEM_ROBOT, GUARD_HOSPITAL_SKINNY,
@@ -153,7 +154,7 @@ ACTORS = [
     DOCTOR_BLONDE, DOCTOR_BALD, RABBIT_KNIFE, RABBIT_TRENCH_COAT, ARABESQUE_BIPED, HOTEL_KNOCK_GUY, DANCER,
     HOTEL_RECEPTIONIST, HOTEL_GUN_GUY, TERRORIST, PRIEST, RAINHEART_HAT, MECH_SUIT_ALT, RABBIT_UNARMED,
     ARABESQUE_QUADRUPED, HOTEL_KNOCK_GUY_2, UNKNOWN_ACTOR, CROVIC_ALT, DOROTHY_EYE, RION_PHONE, RION_ALT_1, RION_ALT_2,
-    DOCTOR_UNUSED_1, DOCTOR_UNUSED_2, DOCTOR_UNUSED_3, RION_UNUSED,
+    UNKNOWN_UNUSED, DOCTOR_UNUSED_1, DOCTOR_UNUSED_2, DOCTOR_UNUSED_3, RION_UNUSED,
 ]
 
 CLUT_WIDTH = 16

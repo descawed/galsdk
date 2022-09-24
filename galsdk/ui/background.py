@@ -38,7 +38,8 @@ class BackgroundTab(ImageViewerTab):
             db_path = self.dbs[index]
             if db_path[1] is None:
                 db = TimDb()
-                db.read(db_path[0])
+                with open(db_path[0], 'rb') as f:
+                    db.read(f)
                 self.dbs[index] = (db_path[0], db)
                 db_id = f'db_{index}'
                 self.tree.set_children(db_id)  # remove the dummy entry

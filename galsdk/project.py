@@ -188,7 +188,8 @@ class Project:
             exe = Exe.read(f)
 
         display_db = Database()
-        display_db.read(str(display_db_path))
+        with display_db_path.open('rb') as f:
+            display_db.read(f)
 
         # prepare project directory
         export_dir = project_path / 'export'
@@ -333,7 +334,8 @@ class Project:
     def get_stage_strings(self, stage: Stage) -> StringDb:
         path = self.project_dir / 'stages' / stage / 'strings.db'
         db = StringDb()
-        db.read(str(path))
+        with path.open('rb') as f:
+            db.read(f)
         return db
 
     def get_actor_models(self) -> Iterable[ActorModel]:

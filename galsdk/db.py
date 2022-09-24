@@ -1,7 +1,7 @@
 import math
 import os.path
 
-from typing import Container, Iterable
+from typing import BinaryIO, Container, Iterable
 
 
 class Database:
@@ -25,66 +25,64 @@ class Database:
         self.extended = extended
         self.files = []
 
-    def read(self, path: str):
+    def read(self, f: BinaryIO):
         """
         Read a database file from a given path
 
-        :param path: Path to the database file
+        :param f: Binary data stream to read the database file from
         """
         self.files = []
-        with open(path, 'rb') as f:
-            num_entries = int.from_bytes(f.read(2), 'little')
-            self.extended = int.from_bytes(f.read(2), 'little') != 0
+        num_entries = int.from_bytes(f.read(2), 'little')
+        self.extended = int.from_bytes(f.read(2), 'little') != 0
+        if self.extended:
+            # skip over 4 dummy bytes
+            f.seek(4, 1)
+        directory = f.read((8 if self.extended else 4)*num_entries)
+        i = 0
+        while i < len(directory):
+            start_sector = int.from_bytes(directory[i:i+2], 'little')
+            num_sectors = int.from_bytes(directory[i+2:i+4], 'little')
             if self.extended:
-                # skip over 4 dummy bytes
-                f.seek(4, 1)
-            directory = f.read((8 if self.extended else 4)*num_entries)
-            i = 0
-            while i < len(directory):
-                start_sector = int.from_bytes(directory[i:i+2], 'little')
-                num_sectors = int.from_bytes(directory[i+2:i+4], 'little')
-                if self.extended:
-                    final_sector_len = int.from_bytes(directory[i+4:i+6], 'little')
-                    i += 8
-                else:
-                    final_sector_len = self.SECTOR_SIZE
-                    i += 4
-                f.seek(start_sector*self.SECTOR_SIZE)
-                size = (num_sectors - 1)*self.SECTOR_SIZE + final_sector_len
-                self.append(f.read(size))
+                final_sector_len = int.from_bytes(directory[i+4:i+6], 'little')
+                i += 8
+            else:
+                final_sector_len = self.SECTOR_SIZE
+                i += 4
+            f.seek(start_sector*self.SECTOR_SIZE)
+            size = (num_sectors - 1)*self.SECTOR_SIZE + final_sector_len
+            self.append(f.read(size))
 
-    def write(self, path: str):
+    def write(self, f: BinaryIO):
         """
         Write the files in this database to a single packed database file
 
-        :param path: Path to the database file to be written
+        :param f: Binary data stream to write the database file to
         """
-        with open(path, 'wb') as f:
-            f.write(len(self.files).to_bytes(2, 'little'))
+        f.write(len(self.files).to_bytes(2, 'little'))
+        if self.extended:
+            f.write(b'\x01\0\0\0\0\0')
+        else:
+            f.write(b'\0\0')
+
+        current_sector = 1
+        for data in self.files:
+            f.write(current_sector.to_bytes(2, 'little'))
+            sector_count = math.ceil(len(data)/self.SECTOR_SIZE)
+            f.write(sector_count.to_bytes(2, 'little'))
             if self.extended:
-                f.write(b'\x01\0\0\0\0\0')
-            else:
-                f.write(b'\0\0')
+                final_sector_len = len(data) % self.SECTOR_SIZE
+                # this is actually a 16-bit value but the last two bytes of the directory entry are unused
+                f.write(final_sector_len.to_bytes(4, 'little'))
+            current_sector += sector_count
 
-            current_sector = 1
-            for data in self.files:
-                f.write(current_sector.to_bytes(2, 'little'))
-                sector_count = math.ceil(len(data)/self.SECTOR_SIZE)
-                f.write(sector_count.to_bytes(2, 'little'))
-                if self.extended:
-                    final_sector_len = len(data) % self.SECTOR_SIZE
-                    # this is actually a 16-bit value but the last two bytes of the directory entry are unused
-                    f.write(final_sector_len.to_bytes(4, 'little'))
-                current_sector += sector_count
-
-            bytes_remaining = self.SECTOR_SIZE - f.tell()
-            if bytes_remaining < 0:
-                raise OverflowError('Too many files')
+        bytes_remaining = self.SECTOR_SIZE - f.tell()
+        if bytes_remaining < 0:
+            raise OverflowError('Too many files')
+        f.write(b'\0' * bytes_remaining)
+        for data in self.files:
+            f.write(data)
+            bytes_remaining = self.SECTOR_SIZE - (len(data) % self.SECTOR_SIZE)
             f.write(b'\0' * bytes_remaining)
-            for data in self.files:
-                f.write(data)
-                bytes_remaining = self.SECTOR_SIZE - (len(data) % self.SECTOR_SIZE)
-                f.write(b'\0' * bytes_remaining)
 
     def __iter__(self) -> Iterable[bytes]:
         """Iterate over the files in the database"""
@@ -124,12 +122,14 @@ def pack(extended: bool, files: Iterable[str], cdb: str):
     db = Database(extended)
     for path in files:
         db.append_file(path)
-    db.write(cdb)
+    with open(cdb, 'wb') as f:
+        db.write(f)
 
 
 def unpack(cdb: str, target: str, indexes: Container[int] = None):
     db = Database()
-    db.read(cdb)
+    with open(cdb, 'rb') as f:
+        db.read(f)
     for i, data in enumerate(db):
         if indexes and i not in indexes:
             continue

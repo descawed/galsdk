@@ -113,6 +113,7 @@ class Manifest:
         """
         manifest = cls(manifest_path, db_path.stem)
         db = Database()
-        db.read(str(db_path))
+        with db_path.open('rb') as f:
+            db.read(f)
         manifest.unpack_database(db, extension)
         return manifest

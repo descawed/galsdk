@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import BinaryIO, Iterable
 
 
 # we keep everything as bytes internally because there are some cases where there are bogus characters in the data
@@ -24,44 +24,42 @@ class StringDb:
         self.strings = []
         self.encoding = encoding
 
-    def read(self, path: str):
+    def read(self, f: BinaryIO):
         """
         Read a string database file
 
-        :param path: Path to the string database
+        :param f: Binary data stream to read the string databse from
         """
         self.strings = []
-        with open(path, 'rb') as f:
-            magic = f.read(2)
-            if magic != self.MAGIC:
-                raise ValueError(f'{path} is not a string database')
-            num_strings = int.from_bytes(f.read(2), 'little')
-            offsets = [int.from_bytes(f.read(4), 'little') for _ in range(num_strings)]
-            for offset in offsets:
-                f.seek(offset)
-                data = b''
-                while c := f.read(1):
-                    if c == b'\0':
-                        break
-                    data += c
-                self.strings.append(data)
+        magic = f.read(2)
+        if magic != self.MAGIC:
+            raise ValueError('Not a string database')
+        num_strings = int.from_bytes(f.read(2), 'little')
+        offsets = [int.from_bytes(f.read(4), 'little') for _ in range(num_strings)]
+        for offset in offsets:
+            f.seek(offset)
+            data = b''
+            while c := f.read(1):
+                if c == b'\0':
+                    break
+                data += c
+            self.strings.append(data)
 
-    def write(self, path: str):
+    def write(self, f: BinaryIO):
         """
         Write the strings in this object out to a database file
 
-        :param path: Path to the string database to be written
+        :param f: Binary data stream to write the string database to
         """
-        with open(path, 'wb') as f:
-            header_size = (len(self.strings) + 1)*4
-            f.write(self.MAGIC)
-            f.write(len(self.strings).to_bytes(2, 'little'))
-            pos = header_size
-            for s in self.strings:
-                f.write(pos.to_bytes(4, 'little'))
-                pos += len(s) + 1  # +1 for null byte
-            for s in self.strings:
-                f.write(s + b'\0')
+        header_size = (len(self.strings) + 1)*4
+        f.write(self.MAGIC)
+        f.write(len(self.strings).to_bytes(2, 'little'))
+        pos = header_size
+        for s in self.strings:
+            f.write(pos.to_bytes(4, 'little'))
+            pos += len(s) + 1  # +1 for null byte
+        for s in self.strings:
+            f.write(s + b'\0')
 
     def __getitem__(self, item: int) -> str:
         """Get a string from the database"""
@@ -118,12 +116,14 @@ def pack(input_path: str, output_path: str):
                 s += c
         if s:
             sdb.append_raw(s)
-    sdb.write(output_path)
+    with open(output_path, 'wb') as f:
+        sdb.write(f)
 
 
 def unpack(input_path: str, output_path: str):
     sdb = StringDb()
-    sdb.read(input_path)
+    with open(input_path, 'rb') as f:
+        sdb.read(f)
     with open(output_path, 'wb') as f:
         for string in sdb.iter_raw():
             f.write(string + b'\n')
