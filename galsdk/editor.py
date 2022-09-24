@@ -7,7 +7,7 @@ from typing import Optional
 from direct.showbase.ShowBase import ShowBase
 
 from galsdk.project import GameVersion, Project
-from galsdk.ui import BackgroundTab, ModelTab, MovieTab, StringTab, Tab
+from galsdk.ui import ActorTab, BackgroundTab, ItemTab, MovieTab, StringTab, Tab
 
 
 class Editor(ShowBase):
@@ -169,8 +169,8 @@ class Editor(ShowBase):
 
         self.makeDefaultPipe()
 
-        tabs: list[Tab] = [StringTab(self.project), ModelTab(self.project, self), BackgroundTab(self.project),
-                           MovieTab(self.project, self)]
+        tabs: list[Tab] = [StringTab(self.project), ActorTab(self.project, self), BackgroundTab(self.project),
+                           ItemTab(self.project, self), MovieTab(self.project, self)]
         for tab in tabs:
             self.tabs.add(tab, text=tab.name)
 

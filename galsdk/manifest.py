@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Iterable
+from typing import Iterable
 
 from galsdk.db import Database
+from galsdk.tim import TimDb
 
 
 @dataclass
@@ -16,6 +17,8 @@ class ManifestFile:
 
 class Manifest:
     """A manifest records an ordered list of files that belong to a database"""
+
+    files: list[ManifestFile]
 
     def __init__(self, path: Path, name: str = None):
         """
@@ -51,6 +54,21 @@ class Manifest:
         with (self.path / 'manifest.json').open('w') as f:
             json.dump({'name': self.name, 'files': files}, f)
 
+    def unpack_tim_database(self, db: TimDb):
+        files = []
+        for i, entry in enumerate(db):
+            name = f'{i:03X}'
+            filename = f'{name}.TIM'
+            files.append({'name': name, 'path': filename})
+            file_path = self.path / filename
+            mf = ManifestFile(name, file_path)
+            self.files.append(mf)
+            self.name_map[name] = mf
+            with file_path.open('wb') as f:
+                entry.write(f)
+        with (self.path / 'manifest.json').open('w') as f:
+            json.dump({'name': self.name, 'files': files}, f)
+
     def load(self):
         """Load the last saved manifest data for this path"""
         with (self.path / 'manifest.json').open() as f:
@@ -79,10 +97,12 @@ class Manifest:
         """Number of files in the manifest"""
         return len(self.files)
 
-    def rename(self, key: int | str, name: str):
+    def rename(self, key: int | str, name: str, on_disk: bool = True):
         """Rename a file in the manifest by index or name"""
         mf = self.files[key] if isinstance(key, int) else self.name_map[key]
         if name != mf.name:
+            if on_disk:
+                mf.path = mf.path.rename(mf.path.with_stem(name))
             if name in self.name_map:
                 raise KeyError(f'There is already an entry named {name}')
             del self.name_map[mf.name]
@@ -116,4 +136,13 @@ class Manifest:
         with db_path.open('rb') as f:
             db.read(f)
         manifest.unpack_database(db, extension)
+        return manifest
+
+    @classmethod
+    def from_tim_database(cls, manifest_path: Path, db_path: Path, compressed: bool = False) -> Manifest:
+        manifest = cls(manifest_path, db_path.stem)
+        db = TimDb()
+        with db_path.open('rb') as f:
+            db.read(f, compressed)
+        manifest.unpack_tim_database(db)
         return manifest

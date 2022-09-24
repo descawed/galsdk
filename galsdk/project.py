@@ -35,6 +35,72 @@ class Stage(str, Enum):
 
 
 @dataclass
+class Item:
+    id: int
+    name: str
+    model: ItemModel | None
+    description_index: int
+    is_key_item: bool = True
+
+
+KEY_ITEM_NAMES = [
+    'Unused',
+    'Security Card',
+    'Beeject',
+    'Freezer Room Key',
+    'PPEC Storage Key',
+    'Fuse',
+    'Liquid Explosive',
+    'Unused',
+    'Security Card (reformatted)',
+    'Special PPEC Office Key',
+    'Unused',
+    'Test Lab Key',
+    'Control Room Key',
+    'Research Lab Key',
+    'Two-Headed Snake',
+    'Two-Headed Monkey',
+    'Two-Headed Wolf',
+    'Two-Headed Eagle',
+    'Unused',
+    'Backdoor Key',
+    'Door Knob',
+    '9 Ball',
+    "Mother's Ring",
+    "Father's Ring",
+    "Lilia's Doll",
+    'Metamorphosis',
+    'Bedroom Key',
+    'Second Floor Key',
+    'Medical Staff Notes',
+    'G Project Report',
+    'Photo of Parents',
+    "Rion's test data",
+    "Dr. Lem's Notes",
+    'New Replicative Computer Theory',
+    "Dr. Pascalle's Diary",
+    'Letter from Elsa',
+    'Newspaper',
+    '3 Ball',
+    'Shed Key',
+    'Letter from Lilia',
+]
+
+MED_ITEM_NAMES = [
+    'Nalcon',
+    'Red',
+    'D-Felon',
+    'Recovery Capsule',
+    'Delmetor',
+    'Appollinar',
+    'Skip',
+]
+
+NUM_KEY_ITEMS = len(KEY_ITEM_NAMES)
+NUM_MED_ITEMS = len(MED_ITEM_NAMES)
+
+
+@dataclass
 class GameVersion:
     """Information on the specific version of the game this project was created from and will be exported as"""
 
@@ -75,6 +141,9 @@ ADDRESSES = {
     'SLUS-00986': {
         'FontMetrics': 0x80191364,
         'ActorModels': 0x80192F18,
+        'ItemArt': 0x80190ED4,
+        'KeyItemDescriptions': 0x80192A28,
+        'MedItemDescriptions': 0x80192ACC,
     }
 }
 
@@ -178,7 +247,6 @@ class Project:
         config_path = game_path / 'SYSTEM.CNF'
         game_data = game_path / 'T4'
         display_db_path = game_data / 'DISPLAY.CDB'
-        model_db_path = game_data / 'MODEL.CDB'
 
         with config_path.open() as f:
             config = Config.read(f)
@@ -196,7 +264,6 @@ class Project:
         export_dir.mkdir(exist_ok=True)
         shutil.copy(base_image, export_dir / 'output.bin')
         shutil.copy(display_db_path, export_dir)
-        shutil.copy(model_db_path, export_dir)
 
         font_image_path = project_path / 'font.tim'
         with font_image_path.open('wb') as f:
@@ -233,6 +300,7 @@ class Project:
             with string_path.open('wb') as f:
                 f.write(display_db[string_offset + i])
 
+        model_db_path = game_data / 'MODEL.CDB'
         model_dir = project_path / 'models'
         model_dir.mkdir(exist_ok=True)
         Manifest.from_database(model_dir, model_db_path)
@@ -242,11 +310,28 @@ class Project:
             struct.unpack(f'{num_actors}h', exe[addresses['ActorModels']:addresses['ActorModels'] + 2 * num_actors])
         )
 
-        item_dir = project_path / 'items'
-        item_dir.mkdir(exist_ok=True)
+        raw_item_art = struct.unpack(f'{4 * NUM_KEY_ITEMS}I',
+                                     exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * NUM_KEY_ITEMS])
+        item_art = [(raw_item_art[i], raw_item_art[i+1], raw_item_art[i+2], raw_item_art[i+3])
+                    for i in range(0, len(raw_item_art), 4)]
 
-        # TODO: extract item images
-        # TODO: extract item models
+        key_item_descriptions = list(
+            struct.unpack(f'{NUM_KEY_ITEMS}I',
+                          exe[addresses['KeyItemDescriptions']:addresses['KeyItemDescriptions'] + 4 * NUM_KEY_ITEMS])
+        )
+        med_item_descriptions = list(
+            struct.unpack(f'{NUM_MED_ITEMS}I',
+                          exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * NUM_MED_ITEMS])
+        )
+
+        item_path = project_path / 'item.json'
+        items = []
+        for i in range(NUM_KEY_ITEMS):
+            items.append({'id': i, 'model': item_art[i][0], 'description': key_item_descriptions[i]})
+        for i in range(NUM_MED_ITEMS):
+            items.append({'id': i, 'model': None, 'description': med_item_descriptions[i]})
+        with item_path.open('w') as f:
+            json.dump(items, f)
 
         room_dir = project_path / 'rooms'
         room_dir.mkdir(exist_ok=True)
@@ -257,8 +342,17 @@ class Project:
         menu_dir.mkdir(exist_ok=True)
 
         menu_db_path = game_data / 'MENU.CDB'
-        # FIXME: not everything in MENU.CDB is a TIM
-        Manifest.from_database(menu_dir, menu_db_path, 'TIM')
+        # TODO: figure out what all of the stuff in here does
+        menu_manifest = Manifest.from_database(menu_dir, menu_db_path)
+        # sub-databases
+        item_art_dir = menu_dir / 'item_art'
+        item_art_dir.mkdir(exist_ok=True)
+        item_art_file = menu_manifest[53]
+        item_art_manifest = Manifest.from_tim_database(item_art_dir, item_art_file.path, True)
+        item_art_manifest.rename(36, 'medicine_icons')
+        item_art_manifest.rename(37, 'key_item_icons')
+        item_art_manifest.rename(41, 'ability_icons')
+        item_art_manifest.save()
 
         sound_dir = project_path / 'sound'
         sound_dir.mkdir(exist_ok=True)
@@ -320,14 +414,6 @@ class Project:
         for path in (self.project_dir / 'stages' / stage / 'movies').glob('*.STR'):
             yield Movie(path)
 
-    def get_menus(self) -> Manifest:
-        """
-        Get the manifest of menu images
-
-        :return: The manifest of menu images
-        """
-        return Manifest.load_from(self.project_dir / 'menu')
-
     def get_font(self) -> Font:
         return Font.load(self.project_dir)
 
@@ -349,10 +435,22 @@ class Project:
             with model_file.path.open('rb') as f:
                 yield ActorModel.read(actor, f)
 
-    def get_item_models(self) -> Iterable[ItemModel]:
-        all_actor_models = self.all_actor_models
-        manifest = Manifest.load_from(self.project_dir / 'models')
-        for i, model_file in enumerate(manifest):
-            if i not in all_actor_models:
+    def get_item_art(self) -> Manifest:
+        return Manifest.load_from(self.project_dir / 'menu' / 'item_art')
+
+    def get_items(self) -> Iterable[Item]:
+        model_manifest = Manifest.load_from(self.project_dir / 'models')
+        json_path = self.project_dir / 'item.json'
+        with json_path.open() as f:
+            info = json.load(f)
+        for entry in info:
+            is_key_item = entry['model'] is not None
+            if is_key_item:
+                name = KEY_ITEM_NAMES[entry['id']]
+                model_file = model_manifest[entry['model']]
                 with model_file.path.open('rb') as f:
-                    yield ItemModel.read(f'{i} ({i:03X})', f)
+                    model = ItemModel.read(name, f)
+            else:
+                name = MED_ITEM_NAMES[entry['id']]
+                model = None
+            yield Item(entry['id'], name, model, entry['description'], is_key_item)

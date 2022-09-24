@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from galsdk.tile import TileSet
 from psx.tim import Tim
 
 
@@ -31,9 +32,8 @@ class Font:
     SPACE_WIDTH = 8
 
     def __init__(self, image: Tim, char_widths: dict[int, int]):
-        self.image = image
+        self.tile_set = TileSet(image, self.CHAR_WIDTH, self.CHAR_HEIGHT)
         self.char_widths = char_widths
-        self.cluts = [self.image.to_image(i) for i in range(16)]
 
     def _parse_string(self, string: bytes) -> tuple[list, int, int]:
         expect = 'char'
@@ -114,11 +114,8 @@ class Font:
                 x += self.SPACE_WIDTH
             else:
                 # regular character
-                char_index = elem - 0x20
-                font_x = char_index % 16 * self.CHAR_WIDTH
-                font_y = char_index // 16 * self.CHAR_HEIGHT
                 width = self.char_widths[elem]
-                char = self.cluts[clut].crop((font_x, font_y, font_x + self.CHAR_WIDTH, font_y + self.CHAR_HEIGHT))
+                char = self.tile_set.get(elem - 0x20, clut)
                 image.paste(char, (x, y))
                 x += width
         return image

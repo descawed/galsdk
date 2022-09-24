@@ -1,6 +1,5 @@
 import io
 import os.path
-import sys
 from typing import BinaryIO, Container, Iterable
 
 from psx.tim import Tim
