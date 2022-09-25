@@ -356,8 +356,15 @@ class Project:
 
         sound_dir = project_path / 'sound'
         sound_dir.mkdir(exist_ok=True)
-
-        # TODO: extract sound database
+        sound_db_path = game_data / 'SOUND.CDB'
+        sound_manifest = Manifest.from_database(sound_dir, sound_db_path)
+        # make sub-databases for all the VAB DBs
+        for i, entry in enumerate(sound_manifest):
+            vab_dir = sound_dir / str(i)
+            vab_dir.mkdir(exist_ok=True)
+            if Manifest.from_vab_database(vab_dir, entry.path) is None:
+                # remove the empty dir we made
+                vab_dir.rmdir()
 
         voice_dir = project_path / 'voice'
         voice_dir.mkdir(exist_ok=True)

@@ -2,11 +2,23 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Iterable
 
 from galsdk.db import Database
 from galsdk.tim import TimDb
+from galsdk.vab import VabDb
+
+
+class DatabaseType(str, Enum):
+    CDB = 'cdb'
+    TIM = 'tim'
+    VAB = 'vab'
+    VAB_ALT = 'vab_alt'
+
+    def __str__(self):
+        return self.value
 
 
 @dataclass
@@ -20,7 +32,7 @@ class Manifest:
 
     files: list[ManifestFile]
 
-    def __init__(self, path: Path, name: str = None):
+    def __init__(self, path: Path, name: str = None, db_type: DatabaseType = DatabaseType.CDB):
         """
         Create a new empty manifest at the given path with the given name
 
@@ -31,6 +43,7 @@ class Manifest:
         self.name = name
         self.files = []
         self.name_map = {}
+        self.type = db_type
 
     def unpack_database(self, db: Database, extension: str = None):
         """
@@ -39,35 +52,41 @@ class Manifest:
         :param db: Database to unpack
         :param extension: If not None, the unpacked files will have this extension added
         """
-        files = []
         ext = f'.{extension}' if extension is not None else ''
         for i, entry in enumerate(db):
             name = f'{i:03X}'
             filename = f'{name}{ext}'
-            files.append({'name': name, 'path': filename})
             file_path = self.path / filename
             mf = ManifestFile(name, file_path)
             self.files.append(mf)
             self.name_map[name] = mf
             with file_path.open('wb') as f:
                 f.write(entry)
-        with (self.path / 'manifest.json').open('w') as f:
-            json.dump({'name': self.name, 'files': files}, f)
+        self.save()
 
     def unpack_tim_database(self, db: TimDb):
-        files = []
         for i, entry in enumerate(db):
             name = f'{i:03X}'
             filename = f'{name}.TIM'
-            files.append({'name': name, 'path': filename})
             file_path = self.path / filename
             mf = ManifestFile(name, file_path)
             self.files.append(mf)
             self.name_map[name] = mf
             with file_path.open('wb') as f:
                 entry.write(f)
-        with (self.path / 'manifest.json').open('w') as f:
-            json.dump({'name': self.name, 'files': files}, f)
+        self.save()
+
+    def unpack_vab_database(self, db: VabDb):
+        for ext, entries in db.files_with_type:
+            for i, entry in enumerate(entries):
+                name = f'{i:03X}.{ext}'
+                file_path = self.path / name
+                mf = ManifestFile(name, file_path)
+                self.files.append(mf)
+                self.name_map[name] = mf
+                with file_path.open('wb') as f:
+                    f.write(entry)
+        self.save()
 
     def load(self):
         """Load the last saved manifest data for this path"""
@@ -76,13 +95,15 @@ class Manifest:
         self.name = manifest['name']
         self.files = [ManifestFile(entry['name'], self.path / entry['path']) for entry in manifest['files']]
         self.name_map = {mf.name: mf for mf in self.files}
+        self.type = DatabaseType(manifest['type'])
 
     def save(self):
         """Save the current file data for this manifest"""
         with (self.path / 'manifest.json').open('w') as f:
             json.dump({
                 'name': self.name,
-                'files': [{'name': mf.name, 'path': mf.path.name} for mf in self.files]
+                'files': [{'name': mf.name, 'path': mf.path.name} for mf in self.files],
+                'type': self.type,
             }, f)
 
     def __getitem__(self, item: int | str) -> ManifestFile:
@@ -102,7 +123,9 @@ class Manifest:
         mf = self.files[key] if isinstance(key, int) else self.name_map[key]
         if name != mf.name:
             if on_disk:
-                mf.path = mf.path.rename(mf.path.with_stem(name))
+                new_path = mf.path.with_stem(name)
+                new_path.unlink(True)
+                mf.path = mf.path.rename(new_path)
             if name in self.name_map:
                 raise KeyError(f'There is already an entry named {name}')
             del self.name_map[mf.name]
@@ -140,9 +163,19 @@ class Manifest:
 
     @classmethod
     def from_tim_database(cls, manifest_path: Path, db_path: Path, compressed: bool = False) -> Manifest:
-        manifest = cls(manifest_path, db_path.stem)
+        manifest = cls(manifest_path, db_path.stem, DatabaseType.TIM)
         db = TimDb()
         with db_path.open('rb') as f:
             db.read(f, compressed)
         manifest.unpack_tim_database(db)
+        return manifest
+
+    @classmethod
+    def from_vab_database(cls, manifest_path: Path, db_path: Path) -> Manifest | None:
+        with db_path.open('rb') as f:
+            db = VabDb.read(f)
+        if db is None:
+            return None
+        manifest = cls(manifest_path, db_path.stem, DatabaseType.VAB_ALT if db.use_alt_order else DatabaseType.VAB)
+        manifest.unpack_vab_database(db)
         return manifest
