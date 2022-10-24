@@ -134,7 +134,7 @@ class Font:
     def save(self, path: Path, image_name: str):
         image_path = path / image_name
         with image_path.open('wb') as f:
-            self.image.write(f)
+            self.tile_set.image.write(f)
 
         json_path = path / 'font.json'
         with json_path.open('w') as f:

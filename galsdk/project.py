@@ -18,6 +18,7 @@ from galsdk.manifest import Manifest
 from galsdk.model import ACTORS, ActorModel, ItemModel
 from galsdk.movie import Movie
 from galsdk.string import StringDb
+from galsdk.xa import XaAudio
 from psx import Region
 from psx.cd import PsxCd
 from psx.config import Config
@@ -180,7 +181,7 @@ class Project:
                 sub_path = destination / base_name
                 with sub_path.open('wb') as f:
                     # raw extraction if requested for the dir or if this is the XA archive in the NA version
-                    cd.extract(entry.path, f, raw or entry.name == 'XA.MXA')
+                    cd.extract(entry.path, f, raw or entry.name == 'XA.MXA;1')
 
     @classmethod
     def _detect_version(cls, system_cnf: str) -> GameVersion:
@@ -369,7 +370,10 @@ class Project:
         voice_dir = project_path / 'voice'
         voice_dir.mkdir(exist_ok=True)
 
-        # TODO: extract XA audio
+        xa_map = display_db[version.disc]
+        mxa_path = game_data / 'XA.MXA'
+        buf = io.BytesIO(xa_map)
+        Manifest.from_xa_database(voice_dir, buf, mxa_path)
 
         project = cls(project_path, version, actor_models)
         project.save()
@@ -420,6 +424,11 @@ class Project:
     def get_stage_movies(self, stage: Stage) -> Iterable[Movie]:
         for path in (self.project_dir / 'stages' / stage / 'movies').glob('*.STR'):
             yield Movie(path)
+
+    def get_voice_audio(self) -> Iterable[XaAudio]:
+        manifest = Manifest.load_from(self.project_dir / 'voice')
+        for f in manifest:
+            yield XaAudio(f.path)
 
     def get_font(self) -> Font:
         return Font.load(self.project_dir)

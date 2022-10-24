@@ -19,14 +19,14 @@ class VabDb:
         yield from files_with_type
 
     @classmethod
-    def _read_alt(cls, f: BinaryIO) -> VabDb | None:
+    def _read_alt(cls, f: BinaryIO) -> VabDb:
         # alternate format is VB + VH + SEQ just slapped together
         data = f.read()
         vh_count = data.count(b'pBAV')
         seq_count = data.count(b'pQES')
         # there's nothing we can search for to identify multiple VBs, so we only support one of each
         if vh_count != 1 or seq_count > 1:
-            return None
+            raise ValueError('Could not identify VAB database format')
 
         seq_offset = data.rfind(b'pQES')
         vh_offset = data.rfind(b'pBAV')
@@ -34,14 +34,14 @@ class VabDb:
             seq_offset = len(data)
         elif seq_offset < vh_offset:
             # not the format we expected; bail
-            return None
+            raise ValueError('VAB database contents out-of-order for alternate format')
         vb = data[:vh_offset]
         vh = data[vh_offset:seq_offset]
         seq = data[seq_offset:]
         return cls([vh], [seq] if seq else [], [vb], True)
 
     @classmethod
-    def read(cls, f: BinaryIO) -> VabDb | None:
+    def read(cls, f: BinaryIO) -> VabDb:
         toc_len = int.from_bytes(f.read(4), 'little')
         # should be the length of the header section below, but sometimes it's not? just ignore it for now
 

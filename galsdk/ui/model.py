@@ -6,6 +6,7 @@ from panda3d.core import GeomNode, MouseButton, NodePath, WindowProperties
 
 from galsdk.model import Model
 
+
 class ModelViewer(ttk.Frame):
     ROTATE_SCALE_X = 100000
     ROTATE_SCALE_Y = 10000
@@ -74,7 +75,7 @@ class ModelViewer(ttk.Frame):
         self.camera.setY(new_zoom)
 
     def watch_mouse(self, _) -> int:
-        if not self.base.mouseWatcherNode.hasMouse():
+        if not self.base.mouseWatcherNode.hasMouse() or not self.window.is_active():
             return Task.cont
 
         # rotate the model with left click, pan with middle click
@@ -103,3 +104,9 @@ class ModelViewer(ttk.Frame):
         self.was_panning_last_frame = is_panning
 
         return Task.cont
+
+    def set_active(self, is_active: bool):
+        self.window.set_active(is_active)
+        if is_active:
+            self.base.setupMouse(self.window)
+            self.base.mouseWatcherNode.setDisplayRegion(self.region)

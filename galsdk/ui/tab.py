@@ -10,3 +10,6 @@ class Tab(ttk.Frame):
         super().__init__(*args, **kwargs)
         self.name = name
         self.project = project
+
+    def set_active(self, is_active: bool):
+        pass

@@ -7,7 +7,7 @@ from typing import Optional
 from direct.showbase.ShowBase import ShowBase
 
 from galsdk.project import GameVersion, Project
-from galsdk.ui import ActorTab, BackgroundTab, ItemTab, MovieTab, StringTab, Tab
+from galsdk.ui import ActorTab, BackgroundTab, ItemTab, MovieTab, StringTab, VoiceTab
 
 
 class Editor(ShowBase):
@@ -36,7 +36,8 @@ class Editor(ShowBase):
         menu_bar.add_cascade(label='File', menu=file_menu, underline=0)
 
         # tabs for open project (will be populated later)
-        self.tabs = ttk.Notebook(self.tkRoot)
+        self.tabs = []
+        self.notebook = ttk.Notebook(self.tkRoot)
 
         # create new project view
         self.new_project_view = ttk.LabelFrame(self.tkRoot, text='New Project')
@@ -107,6 +108,7 @@ class Editor(ShowBase):
 
         self.tkRoot.bind('<Control-n>', self.ask_new_project)
         self.tkRoot.bind('<Control-o>', self.ask_open_project)
+        self.notebook.bind('<<NotebookTabChanged>>', self.set_active_tab)
 
     def ask_new_project(self, *_):
         image_path = tkfile.askopenfilename(filetypes=[('CD images', '*.bin *.img'), ('All files', '*.*')])
@@ -149,7 +151,7 @@ class Editor(ShowBase):
         self.project_path_var.set('')
 
         self.default_message.pack_forget()
-        self.tabs.pack_forget()
+        self.notebook.pack_forget()
         self.new_project_view.pack(expand=1, fill=tk.BOTH, padx=5, pady=(0, 5))
 
     def create_project(self):
@@ -169,12 +171,18 @@ class Editor(ShowBase):
 
         self.makeDefaultPipe()
 
-        tabs: list[Tab] = [StringTab(self.project), ActorTab(self.project, self), BackgroundTab(self.project),
-                           ItemTab(self.project, self), MovieTab(self.project, self)]
-        for tab in tabs:
-            self.tabs.add(tab, text=tab.name)
+        self.tabs = [StringTab(self.project), ActorTab(self.project, self), BackgroundTab(self.project),
+                     ItemTab(self.project, self), MovieTab(self.project, self), VoiceTab(self.project, self)]
+        for tab in self.tabs:
+            self.notebook.add(tab, text=tab.name)
 
-        self.tabs.pack(expand=1, fill=tk.BOTH)
+        self.notebook.pack(expand=1, fill=tk.BOTH)
+        self.set_active_tab()
+
+    def set_active_tab(self, _=None):
+        tab_index = self.notebook.index(self.notebook.select())
+        for i, tab in enumerate(self.tabs):
+            tab.set_active(i == tab_index)
 
     def exit(self):
         """Exit the editor application"""

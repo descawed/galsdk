@@ -4,11 +4,12 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Iterable
+from typing import BinaryIO, Iterable
 
 from galsdk.db import Database
 from galsdk.tim import TimDb
 from galsdk.vab import VabDb
+from galsdk.xa import XaDatabase
 
 
 class DatabaseType(str, Enum):
@@ -16,6 +17,7 @@ class DatabaseType(str, Enum):
     TIM = 'tim'
     VAB = 'vab'
     VAB_ALT = 'vab_alt'
+    XA = 'xa'
 
     def __str__(self):
         return self.value
@@ -45,13 +47,7 @@ class Manifest:
         self.name_map = {}
         self.type = db_type
 
-    def unpack_database(self, db: Database, extension: str = None):
-        """
-        Unpack the given database to the manifest directory and record its files in the manifest
-
-        :param db: Database to unpack
-        :param extension: If not None, the unpacked files will have this extension added
-        """
+    def _unpack_generic_database(self, db: Iterable[bytes], extension: str = None):
         ext = f'.{extension}' if extension is not None else ''
         for i, entry in enumerate(db):
             name = f'{i:03X}'
@@ -63,6 +59,15 @@ class Manifest:
             with file_path.open('wb') as f:
                 f.write(entry)
         self.save()
+
+    def unpack_database(self, db: Database, extension: str = None):
+        """
+        Unpack the given database to the manifest directory and record its files in the manifest
+
+        :param db: Database to unpack
+        :param extension: If not None, the unpacked files will have this extension added
+        """
+        self._unpack_generic_database(db, extension)
 
     def unpack_tim_database(self, db: TimDb):
         for i, entry in enumerate(db):
@@ -87,6 +92,9 @@ class Manifest:
                 with file_path.open('wb') as f:
                     f.write(entry)
         self.save()
+
+    def unpack_xa_database(self, db: XaDatabase):
+        self._unpack_generic_database(db, 'XA')
 
     def load(self):
         """Load the last saved manifest data for this path"""
@@ -171,11 +179,18 @@ class Manifest:
         return manifest
 
     @classmethod
-    def from_vab_database(cls, manifest_path: Path, db_path: Path) -> Manifest | None:
+    def from_vab_database(cls, manifest_path: Path, db_path: Path) -> Manifest:
         with db_path.open('rb') as f:
             db = VabDb.read(f)
-        if db is None:
-            return None
         manifest = cls(manifest_path, db_path.stem, DatabaseType.VAB_ALT if db.use_alt_order else DatabaseType.VAB)
         manifest.unpack_vab_database(db)
+        return manifest
+
+    @classmethod
+    def from_xa_database(cls, manifest_path: Path, db_map: BinaryIO, db_data: Path) -> Manifest:
+        db = XaDatabase.read(db_map)
+        with db_data.open('rb') as f:
+            db.set_data(f.read())
+        manifest = cls(manifest_path, db_data.stem, DatabaseType.XA)
+        manifest.unpack_xa_database(db)
         return manifest

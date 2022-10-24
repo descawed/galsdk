@@ -84,3 +84,6 @@ class ItemTab(Tab):
             icon_image = ImageTk.PhotoImage(source[item.id])
             self.icon_label.configure(image=icon_image)
             self.icon_label.image = icon_image
+
+    def set_active(self, is_active: bool):
+        self.model_frame.set_active(is_active)
