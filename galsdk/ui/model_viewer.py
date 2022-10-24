@@ -4,7 +4,7 @@ from tkinter import ttk
 
 from direct.showbase.ShowBase import DirectObject, ShowBase
 from direct.task import Task
-from panda3d.core import GeomNode, MouseButton, NodePath, WindowProperties
+from panda3d.core import GeomNode, MouseButton, NodePath, TransparencyAttrib, WindowProperties
 
 from galsdk.model import Model
 from galsdk.project import Project
@@ -47,6 +47,7 @@ class ModelViewer(ttk.Frame):
 
         self.node = GeomNode(f'model_viewer_{name}')
         self.node_path = self.render_target.attachNewNode(self.node)
+        self.node_path.setTransparency(TransparencyAttrib.M_alpha)
         self.camera.lookAt(self.node_path)
 
         # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality

@@ -7,7 +7,7 @@ from PIL import ImageTk
 
 from galsdk.ui.tab import Tab
 from galsdk.project import Project
-from psx.tim import Tim
+from psx.tim import Tim, Transparency
 
 
 class ImageViewerTab(Tab, metaclass=ABCMeta):
@@ -87,7 +87,8 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
     def update_image(self, *_):
         tim = self.get_image()
         if tim is not None:
-            image = tim.to_image(self.clut_index, self.with_transparency)
+            transparency = Transparency.FULL if self.with_transparency else Transparency.NONE
+            image = tim.to_image(self.clut_index, transparency)
             zoom = self.zoom.get()
             if abs(zoom - 1) > 0.01:
                 image = image.resize((int(tim.width * zoom), int(tim.height * zoom)))

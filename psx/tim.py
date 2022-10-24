@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import os.path
 from dataclasses import dataclass
-from enum import IntEnum
+from enum import Enum, IntEnum
 from typing import BinaryIO, ByteString, Iterable
 
 from PIL import Image
@@ -23,6 +23,12 @@ class BitsPerPixel(IntEnum):
     BPP_8 = 1
     BPP_16 = 2
     BPP_24 = 3
+
+
+class Transparency(Enum):
+    NONE = 0
+    SEMI = 1
+    FULL = 2
 
 
 class Tim:
@@ -49,9 +55,13 @@ class Tim:
             g = (pixel >> 5) & 0x1f
             b = (pixel >> 10) & 0x1f
             stp = (pixel >> 15) != 0
-            if r == g == b == 0:
-                stp = not stp  # transparency flag has opposite meaning for black pixels
-            pixels.append((r << 3, g << 3, b << 3, 0 if stp else 0xff))
+            if stp:
+                a = 0x7f
+            elif r == g == b == 0:
+                a = 0
+            else:
+                a = 0xff
+            pixels.append((r << 3, g << 3, b << 3, a))
         return pixels
 
     @staticmethod
@@ -153,19 +163,23 @@ class Tim:
             case BitsPerPixel.BPP_24:
                 return self._decode_pixel_24(self.image_data)
 
-    def to_image(self, clut_index: int = 0, with_transparency: bool = True) -> Image:
+    def to_image(self, clut_index: int = 0, transparency: Transparency = Transparency.FULL) -> Image:
         """
         Convert the TIM image to a Pillow image
 
         :param clut_index: If the image uses a CLUT, the index of the palette in the CLUT to use
-        :param with_transparency: If True, return an RGBA image; otherwise, an RGB image
+        :param transparency: If SEMI or FULL, return an RGBA image; otherwise, an RGB image
         :return: The converted image
         """
         pixels = self.get_pixels(clut_index)
-        if with_transparency:
-            return Image.frombytes('RGBA', (self.width, self.height), b''.join(bytes(pixel) for pixel in pixels))
-        else:
-            return Image.frombytes('RGB', (self.width, self.height), b''.join(bytes(pixel[:3]) for pixel in pixels))
+        match transparency:
+            case Transparency.NONE:
+                return Image.frombytes('RGB', (self.width, self.height), b''.join(bytes(pixel[:3]) for pixel in pixels))
+            case Transparency.SEMI:
+                return Image.frombytes('RGBA', (self.width, self.height), b''.join(bytes(pixel) for pixel in pixels))
+            case Transparency.FULL:
+                return Image.frombytes('RGBA', (self.width, self.height),
+                                       b''.join(bytes([*pixel[:3], 0xff if pixel[3] > 0 else 0]) for pixel in pixels))
 
     @staticmethod
     def _read_block(source: BinaryIO) -> Block:
@@ -253,7 +267,10 @@ if __name__ == '__main__':
     with open(args.input, 'rb') as f:
         input_tim = Tim.read(f)
     palette_indexes = args.palettes or range(input_tim.num_palettes or 1)
-    images = [(i, input_tim.to_image(i, args.with_transparency)) for i in palette_indexes]
+    images = [
+        (i, input_tim.to_image(i, Transparency.FULL if args.with_transparency else Transparency.NONE))
+        for i in palette_indexes
+    ]
     if args.combine:
         combined_image = Image.new('RGBA', (input_tim.width, input_tim.height*len(palette_indexes)))
         for i, (_, im) in enumerate(images):

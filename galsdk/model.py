@@ -9,7 +9,7 @@ from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexFormat, 
     StringStream, Texture
 from PIL import Image
 
-from psx.tim import BitsPerPixel, Tim
+from psx.tim import BitsPerPixel, Tim, Transparency
 
 
 @dataclass
@@ -169,12 +169,13 @@ class Model:
 
     def __init__(self, vertices: list[tuple[int, int, int]],
                  uvs: list[tuple[int, int]], triangles: list[tuple[Vertex, Vertex, Vertex]],
-                 quads: list[tuple[Vertex, Vertex, Vertex, Vertex]], texture: Tim):
+                 quads: list[tuple[Vertex, Vertex, Vertex, Vertex]], texture: Tim, use_transparency: bool = False):
         self.vertices = vertices
         self.uvs = uvs
         self.triangles = triangles
         self.quads = quads
         self.texture = texture
+        self.use_transparency = use_transparency
 
     def get_panda3d_model(self) -> Geom:
         # convert quads to triangles
@@ -224,7 +225,7 @@ class Model:
     def get_panda3d_texture(self) -> Texture:
         image = self.get_texture_image()
         buffer = io.BytesIO()
-        image.save(buffer, format='bmp')
+        image.save(buffer, format='png')
 
         panda_image = PNMImage()
         panda_image.read(StringStream(buffer.getvalue()))
@@ -292,7 +293,9 @@ illum 0
     def get_texture_image(self) -> Image:
         image = Image.new('RGBA', (TEXTURE_WIDTH, self.texture_height))
         for i in range(self.texture.num_palettes):
-            sub_image = self.texture.to_image(i, False)
+            # FIXME: the exact transparency level seems to vary from item to item and I don't know what controls it
+            transparency = Transparency.SEMI if self.use_transparency and i > 0 else Transparency.NONE
+            sub_image = self.texture.to_image(i, transparency)
             image.paste(sub_image, (0, TEXTURE_HEIGHT * i))
         return image
 
@@ -440,13 +443,12 @@ class ItemModel(Model):
 
     def __init__(self, name: str, vertices: list[tuple[int, int, int]],
                  uvs: list[tuple[int, int]], triangles: list[tuple[Vertex, Vertex, Vertex]],
-                 quads: list[tuple[Vertex, Vertex, Vertex, Vertex]], texture: Tim):
-        super().__init__(vertices, uvs, triangles, quads, texture)
+                 quads: list[tuple[Vertex, Vertex, Vertex, Vertex]], texture: Tim, use_transparency: bool = False):
+        super().__init__(vertices, uvs, triangles, quads, texture, use_transparency)
         self.name = name
 
     @classmethod
-    def read(cls, name: str, f: BinaryIO) -> ItemModel:
-        # FIXME: some of these models should have partial transparency but I don't really get how that works
+    def read(cls, name: str, f: BinaryIO, use_transparency: bool = False) -> ItemModel:
         tim = cls._read_tim(f)
 
         vertices = {}
@@ -458,4 +460,4 @@ class ItemModel(Model):
                 cls._read_bone(f, vertices, uvs, triangles, quads)
             except struct.error:
                 break
-        return cls(name, list(vertices), list(uvs), triangles, quads, tim)
+        return cls(name, list(vertices), list(uvs), triangles, quads, tim, use_transparency)

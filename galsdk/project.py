@@ -328,9 +328,10 @@ class Project:
         item_path = project_path / 'item.json'
         items = []
         for i in range(NUM_KEY_ITEMS):
-            items.append({'id': i, 'model': item_art[i][0], 'description': key_item_descriptions[i]})
+            items.append({'id': i, 'model': item_art[i][0], 'flags': item_art[i][3],
+                          'description': key_item_descriptions[i]})
         for i in range(NUM_MED_ITEMS):
-            items.append({'id': i, 'model': None, 'description': med_item_descriptions[i]})
+            items.append({'id': i, 'model': None, 'flags': 0, 'description': med_item_descriptions[i]})
         with item_path.open('w') as f:
             json.dump(items, f)
 
@@ -465,13 +466,13 @@ class Project:
                 name = KEY_ITEM_NAMES[entry['id']]
                 model_file = model_manifest[entry['model']]
                 with model_file.path.open('rb') as f:
-                    model = ItemModel.read(name, f)
+                    model = ItemModel.read(name, f, entry['flags'] & 1 == 0)
             else:
                 name = MED_ITEM_NAMES[entry['id']]
                 model = None
             yield Item(entry['id'], name, model, entry['description'], is_key_item)
 
-    def get_all_models(self) -> tuple[list[ActorModel], list[ItemModel], list[ItemModel]]:
+    def get_all_models(self) -> tuple[dict[int, ActorModel], dict[int, ItemModel], dict[int, ItemModel]]:
         model_manifest = Manifest.load_from(self.project_dir / 'models')
         json_path = self.project_dir / 'item.json'
         with json_path.open() as f:
@@ -489,18 +490,19 @@ class Project:
         item_models = {}
         for entry in item_info:
             if entry['model'] is not None and entry['model'] not in item_models:
-                item_models[entry['model']] = KEY_ITEM_NAMES[entry['id']]
+                item_models[entry['model']] = (KEY_ITEM_NAMES[entry['id']], entry['flags'] & 1 == 0)
 
-        actors = []
-        items = []
-        other = []
+        actors = {}
+        items = {}
+        other = {}
         for i, model_file in enumerate(model_manifest):
             with model_file.path.open('rb') as f:
                 if i in actor_models:
-                    actors.append(ActorModel.read(actor_models[i], f))
+                    actors[i] = ActorModel.read(actor_models[i], f)
                 elif i in item_models:
-                    items.append(ItemModel.read(item_models[i], f))
+                    name, use_transparency = item_models[i]
+                    items[i] = ItemModel.read(name, f, use_transparency)
                 else:
-                    other.append(ItemModel.read(str(i), f))
+                    other[i] = ItemModel.read(str(i), f)
 
         return actors, items, other

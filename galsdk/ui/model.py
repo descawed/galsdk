@@ -18,7 +18,7 @@ class ModelTab(ModelViewerTab):
         self.tree.insert('', tk.END, text='Other', iid='other', open=False)
 
         for category, models in zip(['actors', 'items', 'other'], self.project.get_all_models()):
-            for model in models:
+            for i, model in models.items():
                 model_id = len(self.models)
                 self.models.append(model)
-                self.tree.insert(category, tk.END, text=model.name, iid=str(model_id))
+                self.tree.insert(category, tk.END, text=f'#{i}: {model.name}', iid=str(model_id))
