@@ -4,7 +4,7 @@ from tkinter import ttk
 from direct.showbase.ShowBase import ShowBase
 from PIL import ImageTk
 
-from galsdk.ui.model import ModelViewer
+from galsdk.ui.model_viewer import ModelViewer
 from galsdk.ui.tab import Tab
 from galsdk.project import Project
 from galsdk.tile import TileSet
@@ -18,7 +18,7 @@ class ItemTab(Tab):
     ICON_HEIGHT = 32
 
     def __init__(self, project: Project, base: ShowBase):
-        super().__init__('Items', project)
+        super().__init__('Item', project)
         self.base = base
         self.items = []
         self.item_art = self.project.get_item_art()

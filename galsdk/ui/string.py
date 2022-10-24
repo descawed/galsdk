@@ -13,7 +13,7 @@ class StringTab(Tab):
     MAX_PREVIEW_LEN = 20
 
     def __init__(self, project: Project):
-        super().__init__('Strings', project)
+        super().__init__('String', project)
         self.strings = []
         self.current_index = None
         self.font = project.get_font()

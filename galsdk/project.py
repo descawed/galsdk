@@ -470,3 +470,37 @@ class Project:
                 name = MED_ITEM_NAMES[entry['id']]
                 model = None
             yield Item(entry['id'], name, model, entry['description'], is_key_item)
+
+    def get_all_models(self) -> tuple[list[ActorModel], list[ItemModel], list[ItemModel]]:
+        model_manifest = Manifest.load_from(self.project_dir / 'models')
+        json_path = self.project_dir / 'item.json'
+        with json_path.open() as f:
+            item_info = json.load(f)
+
+        actor_models = {}
+        for actor in ACTORS:
+            if actor.model_index is None:
+                model_index = self.actor_models[actor.id]
+            else:
+                model_index = actor.model_index
+            if model_index not in actor_models:
+                actor_models[model_index] = actor
+
+        item_models = {}
+        for entry in item_info:
+            if entry['model'] is not None and entry['model'] not in item_models:
+                item_models[entry['model']] = KEY_ITEM_NAMES[entry['id']]
+
+        actors = []
+        items = []
+        other = []
+        for i, model_file in enumerate(model_manifest):
+            with model_file.path.open('rb') as f:
+                if i in actor_models:
+                    actors.append(ActorModel.read(actor_models[i], f))
+                elif i in item_models:
+                    items.append(ItemModel.read(item_models[i], f))
+                else:
+                    other.append(ItemModel.read(str(i), f))
+
+        return actors, items, other
