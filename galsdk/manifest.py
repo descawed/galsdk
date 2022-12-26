@@ -14,6 +14,7 @@ from galsdk.xa import XaDatabase
 
 class DatabaseType(str, Enum):
     CDB = 'cdb'
+    CDB_EXT = 'cdb_ext'
     TIM = 'tim'
     VAB = 'vab'
     VAB_ALT = 'vab_alt'
@@ -162,10 +163,10 @@ class Manifest:
         :param extension: If not None, a file extension to use for the files unpacked from the database
         :return: The new manifest
         """
-        manifest = cls(manifest_path, db_path.stem)
         db = Database()
         with db_path.open('rb') as f:
             db.read(f)
+        manifest = cls(manifest_path, db_path.stem, DatabaseType.CDB_EXT if db.extended else DatabaseType.CDB)
         manifest.unpack_database(db, extension)
         return manifest
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import io
 import struct
 from dataclasses import dataclass
@@ -177,6 +178,7 @@ class Model:
         self.texture = texture
         self.use_transparency = use_transparency
 
+    @functools.cache
     def get_panda3d_model(self) -> Geom:
         # convert quads to triangles
         triangles = [*self.triangles]
@@ -222,6 +224,7 @@ class Model:
         geom.addPrimitive(primitive)
         return geom
 
+    @functools.cache
     def get_panda3d_texture(self) -> Texture:
         image = self.get_texture_image()
         buffer = io.BytesIO()

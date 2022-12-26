@@ -16,6 +16,7 @@ from galsdk.db import Database
 from galsdk.font import Font
 from galsdk.manifest import Manifest
 from galsdk.model import ACTORS, ActorModel, ItemModel
+from galsdk.module import RoomModule
 from galsdk.movie import Movie
 from galsdk.string import StringDb
 from galsdk.xa import XaAudio
@@ -99,6 +100,8 @@ MED_ITEM_NAMES = [
 
 NUM_KEY_ITEMS = len(KEY_ITEM_NAMES)
 NUM_MED_ITEMS = len(MED_ITEM_NAMES)
+NUM_MODULE_SETS = 9
+MODULE_ENTRY_SIZE = 8
 
 
 @dataclass
@@ -145,6 +148,7 @@ ADDRESSES = {
         'ItemArt': 0x80190ED4,
         'KeyItemDescriptions': 0x80192A28,
         'MedItemDescriptions': 0x80192ACC,
+        'ModuleSets': 0x80191BE0,
     }
 }
 
@@ -161,11 +165,12 @@ class Project:
     VERSION_MAP = {version.id: version for version in VERSIONS}
 
     def __init__(self, project_dir: Path, version: GameVersion, actor_models: list[int] = None,
-                 last_export_date: datetime.datetime = None):
+                 module_sets: list[list[dict[str, int]]] = None, last_export_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
         self.last_export_date = last_export_date or datetime.datetime.utcnow()
         self.actor_models = actor_models or []
+        self.module_sets = module_sets or []
 
     @classmethod
     def _extract_dir(cls, path: str, destination: Path, cd: PsxCd, raw: bool = False):
@@ -335,10 +340,35 @@ class Project:
         with item_path.open('w') as f:
             json.dump(items, f)
 
-        room_dir = project_path / 'rooms'
-        room_dir.mkdir(exist_ok=True)
+        module_dir = project_path / 'modules'
+        module_dir.mkdir(exist_ok=True)
 
-        # TODO: extract room data
+        module_db_path = game_data / 'MODULE.BIN'
+        module_manifest = Manifest.from_database(module_dir, module_db_path)
+        for i, module_file in enumerate(module_manifest):
+            # FIXME: figure out how the module sets work and pull the list from there
+            with module_file.path.open('rb') as f:
+                module = RoomModule.load(f)
+            if module.is_valid:
+                module_manifest.rename(i, module.name)
+        module_manifest.save()
+
+        module_set_addr = addresses['ModuleSets']
+        module_set_addrs = struct.unpack(f'{NUM_MODULE_SETS}I',
+                                         exe[module_set_addr:module_set_addr + 4 * NUM_MODULE_SETS])
+        module_sets = []
+        for i in range(len(module_set_addrs)):
+            this_addr = module_set_addrs[i]
+            if i + 1 >= NUM_MODULE_SETS:
+                next_addr = module_set_addr
+            else:
+                next_addr = module_set_addrs[i + 1]
+            num_modules = (next_addr - this_addr) // MODULE_ENTRY_SIZE
+            raw_entries = struct.unpack('2I' * num_modules, exe[this_addr:next_addr])
+            module_sets.append([
+                {'index': raw_entries[j], 'entry_point': raw_entries[j + 1]}
+                for j in range(0, len(raw_entries), 2)
+            ])
 
         menu_dir = project_path / 'menu'
         menu_dir.mkdir(exist_ok=True)
@@ -364,9 +394,6 @@ class Project:
         for i, entry in enumerate(sound_manifest):
             vab_dir = sound_dir / str(i)
             vab_dir.mkdir(exist_ok=True)
-            if Manifest.from_vab_database(vab_dir, entry.path) is None:
-                # remove the empty dir we made
-                vab_dir.rmdir()
 
         voice_dir = project_path / 'voice'
         voice_dir.mkdir(exist_ok=True)
@@ -376,7 +403,7 @@ class Project:
         buf = io.BytesIO(xa_map)
         Manifest.from_xa_database(voice_dir, buf, mxa_path)
 
-        project = cls(project_path, version, actor_models)
+        project = cls(project_path, version, actor_models, module_sets)
         project.save()
         return project
 
@@ -394,7 +421,8 @@ class Project:
         version = GameVersion(**project_info['version'])
         last_export_date = datetime.datetime.fromisoformat(project_info['last_export_date'])
         actor_models = project_info['actor_models']
-        return cls(project_path, version, actor_models, last_export_date)
+        module_sets = project_info.get('module_sets', [])
+        return cls(project_path, version, actor_models, module_sets, last_export_date)
 
     @property
     def all_actor_models(self) -> set[int]:
@@ -411,6 +439,7 @@ class Project:
                 'version': asdict(self.version),
                 'last_export_date': self.last_export_date.isoformat(),
                 'actor_models': self.actor_models,
+                'module_sets': self.module_sets,
             }, f)
 
     def get_stage_backgrounds(self, stage: Stage) -> Manifest:
@@ -440,6 +469,13 @@ class Project:
         with path.open('rb') as f:
             db.read(f)
         return db
+
+    def get_stage_rooms(self, stage: Stage) -> Iterable[RoomModule]:
+        manifest = Manifest.load_from(self.project_dir / 'modules')
+        for manifest_file in manifest:
+            if manifest_file.name[0] == stage:
+                with manifest_file.path.open('rb') as f:
+                    yield RoomModule.load(f)
 
     def get_actor_models(self) -> Iterable[ActorModel]:
         manifest = Manifest.load_from(self.project_dir / 'models')
