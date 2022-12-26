@@ -3,11 +3,11 @@ import tkinter as tk
 from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import GeomNode, TransparencyAttrib
+from panda3d.core import GeomNode
 
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project, Stage
-from galsdk.room import RectangleColliderObject, TriangleColliderObject, WallColliderObject
+from galsdk.room import CircleColliderObject, RectangleColliderObject, TriangleColliderObject, WallColliderObject
 from galsdk.ui.tab import Tab
 from galsdk.ui.viewport import Viewport
 
@@ -19,10 +19,15 @@ class RoomViewport(Viewport):
         self.wall_node_path = None
         self.colliders = []
 
-    def set_room(self, module: RoomModule):
+    def clear(self):
         self.wall = None
         self.wall_node_path = None
+        for _, node_path in self.colliders:
+            node_path.removeNode()
         self.colliders = []
+
+    def set_room(self, module: RoomModule):
+        self.clear()
 
         rect_iter = iter(module.layout.rectangle_colliders)
         tri_iter = iter(module.layout.triangle_colliders)
@@ -36,16 +41,17 @@ class RoomViewport(Viewport):
             match collider.type:
                 case ColliderType.WALL:
                     collider_object = self.wall = WallColliderObject(next(rect_iter))
-                    self.colliders.append(self.wall)
                     is_wall = True
                     # calculate how far away the camera needs to be to fit the entire area on the screen
                     height = max(self.wall.size)
                     fov = math.radians(self.camera.node().getLens().getVfov())
                     camera_distance = height / 2 / math.tan(fov / 2)
                 case ColliderType.RECTANGLE:
-                    self.colliders.append(collider_object := RectangleColliderObject(next(rect_iter)))
+                    collider_object = RectangleColliderObject(next(rect_iter))
                 case ColliderType.TRIANGLE:
-                    self.colliders.append(collider_object := TriangleColliderObject(next(tri_iter)))
+                    collider_object = TriangleColliderObject(next(tri_iter))
+                case ColliderType.CIRCLE:
+                    collider_object = CircleColliderObject(next(circle_iter))
                 case _:
                     continue
 
@@ -53,14 +59,18 @@ class RoomViewport(Viewport):
             node = GeomNode(f'room{name}_collider{index}')
             node.addGeom(model)
             node_path = self.render_target.attachNewNode(node)
-            offset = 0 if is_wall else 0.1
+            offset = 0 if is_wall else 0.01
             node_path.setPos(collider_object.x, collider_object.y, collider_object.z + offset)
             node_path.reparentTo(self.render_target)
             node_path.setTag('collider', str(index))
-            node_path.setTransparency(TransparencyAttrib.M_alpha)
-            node_path.setColor(*(c / 255 for c in collider_object.color))
+            node_path.setTwoSided(True)
+            if texture := collider_object.get_texture():
+                node_path.setTexture(texture, 1)
+            else:
+                node_path.setColor(*collider_object.color)
             if is_wall:
                 self.wall_node_path = node_path
+            self.colliders.append((collider_object, node_path))
 
         self.camera.setPos(self.wall.x, self.wall.y, self.wall.z + camera_distance)
         self.camera.lookAt(self.wall_node_path)
@@ -108,10 +118,13 @@ class RoomTab(Tab):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(3, weight=1)
 
-        self.tree.bind('<<TreeviewSelect>>', self.select_movie)
+        self.tree.bind('<<TreeviewSelect>>', self.select_item)
 
-    def select_movie(self, _):
+    def select_item(self, _):
         iid = self.tree.selection()[0]
         if iid.startswith('room_'):
             index = int(iid.split('_')[1])
             self.viewport.set_room(self.rooms[index])
+
+    def set_active(self, is_active: bool):
+        self.viewport.set_active(is_active)
