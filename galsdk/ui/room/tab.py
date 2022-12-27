@@ -7,7 +7,7 @@ from direct.showbase.ShowBase import ShowBase
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project, Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
-    WallColliderObject
+    WallColliderObject, TriggerObject
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
 from galsdk.ui.room.replaceable import Replaceable
 from galsdk.ui.tab import Tab
@@ -20,21 +20,31 @@ class RoomViewport(Viewport):
         self.wall = None
         self.selected_item = None
         self.colliders = []
+        self.triggers = []
 
     def clear(self):
         self.wall = None
-        for collider in self.colliders:
-            collider.remove_from_scene()
+        self.selected_item = None
+        for obj in [*self.colliders, *self.triggers]:
+            obj.remove_from_scene()
         self.colliders = []
+        self.triggers = []
+
+    def replace_item(self, item_type: str, index: int, item: RoomObject):
+        container = getattr(self, item_type)
+        old_object = container[index]
+        is_selected = self.selected_item and self.selected_item[0] is old_object
+        old_object.remove_from_scene()
+        container[index] = item
+        item.add_to_scene(self.render_target)
+        if is_selected:
+            self.select(item)
 
     def replace_collider(self, index: int, collider: ColliderObject):
-        old_collider = self.colliders[index]
-        is_selected = self.selected_item and self.selected_item[0] is old_collider
-        old_collider.remove_from_scene()
-        self.colliders[index] = collider
-        collider.add_to_scene(self.render_target)
-        if is_selected:
-            self.select(collider)
+        self.replace_item('colliders', index, collider)
+
+    def replace_trigger(self, index: int, trigger: TriggerObject):
+        self.replace_item('triggers', index, trigger)
 
     def select(self, item: RoomObject | None):
         if self.selected_item:
@@ -85,6 +95,13 @@ class RoomViewport(Viewport):
                 collider_object.position.game_y += 1
             collider_object.add_to_scene(self.render_target)
             self.colliders.append(collider_object)
+
+        for interactable, trigger in zip(module.layout.interactables, module.triggers.triggers, strict=True):
+            object_name = f'room{module_name}_trigger{len(self.triggers)}'
+            trigger_object = TriggerObject(object_name, interactable, trigger)
+            trigger_object.position.game_y += 2
+            trigger_object.add_to_scene(self.render_target)
+            self.triggers.append(trigger_object)
 
         self.camera.setPos(self.wall.position.panda_x, self.wall.position.panda_y,
                            self.wall.position.panda_z + camera_distance)
@@ -157,6 +174,10 @@ class RoomTab(Tab):
                 if not self.tree.get_children(colliders_iid):
                     for i in range(len(self.viewport.colliders)):
                         self.tree.insert(colliders_iid, tk.END, text=f'#{i}', iid=f'collider_{i}_{room_id}')
+                triggers_iid = f'triggers_{room_id}'
+                if not self.tree.get_children(triggers_iid):
+                    for i in range(len(self.viewport.triggers)):
+                        self.tree.insert(triggers_iid, tk.END, text=f'#{i}', iid=f'trigger_{i}_{room_id}')
             self.set_detail_widget(None)
             self.viewport.select(None)
         elif iid.startswith('collider_'):
