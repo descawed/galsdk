@@ -3,11 +3,12 @@ import tkinter as tk
 from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import GeomNode
 
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project, Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, TriangleColliderObject, WallColliderObject
+from galsdk.ui.room.collider import ColliderEditor, ColliderObject
+from galsdk.ui.room.replaceable import Replaceable
 from galsdk.ui.tab import Tab
 from galsdk.ui.viewport import Viewport
 
@@ -16,15 +17,18 @@ class RoomViewport(Viewport):
     def __init__(self, base: ShowBase, width: int, height: int, *args, **kwargs):
         super().__init__('room', base, width, height, *args, **kwargs)
         self.wall = None
-        self.wall_node_path = None
         self.colliders = []
 
     def clear(self):
         self.wall = None
-        self.wall_node_path = None
-        for _, node_path in self.colliders:
-            node_path.removeNode()
+        for collider in self.colliders:
+            collider.remove_from_scene()
         self.colliders = []
+
+    def replace_collider(self, index: int, collider: ColliderObject):
+        self.colliders[index].remove_from_scene()
+        self.colliders[index] = collider
+        collider.add_to_scene(self.render_target)
 
     def set_room(self, module: RoomModule):
         self.clear()
@@ -33,47 +37,37 @@ class RoomViewport(Viewport):
         tri_iter = iter(module.layout.triangle_colliders)
         circle_iter = iter(module.layout.circle_colliders)
         camera_distance = 0.
-        name = module.name or 'UNKWN'
+        module_name = module.name or 'UNKWN'
 
         for collider in module.layout.colliders:
             index = len(self.colliders)
             is_wall = False
+            object_name = f'room{module_name}_collider{index}'
             match collider.type:
                 case ColliderType.WALL:
-                    collider_object = self.wall = WallColliderObject(next(rect_iter))
+                    collider_object = self.wall = WallColliderObject(object_name, next(rect_iter))
                     is_wall = True
                     # calculate how far away the camera needs to be to fit the entire area on the screen
-                    height = max(self.wall.size)
+                    height = max(abs(self.wall.width.panda_units), abs(self.wall.height.panda_units))
                     fov = math.radians(self.camera.node().getLens().getVfov())
                     camera_distance = height / 2 / math.tan(fov / 2)
                 case ColliderType.RECTANGLE:
-                    collider_object = RectangleColliderObject(next(rect_iter))
+                    collider_object = RectangleColliderObject(object_name, next(rect_iter))
                 case ColliderType.TRIANGLE:
-                    collider_object = TriangleColliderObject(next(tri_iter))
+                    collider_object = TriangleColliderObject(object_name, next(tri_iter))
                 case ColliderType.CIRCLE:
-                    collider_object = CircleColliderObject(next(circle_iter))
+                    collider_object = CircleColliderObject(object_name, next(circle_iter))
                 case _:
                     continue
 
-            model = collider_object.get_model()
-            node = GeomNode(f'room{name}_collider{index}')
-            node.addGeom(model)
-            node_path = self.render_target.attachNewNode(node)
-            offset = 0 if is_wall else 0.01
-            node_path.setPos(collider_object.x, collider_object.y, collider_object.z + offset)
-            node_path.reparentTo(self.render_target)
-            node_path.setTag('collider', str(index))
-            node_path.setTwoSided(True)
-            if texture := collider_object.get_texture():
-                node_path.setTexture(texture, 1)
-            else:
-                node_path.setColor(*collider_object.color)
-            if is_wall:
-                self.wall_node_path = node_path
-            self.colliders.append((collider_object, node_path))
+            if not is_wall:
+                collider_object.position.game_y += 1
+            collider_object.add_to_scene(self.render_target)
+            self.colliders.append(collider_object)
 
-        self.camera.setPos(self.wall.x, self.wall.y, self.wall.z + camera_distance)
-        self.camera.lookAt(self.wall_node_path)
+        self.camera.setPos(self.wall.position.panda_x, self.wall.position.panda_y,
+                           self.wall.position.panda_z + camera_distance)
+        self.camera.lookAt(self.wall.node_path)
 
 
 class RoomTab(Tab):
@@ -82,6 +76,8 @@ class RoomTab(Tab):
     def __init__(self, project: Project, base: ShowBase):
         super().__init__('Room', project)
         self.base = base
+        self.current_room = None
+        self.detail_widget = None
         self.rooms = []
 
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
@@ -120,11 +116,38 @@ class RoomTab(Tab):
 
         self.tree.bind('<<TreeviewSelect>>', self.select_item)
 
+    def set_detail_widget(self, widget: ttk.Frame | None):
+        if self.detail_widget:
+            self.detail_widget.grid_forget()
+            self.detail_widget.destroy()
+        self.detail_widget = widget
+        if self.detail_widget:
+            self.detail_widget.grid(row=0, column=2)
+
     def select_item(self, _):
         iid = self.tree.selection()[0]
-        if iid.startswith('room_'):
-            index = int(iid.split('_')[1])
-            self.viewport.set_room(self.rooms[index])
+        room_level_ids = ['room', 'actors', 'colliders', 'cameras', 'cuts', 'triggers']
+        if any(iid.startswith(f'{room_level_id}_') for room_level_id in room_level_ids):
+            room_id = int(iid.split('_')[1])
+            if self.current_room != room_id:
+                self.current_room = room_id
+                self.viewport.set_room(self.rooms[room_id])
+                colliders_iid = f'colliders_{room_id}'
+                if not self.tree.get_children(colliders_iid):
+                    for i in range(len(self.viewport.colliders)):
+                        self.tree.insert(colliders_iid, tk.END, text=f'#{i}', iid=f'collider_{i}_{room_id}')
+            self.set_detail_widget(None)
+        elif iid.startswith('collider_'):
+            pieces = iid.split('_')
+            collider_id = int(pieces[1])
+            room_id = int(pieces[2])
+            if self.current_room != room_id:
+                self.current_room = room_id
+                self.viewport.set_room(self.rooms[room_id])
+            collider = Replaceable(self.viewport.colliders[collider_id],
+                                   lambda c: self.viewport.replace_collider(collider_id, c))
+            editor = ColliderEditor(collider, self)
+            self.set_detail_widget(editor)
 
     def set_active(self, is_active: bool):
         self.viewport.set_active(is_active)

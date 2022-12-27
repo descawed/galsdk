@@ -1,9 +1,9 @@
 import io
 
-from panda3d.core import Geom, PNMImage, SamplerState, StringStream, Texture
+from panda3d.core import Geom, NodePath, PNMImage, SamplerState, StringStream, Texture
 from PIL import Image, ImageDraw
 
-from galsdk.model import SCALE_FACTOR
+from galsdk.coords import Dimension, Point
 from galsdk.module import CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room.object import RoomObject
 
@@ -12,47 +12,75 @@ COLLIDER_COLOR = (0., 1., 0., 0.5)
 
 
 class RectangleColliderObject(RoomObject):
-    def __init__(self, bounds: RectangleCollider):
-        center_x = (-bounds.x_pos - bounds.x_size / 2) / SCALE_FACTOR
-        # z in the game's coordinate system, y in ours
-        center_y = (bounds.z_pos + bounds.z_size / 2) / SCALE_FACTOR
-        super().__init__(center_x, center_y, 0, 0)
-        self.bounds = bounds
+    def __init__(self, name: str, bounds: RectangleCollider):
+        center_x = bounds.x_pos + bounds.x_size // 2
+        center_z = bounds.z_pos + bounds.z_size // 2
+        super().__init__(name, Point(center_x, 0, center_z), 0.)
+        self.width = Dimension(bounds.x_size, True)
+        self.height = Dimension(bounds.z_size)
         self.color = COLLIDER_COLOR
 
     def get_model(self) -> Geom:
-        half_x = self.bounds.x_size / 2 / SCALE_FACTOR
-        half_z = self.bounds.z_size / 2 / SCALE_FACTOR
+        half_x = (self.width / 2).panda_units
+        half_z = (self.height / 2).panda_units
         return self._make_quad((-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
 
+    def add_to_scene(self, scene: NodePath):
+        super().add_to_scene(scene)
+        self.node_path.setTwoSided(True)
+
     @property
-    def size(self) -> tuple[float, float]:
-        return self.bounds.x_size / SCALE_FACTOR, self.bounds.z_size / SCALE_FACTOR
+    def x_pos(self) -> Dimension:
+        return self.position.x - self.width // 2
+
+    @x_pos.setter
+    def x_pos(self, value: Dimension):
+        self.position.x = value + self.width // 2
+
+    @property
+    def z_pos(self) -> Dimension:
+        return self.position.y - self.height // 2
+
+    @z_pos.setter
+    def z_pos(self, value: Dimension):
+        self.position.y = value + self.height // 2
+
+    def set_width(self, value: Dimension):
+        center_x = self.x_pos + value // 2
+        self.position.x = center_x
+        self.width = value
+
+    def set_height(self, value: Dimension):
+        center_z = self.z_pos + value // 2
+        self.position.y = center_z
+        self.height = value
 
 
 class WallColliderObject(RectangleColliderObject):
-    def __init__(self, bounds: RectangleCollider):
-        super().__init__(bounds)
+    def __init__(self, name: str, bounds: RectangleCollider):
+        super().__init__(name, bounds)
         self.color = (0.75, 0., 0., 1.)
 
 
 class TriangleColliderObject(RoomObject):
-    def __init__(self, bounds: TriangleCollider):
-        self.bounds = bounds
+    def __init__(self, name: str, bounds: TriangleCollider):
+        self.p1 = Point(bounds.x1, 0, bounds.z1)
+        self.p2 = Point(bounds.x2, 0, bounds.z2)
+        self.p3 = Point(bounds.x3, 0, bounds.z3)
+        centroid = self.find_centroid()
+        super().__init__(name, centroid, 0)
         self.color = COLLIDER_COLOR
-        centroid = self.centroid
-        super().__init__(centroid[0], centroid[1], 0, 0)
 
     def get_model(self) -> Geom:
-        centroid = self.centroid
-        p1 = self.p1
-        p2 = self.p2
-        p3 = self.p3
         return self._make_triangle(
-            (p1[0] - centroid[0], p1[1] - centroid[1]),
-            (p2[0] - centroid[0], p2[1] - centroid[1]),
-            (p3[0] - centroid[0], p3[1] - centroid[1]),
+            (self.p1.panda_x - self.position.panda_x, self.p1.panda_y - self.position.panda_y),
+            (self.p2.panda_x - self.position.panda_x, self.p2.panda_y - self.position.panda_y),
+            (self.p3.panda_x - self.position.panda_x, self.p3.panda_y - self.position.panda_y),
         )
+
+    def add_to_scene(self, scene: NodePath):
+        super().add_to_scene(scene)
+        self.node_path.setTwoSided(True)
 
     @staticmethod
     def _find_midpoint(p1: tuple[float, float], p2: tuple[float, float]) -> tuple[float, float]:
@@ -81,48 +109,43 @@ class TriangleColliderObject(RoomObject):
         y = am*x + ab
         return x, y
 
-    @property
-    def centroid(self) -> tuple[float, float]:
-        p1 = self.p1
-        p2 = self.p2
-        p3 = self.p3
+    def find_centroid(self) -> Point:
+        p1 = (self.p1.panda_x, self.p1.panda_y)
+        p2 = (self.p2.panda_x, self.p2.panda_y)
+        p3 = (self.p3.panda_x, self.p3.panda_y)
 
         m12 = self._find_midpoint(p1, p2)
         m23 = self._find_midpoint(p2, p3)
 
-        return self._find_intersection(m12, p3, p1, m23)
+        x, y = self._find_intersection(m12, p3, p1, m23)
+        point = Point()
+        point.panda_x = x
+        point.panda_y = y
+        return point
 
-    @property
-    def p1(self) -> tuple[float, float]:
-        return -self.bounds.x1 / SCALE_FACTOR, self.bounds.z1 / SCALE_FACTOR
-
-    @property
-    def p2(self) -> tuple[float, float]:
-        return -self.bounds.x2 / SCALE_FACTOR, self.bounds.z2 / SCALE_FACTOR
-
-    @property
-    def p3(self) -> tuple[float, float]:
-        return -self.bounds.x3 / SCALE_FACTOR, self.bounds.z3 / SCALE_FACTOR
+    def recalculate_center(self):
+        centroid = self.find_centroid()
+        self.position.x = centroid.x
+        self.position.y = centroid.y
 
 
 class CircleColliderObject(RoomObject):
-    def __init__(self, bounds: CircleCollider):
-        super().__init__(-bounds.x / SCALE_FACTOR, bounds.z / SCALE_FACTOR, 0, 0)
-        self.bounds = bounds
+    texture_cache = {}
+
+    def __init__(self, name: str, bounds: CircleCollider):
+        super().__init__(name, Point(bounds.x, 0, bounds.z), 0)
+        self.radius = Dimension(bounds.radius)
         self.color = COLLIDER_COLOR
 
-    @property
-    def radius(self) -> float:
-        return self.bounds.radius / SCALE_FACTOR
+    @classmethod
+    def create_texture(cls, width: int, height: int, color: tuple[float, float, float, float]) -> Texture:
+        key = (width, height, *color)
+        if texture := cls.texture_cache.get(key):
+            return texture
 
-    def get_model(self) -> Geom:
-        radius = self.radius
-        return self._make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
-
-    def get_texture(self) -> Texture | None:
-        image = Image.new('RGBA', (500, 500), (0, 0, 0, 0))
+        image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
-        draw.ellipse([(0, 0), (499, 499)], tuple(int(c * 255) for c in self.color))
+        draw.ellipse([(0, 0), (width - 1, height - 1)], tuple(int(c * 255) for c in color))
 
         buffer = io.BytesIO()
         image.save(buffer, format='png')
@@ -135,4 +158,16 @@ class CircleColliderObject(RoomObject):
         # prevents artifacts around the edge of the circle
         texture.setMagfilter(SamplerState.FT_nearest)
         texture.setMinfilter(SamplerState.FT_nearest)
+        cls.texture_cache[key] = texture
         return texture
+
+    def add_to_scene(self, scene: NodePath):
+        super().add_to_scene(scene)
+        self.node_path.setTwoSided(True)
+
+    def get_model(self) -> Geom:
+        radius = self.radius.panda_units
+        return self._make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
+
+    def get_texture(self) -> Texture | None:
+        return self.create_texture(500, 500, self.color)

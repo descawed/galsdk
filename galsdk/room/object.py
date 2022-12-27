@@ -1,14 +1,19 @@
 from abc import ABC, abstractmethod
 
-from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, Texture
+from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
+    Texture
+
+from galsdk.coords import Point
 
 
 class RoomObject(ABC):
-    def __init__(self, x: float, y: float, z: float, angle: float):
-        self.x = x
-        self.y = y
-        self.z = z
+    def __init__(self, name: str, position: Point, angle: float):
+        self.name = name
+        self.position = position
         self.angle = angle
+        self.node = None
+        self.node_path = None
+        self.color = (0., 0., 0., 0.)
 
     @staticmethod
     def _make_triangle(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float]) -> Geom:
@@ -56,6 +61,43 @@ class RoomObject(ABC):
         geom = Geom(vdata)
         geom.addPrimitive(primitive)
         return geom
+
+    def add_to_scene(self, scene: NodePath):
+        self.node = GeomNode(self.name)
+        self.node_path = scene.attachNewNode(self.node)
+        self.node_path.reparentTo(scene)
+        self.update()
+
+    def remove_from_scene(self):
+        if self.node_path:
+            self.node_path.removeNode()
+            self.node_path = None
+            self.node = None
+
+    def update_model(self):
+        if self.node:
+            self.node.removeAllGeoms()
+            self.node.addGeom(self.get_model())
+
+    def update_texture(self):
+        if self.node_path:
+            if texture := self.get_texture():
+                self.node_path.setTexture(texture, 1)
+            else:
+                self.node_path.setColor(*self.color)
+
+    def update_position(self):
+        if self.node_path:
+            self.node_path.setPos(self.position.panda_x, self.position.panda_y, self.position.panda_z)
+
+    def set_color(self, color: tuple[float, float, float, float]):
+        self.color = color
+        self.update_texture()
+
+    def update(self):
+        self.update_model()
+        self.update_texture()
+        self.update_position()
 
     @abstractmethod
     def get_model(self) -> Geom:

@@ -10,6 +10,7 @@ from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexFormat, 
     StringStream, Texture
 from PIL import Image
 
+from galsdk.coords import Dimension, Point
 from psx.tim import BitsPerPixel, Tim, Transparency
 
 
@@ -162,7 +163,6 @@ CLUT_WIDTH = 16
 BLOCK_WIDTH = 64
 TEXTURE_WIDTH = 0x100
 TEXTURE_HEIGHT = 0x100
-SCALE_FACTOR = 64
 
 
 class Model:
@@ -211,7 +211,8 @@ class Model:
         texcoord = GeomVertexWriter(vdata, 'texcoord')
         tex_height = self.texture_height
         for x, y, z, u, v in vertices:
-            vertex.addData3(-x / SCALE_FACTOR, z / SCALE_FACTOR, y / SCALE_FACTOR)
+            point = Point(x, y, z)
+            vertex.addData3(point.panda_x, point.panda_y, point.panda_z)
             texcoord.addData2(u / TEXTURE_WIDTH, (tex_height - v) / tex_height)
 
         primitive = GeomTriangles(Geom.UHStatic)
@@ -253,7 +254,8 @@ property list uchar uint vertex_indices
 end_header
 """
         for v in self.vertices:
-            ply += f'{-v[0] / SCALE_FACTOR} {v[2] / SCALE_FACTOR} {v[1] / SCALE_FACTOR}\n'
+            point = Point(v[0], v[1], v[2])
+            ply += f'{point.panda_x} {point.panda_y} {point.panda_z}\n'
         for t in self.triangles:
             ply += f'3 {t[0].vertex_index} {t[1].vertex_index} {t[2].vertex_index}\n'
         for q in self.quads:
@@ -268,7 +270,8 @@ end_header
         if material_path is not None:
             obj += f'mtllib {material_path}\n'
         for v in self.vertices:
-            obj += f'v {v[0] / SCALE_FACTOR} {v[1] / SCALE_FACTOR} {v[2] / SCALE_FACTOR}\n'
+            obj +=\
+                f'v {v[0] / Dimension.SCALE_FACTOR} {v[1] / Dimension.SCALE_FACTOR} {v[2] / Dimension.SCALE_FACTOR}\n'
         tex_height = self.texture_height
         for u in self.uvs:
             obj += f'vt {u[0] / TEXTURE_WIDTH} {(tex_height - u[1]) / tex_height}\n'
