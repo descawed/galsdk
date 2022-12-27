@@ -6,7 +6,8 @@ from direct.showbase.ShowBase import ShowBase
 
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project, Stage
-from galsdk.room import CircleColliderObject, RectangleColliderObject, TriangleColliderObject, WallColliderObject
+from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
+    WallColliderObject
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
 from galsdk.ui.room.replaceable import Replaceable
 from galsdk.ui.tab import Tab
@@ -17,6 +18,7 @@ class RoomViewport(Viewport):
     def __init__(self, base: ShowBase, width: int, height: int, *args, **kwargs):
         super().__init__('room', base, width, height, *args, **kwargs)
         self.wall = None
+        self.selected_item = None
         self.colliders = []
 
     def clear(self):
@@ -26,9 +28,28 @@ class RoomViewport(Viewport):
         self.colliders = []
 
     def replace_collider(self, index: int, collider: ColliderObject):
-        self.colliders[index].remove_from_scene()
+        old_collider = self.colliders[index]
+        is_selected = self.selected_item and self.selected_item[0] is old_collider
+        old_collider.remove_from_scene()
         self.colliders[index] = collider
         collider.add_to_scene(self.render_target)
+        if is_selected:
+            self.select(collider)
+
+    def select(self, item: RoomObject | None):
+        if self.selected_item:
+            old_item = self.selected_item[0]
+            r, g, b, _ = old_item.color
+            a = self.selected_item[1]
+            old_item.set_color((r, g, b, a))
+            old_item.node_path.setDepthTest(True)
+        if item:
+            r, g, b, a = item.color
+            self.selected_item = (item, a)
+            item.set_color((r, g, b, 1.))
+            item.node_path.setDepthTest(False)
+        else:
+            self.selected_item = None
 
     def set_room(self, module: RoomModule):
         self.clear()
@@ -137,6 +158,7 @@ class RoomTab(Tab):
                     for i in range(len(self.viewport.colliders)):
                         self.tree.insert(colliders_iid, tk.END, text=f'#{i}', iid=f'collider_{i}_{room_id}')
             self.set_detail_widget(None)
+            self.viewport.select(None)
         elif iid.startswith('collider_'):
             pieces = iid.split('_')
             collider_id = int(pieces[1])
@@ -148,6 +170,7 @@ class RoomTab(Tab):
                                    lambda c: self.viewport.replace_collider(collider_id, c))
             editor = ColliderEditor(collider, self)
             self.set_detail_widget(editor)
+            self.viewport.select(collider.object)
 
     def set_active(self, is_active: bool):
         self.viewport.set_active(is_active)

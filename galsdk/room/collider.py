@@ -59,7 +59,7 @@ class RectangleColliderObject(RoomObject):
 class WallColliderObject(RectangleColliderObject):
     def __init__(self, name: str, bounds: RectangleCollider):
         super().__init__(name, bounds)
-        self.color = (0.75, 0., 0., 1.)
+        self.color = (0.75, 0., 0., 0.9)
 
 
 class TriangleColliderObject(RoomObject):
