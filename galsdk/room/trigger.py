@@ -11,3 +11,4 @@ class TriggerObject(RectangleColliderObject):
         super().__init__(name, bounds)
         self.color = TRIGGER_COLOR
         self.trigger = trigger
+        self.id = interactable.id

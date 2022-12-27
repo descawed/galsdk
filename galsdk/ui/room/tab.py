@@ -10,6 +10,7 @@ from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObjec
     WallColliderObject, TriggerObject
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
 from galsdk.ui.room.replaceable import Replaceable
+from galsdk.ui.room.trigger import TriggerEditor
 from galsdk.ui.tab import Tab
 from galsdk.ui.viewport import Viewport
 
@@ -118,6 +119,11 @@ class RoomTab(Tab):
         self.detail_widget = None
         self.rooms = []
 
+        key_items = list(self.project.get_items(True))
+        self.item_names = [f'Unused #{i}' for i in range(len(key_items))]
+        for item in key_items:
+            self.item_names[item.id] = item.name
+
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
@@ -192,6 +198,17 @@ class RoomTab(Tab):
             editor = ColliderEditor(collider, self)
             self.set_detail_widget(editor)
             self.viewport.select(collider.object)
+        elif iid.startswith('trigger_'):
+            pieces = iid.split('_')
+            trigger_id = int(pieces[1])
+            room_id = int(pieces[2])
+            if self.current_room != room_id:
+                self.current_room = room_id
+                self.viewport.set_room(self.rooms[room_id])
+            trigger = self.viewport.triggers[trigger_id]
+            editor = TriggerEditor(trigger, self.item_names, self)
+            self.set_detail_widget(editor)
+            self.viewport.select(trigger)
 
     def set_active(self, is_active: bool):
         self.viewport.set_active(is_active)

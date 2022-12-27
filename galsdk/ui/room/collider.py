@@ -5,6 +5,7 @@ from galsdk.coords import Dimension
 from galsdk.module import ColliderType, CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room import CircleColliderObject, RectangleColliderObject, TriangleColliderObject, WallColliderObject
 from galsdk.ui.room.replaceable import Replaceable
+from galsdk.ui.room.util import validate_int
 
 
 ColliderObject = CircleColliderObject | RectangleColliderObject | TriangleColliderObject | WallColliderObject
@@ -32,7 +33,7 @@ class ColliderEditor(ttk.Frame):
         type_label = ttk.Label(self, text='Type:', anchor=tk.W)
         type_input = ttk.OptionMenu(self, self.type_var, self.type_var.get(), *self.options,
                                     command=self.on_change_type)
-        validator = (self.register(self.validate), '%P')
+        validator = (self.register(validate_int), '%P')
 
         self.x_var = tk.StringVar(self)
         self.x_var.trace_add('write', lambda *_: self.on_change_pos('x'))
@@ -95,17 +96,6 @@ class ColliderEditor(ttk.Frame):
                                              validatecommand=validator)
 
         self.update_display()
-
-    @staticmethod
-    def validate(value: str) -> bool:
-        if value == '':
-            return True
-
-        try:
-            int(value)
-            return True
-        except ValueError:
-            return False
 
     def toggle_triangle(self, show: bool):
         if show:

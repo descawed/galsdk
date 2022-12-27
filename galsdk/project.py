@@ -46,17 +46,17 @@ class Item:
 
 
 KEY_ITEM_NAMES = [
-    'Unused',
+    'Unused #0',
     'Security Card',
     'Beeject',
     'Freezer Room Key',
     'PPEC Storage Key',
     'Fuse',
     'Liquid Explosive',
-    'Unused',
+    'Unused #7',
     'Security Card (reformatted)',
     'Special PPEC Office Key',
-    'Unused',
+    'Unused #10',
     'Test Lab Key',
     'Control Room Key',
     'Research Lab Key',
@@ -64,7 +64,7 @@ KEY_ITEM_NAMES = [
     'Two-Headed Monkey',
     'Two-Headed Wolf',
     'Two-Headed Eagle',
-    'Unused',
+    'Unused #18',
     'Backdoor Key',
     'Door Knob',
     '9 Ball',
@@ -491,13 +491,15 @@ class Project:
     def get_item_art(self) -> Manifest:
         return Manifest.load_from(self.project_dir / 'menu' / 'item_art')
 
-    def get_items(self) -> Iterable[Item]:
+    def get_items(self, key_items: bool | None = None) -> Iterable[Item]:
         model_manifest = Manifest.load_from(self.project_dir / 'models')
         json_path = self.project_dir / 'item.json'
         with json_path.open() as f:
             info = json.load(f)
         for entry in info:
             is_key_item = entry['model'] is not None
+            if key_items is not None and is_key_item != key_items:
+                continue
             if is_key_item:
                 name = KEY_ITEM_NAMES[entry['id']]
                 model_file = model_manifest[entry['model']]
