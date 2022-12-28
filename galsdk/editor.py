@@ -1,3 +1,4 @@
+import pathlib
 import tkinter as tk
 import tkinter.filedialog as tkfile
 import tkinter.messagebox as tkmsg
@@ -5,6 +6,7 @@ from tkinter import ttk
 from typing import Optional
 
 from direct.showbase.ShowBase import ShowBase
+from panda3d.core import getModelPath
 
 from galsdk.project import GameVersion, Project
 from galsdk.ui import ActorTab, BackgroundTab, ItemTab, ModelTab, MovieTab, RoomTab, StringTab, VoiceTab
@@ -18,6 +20,8 @@ class Editor(ShowBase):
     def __init__(self):
         super().__init__(windowType='none')
         self.project = None
+
+        getModelPath().appendDirectory(pathlib.Path.cwd() / 'models')
 
         self.startTk()
         self.tkRoot.title('galsdk')

@@ -7,3 +7,15 @@ def validate_int(value: str, base: int = 10) -> bool:
         return True
     except ValueError:
         return False
+
+
+def validate_float(value: str) -> bool:
+    if value == '':
+        return True
+
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
+

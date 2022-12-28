@@ -7,7 +7,8 @@ from direct.showbase.ShowBase import ShowBase
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project, Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
-    WallColliderObject, TriggerObject, CameraCutObject
+    WallColliderObject, TriggerObject, CameraCutObject, CameraObject
+from galsdk.ui.room.camera import CameraEditor
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
 from galsdk.ui.room.cut import CameraCutEditor
 from galsdk.ui.room.replaceable import Replaceable
@@ -27,15 +28,19 @@ class RoomViewport(Viewport):
         self.trigger_node = self.render_target.attachNewNode('room_viewport_triggers')
         self.cuts = []
         self.cut_node = self.render_target.attachNewNode('room_viewport_cuts')
+        self.cameras = []
+        self.camera_node = self.render_target.attachNewNode('room_viewport_cameras')
+        self.default_fov = self.camera.node().getLens().getMinFov()
 
     def clear(self):
         self.wall = None
         self.selected_item = None
-        for obj in [*self.colliders, *self.triggers, *self.cuts]:
+        for obj in [*self.colliders, *self.triggers, *self.cuts, *self.cameras]:
             obj.remove_from_scene()
         self.colliders = []
         self.triggers = []
         self.cuts = []
+        self.cameras = []
 
     def set_group_visibility(self, group: str, visibility: bool):
         if node_path := self.render_target.find(f'**/room_viewport_{group}'):
@@ -59,6 +64,26 @@ class RoomViewport(Viewport):
 
     def replace_trigger(self, index: int, trigger: TriggerObject):
         self.replace_item('triggers', index, trigger)
+
+    def get_default_camera_distance(self) -> float:
+        height = max(abs(self.wall.width.panda_units), abs(self.wall.height.panda_units))
+        fov = math.radians(self.camera.node().getLens().getVfov())
+        return height / 2 / math.tan(fov / 2)
+
+    def set_camera_view(self, camera: CameraObject | None):
+        if camera:
+            # TODO: this should track changes to the camera in real-time. also, we should make the camera target
+            #  targetable with set_target
+            # FIXME: hide the camera model for the camera we're currently viewing
+            self.clear_target()
+            self.camera.setPos(camera.position.panda_x, camera.position.panda_y, camera.position.panda_z)
+            self.camera.lookAt(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
+            self.camera.node().getLens().setMinFov(camera.fov)
+        else:
+            self.camera.node().getLens().setMinFov(self.default_fov)
+            camera_distance = self.get_default_camera_distance()
+            self.max_zoom = camera_distance * 4
+            self.set_target(self.wall.node_path, (0, 0, camera_distance))
 
     def select(self, item: RoomObject | None):
         if self.selected_item:
@@ -99,10 +124,6 @@ class RoomViewport(Viewport):
                 case ColliderType.WALL:
                     collider_object = self.wall = WallColliderObject(object_name, next(rect_iter))
                     is_wall = True
-                    # calculate how far away the camera needs to be to fit the entire area on the screen
-                    height = max(abs(self.wall.width.panda_units), abs(self.wall.height.panda_units))
-                    fov = math.radians(self.camera.node().getLens().getVfov())
-                    camera_distance = height / 2 / math.tan(fov / 2)
                 case ColliderType.RECTANGLE:
                     collider_object = RectangleColliderObject(object_name, next(rect_iter))
                 case ColliderType.TRIANGLE:
@@ -124,8 +145,13 @@ class RoomViewport(Viewport):
             trigger_object.add_to_scene(self.trigger_node)
             self.triggers.append(trigger_object)
 
-        self.max_zoom = camera_distance * 4
-        self.set_target(self.wall.node_path, (0, 0, camera_distance))
+        for camera in module.layout.cameras:
+            object_name = f'room{module_name}_camera{len(self.cameras)}'
+            camera_object = CameraObject(object_name, camera, self.base.loader)
+            camera_object.add_to_scene(self.camera_node)
+            self.cameras.append(camera_object)
+
+        self.set_camera_view(None)
 
 
 class RoomTab(Tab):
@@ -138,7 +164,7 @@ class RoomTab(Tab):
         self.detail_widget = None
         self.menu_item = None
         self.rooms = []
-        self.visibility = {'colliders': True, 'cuts': True, 'triggers': True}
+        self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True}
 
         key_items = list(self.project.get_items(True))
         self.item_names = [f'Unused #{i}' for i in range(len(key_items))]
@@ -218,26 +244,24 @@ class RoomTab(Tab):
         if self.detail_widget:
             self.detail_widget.grid(row=0, column=2)
 
+    def add_children(self, room_id: int, group: str, container: list):
+        iid = f'{group}s_{room_id}'
+        if not self.tree.get_children(iid):
+            for i in range(len(container)):
+                self.tree.insert(iid, tk.END, text=f'#{i}', iid=f'{group}_{i}_{room_id}')
+
     def select_item(self, _):
         iid = self.tree.selection()[0]
         room_level_ids = ['room', 'actors', 'colliders', 'cameras', 'cuts', 'triggers']
-        object_ids = ['collider', 'trigger', 'cut']
+        object_ids = ['collider', 'trigger', 'cut', 'camera']
         if any(iid.startswith(f'{room_level_id}_') for room_level_id in room_level_ids):
             room_id = int(iid.split('_')[1])
             if self.current_room != room_id:
                 self.set_room(room_id)
-                colliders_iid = f'colliders_{room_id}'
-                if not self.tree.get_children(colliders_iid):
-                    for i in range(len(self.viewport.colliders)):
-                        self.tree.insert(colliders_iid, tk.END, text=f'#{i}', iid=f'collider_{i}_{room_id}')
-                cuts_iid = f'cuts_{room_id}'
-                if not self.tree.get_children(cuts_iid):
-                    for i in range(len(self.viewport.cuts)):
-                        self.tree.insert(cuts_iid, tk.END, text=f'#{i}', iid=f'cut_{i}_{room_id}')
-                triggers_iid = f'triggers_{room_id}'
-                if not self.tree.get_children(triggers_iid):
-                    for i in range(len(self.viewport.triggers)):
-                        self.tree.insert(triggers_iid, tk.END, text=f'#{i}', iid=f'trigger_{i}_{room_id}')
+                self.add_children(room_id, 'collider', self.viewport.colliders)
+                self.add_children(room_id, 'cut', self.viewport.cuts)
+                self.add_children(room_id, 'trigger', self.viewport.triggers)
+                self.add_children(room_id, 'camera', self.viewport.cameras)
             self.set_detail_widget(None)
             self.viewport.select(None)
         elif any(iid.startswith(f'{object_id}_') for object_id in object_ids):
@@ -246,6 +270,7 @@ class RoomTab(Tab):
             object_id = int(pieces[1])
             room_id = int(pieces[2])
             self.set_room(room_id)
+            camera_view = None
             match object_type:
                 case 'collider':
                     collider = Replaceable(self.viewport.colliders[object_id],
@@ -258,12 +283,16 @@ class RoomTab(Tab):
                 case 'cut':
                     obj = self.viewport.cuts[object_id]
                     editor = CameraCutEditor(obj, self)
+                case 'camera':
+                    camera_view = obj = self.viewport.cameras[object_id]
+                    editor = CameraEditor(obj, self)
                 case _:
                     self.set_detail_widget(None)
                     self.viewport.select(None)
                     return
             self.set_detail_widget(editor)
             self.viewport.select(obj)
+            self.viewport.set_camera_view(camera_view)
 
     def set_active(self, is_active: bool):
         self.viewport.set_active(is_active)

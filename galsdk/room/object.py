@@ -77,7 +77,8 @@ class RoomObject(ABC):
     def update_model(self):
         if self.node:
             self.node.removeAllGeoms()
-            self.node.addGeom(self.get_model())
+            if model := self.get_model():
+                self.node.addGeom(model)
 
     def update_texture(self):
         if self.node_path:
@@ -100,7 +101,7 @@ class RoomObject(ABC):
         self.update_position()
 
     @abstractmethod
-    def get_model(self) -> Geom:
+    def get_model(self) -> Geom | None:
         pass
 
     def get_texture(self) -> Texture | None:

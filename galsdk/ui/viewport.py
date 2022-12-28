@@ -50,31 +50,26 @@ class Viewport(ttk.Frame):
         self.base.mouseWatcherNode.setDisplayRegion(self.region)
 
         self.wheel_listener = DirectObject.DirectObject()
-        self.wheel_listener.accept('wheel_up', self.zoom, extraArgs=[-1])
-        self.wheel_listener.accept('wheel_down', self.zoom, extraArgs=[1])
+        self.wheel_listener.accept('wheel_up', self.zoom, extraArgs=[1])
+        self.wheel_listener.accept('wheel_down', self.zoom, extraArgs=[-1])
 
         self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{name}')
 
     def zoom(self, direction: int):
         if self.target:
             current_zoom = self.camera.getDistance(self.target)
-        else:
-            current_zoom = self.camera.getY()
-
-        new_zoom = current_zoom + direction
-        if new_zoom < self.min_zoom:
-            new_zoom = self.min_zoom
-        elif new_zoom > self.max_zoom:
-            new_zoom = self.max_zoom
-
-        if self.target:
+            new_zoom = current_zoom + direction
+            if new_zoom < self.min_zoom:
+                new_zoom = self.min_zoom
+            elif new_zoom > self.max_zoom:
+                new_zoom = self.max_zoom
             camera_pos = self.camera.getPos()
             vector = self.target.getPos() - camera_pos
             vector.normalize()
             new_direction = new_zoom - current_zoom
-            self.camera.setPos(camera_pos - vector * new_direction)
+            self.camera.setPos(camera_pos + vector * new_direction)
         else:
-            self.camera.setY(new_zoom)
+            self.camera.setY(self.camera, direction)
 
     def set_target(self, target: NodePath, camera_pos: tuple[float, float, float] = None):
         self.target = target
