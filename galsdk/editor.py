@@ -28,7 +28,7 @@ class Editor(ShowBase):
 
         file_menu = tk.Menu(menu_bar, tearoff=False)
 
-        file_menu.add_cascade(label='New Project...', underline=0, command=self.ask_new_project)
+        file_menu.add_command(label='New Project...', underline=0, command=self.ask_new_project)
         file_menu.add_command(label='Open Project...', underline=0, command=self.ask_open_project)
         file_menu.add_separator()
         file_menu.add_command(label='Exit', underline=1, command=self.exit)

@@ -22,8 +22,11 @@ class RoomViewport(Viewport):
         self.wall = None
         self.selected_item = None
         self.colliders = []
+        self.collider_node = self.render_target.attachNewNode('room_viewport_colliders')
         self.triggers = []
+        self.trigger_node = self.render_target.attachNewNode('room_viewport_triggers')
         self.cuts = []
+        self.cut_node = self.render_target.attachNewNode('room_viewport_cuts')
 
     def clear(self):
         self.wall = None
@@ -33,6 +36,13 @@ class RoomViewport(Viewport):
         self.colliders = []
         self.triggers = []
         self.cuts = []
+
+    def set_group_visibility(self, group: str, visibility: bool):
+        if node_path := self.render_target.find(f'**/room_viewport_{group}'):
+            if visibility:
+                node_path.show()
+            else:
+                node_path.hide()
 
     def replace_item(self, item_type: str, index: int, item: RoomObject):
         container = getattr(self, item_type)
@@ -78,7 +88,7 @@ class RoomViewport(Viewport):
             object_name = f'room{module_name}_cut{len(self.cuts)}'
             cut_object = CameraCutObject(object_name, cut)
             cut_object.position.game_y += 1
-            cut_object.add_to_scene(self.render_target)
+            cut_object.add_to_scene(self.cut_node)
             self.cuts.append(cut_object)
 
         for collider in module.layout.colliders:
@@ -104,14 +114,14 @@ class RoomViewport(Viewport):
 
             if not is_wall:
                 collider_object.position.game_y += 2
-            collider_object.add_to_scene(self.render_target)
+            collider_object.add_to_scene(self.collider_node)
             self.colliders.append(collider_object)
 
         for interactable, trigger in zip(module.layout.interactables, module.triggers.triggers, strict=True):
             object_name = f'room{module_name}_trigger{len(self.triggers)}'
             trigger_object = TriggerObject(object_name, interactable, trigger)
             trigger_object.position.game_y += 3
-            trigger_object.add_to_scene(self.render_target)
+            trigger_object.add_to_scene(self.trigger_node)
             self.triggers.append(trigger_object)
 
         self.max_zoom = camera_distance * 4
@@ -126,12 +136,17 @@ class RoomTab(Tab):
         self.base = base
         self.current_room = None
         self.detail_widget = None
+        self.menu_item = None
         self.rooms = []
+        self.visibility = {'colliders': True, 'cuts': True, 'triggers': True}
 
         key_items = list(self.project.get_items(True))
         self.item_names = [f'Unused #{i}' for i in range(len(key_items))]
         for item in key_items:
             self.item_names[item.id] = item.name
+
+        self.group_menu = tk.Menu(self, tearoff=False)
+        self.group_menu.add_command(label='Hide', command=self.toggle_current_group)
 
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
@@ -168,6 +183,32 @@ class RoomTab(Tab):
         self.grid_columnconfigure(3, weight=1)
 
         self.tree.bind('<<TreeviewSelect>>', self.select_item)
+        self.tree.bind('<Button-3>', self.handle_right_click)
+
+    def set_room(self, room_id: int):
+        if self.current_room != room_id:
+            self.current_room = room_id
+            self.viewport.set_room(self.rooms[room_id])
+
+    def toggle_current_group(self, *_):
+        if self.menu_item:
+            for group in self.visibility:
+                if self.menu_item.startswith(f'{group}_'):
+                    is_visible = not self.visibility[group]
+                    self.viewport.set_group_visibility(group, is_visible)
+                    self.visibility[group] = is_visible
+                    break
+
+    def handle_right_click(self, event: tk.Event):
+        iid = self.tree.identify_row(event.y)
+        for group in self.visibility:
+            if iid.startswith(f'{group}_'):
+                room_id = int(iid.split('_')[1])
+                if self.current_room != room_id:
+                    self.tree.selection_set(iid)
+                self.group_menu.entryconfigure(1, label='Hide' if self.visibility[group] else 'Show')
+                self.group_menu.post(event.x_root, event.y_root)
+                self.menu_item = iid
 
     def set_detail_widget(self, widget: ttk.Frame | None):
         if self.detail_widget:
@@ -184,8 +225,7 @@ class RoomTab(Tab):
         if any(iid.startswith(f'{room_level_id}_') for room_level_id in room_level_ids):
             room_id = int(iid.split('_')[1])
             if self.current_room != room_id:
-                self.current_room = room_id
-                self.viewport.set_room(self.rooms[room_id])
+                self.set_room(room_id)
                 colliders_iid = f'colliders_{room_id}'
                 if not self.tree.get_children(colliders_iid):
                     for i in range(len(self.viewport.colliders)):
@@ -205,9 +245,7 @@ class RoomTab(Tab):
             object_type = pieces[0]
             object_id = int(pieces[1])
             room_id = int(pieces[2])
-            if self.current_room != room_id:
-                self.current_room = room_id
-                self.viewport.set_room(self.rooms[room_id])
+            self.set_room(room_id)
             match object_type:
                 case 'collider':
                     collider = Replaceable(self.viewport.colliders[object_id],
