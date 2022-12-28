@@ -154,6 +154,9 @@ class Point:
         self.game_y -= other.game_y
         self.game_z -= other.game_z
 
+    def __repr__(self) -> str:
+        return f'Point({self.game_x}, {self.game_y}, {self.game_z})'
+
     def find_midpoint(self, other: Point) -> Point:
         # we do the calculation in panda units to preserve float accuracy until the end
         point = Point()

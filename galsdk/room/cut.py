@@ -1,4 +1,4 @@
-from panda3d.core import Geom
+from panda3d.core import Geom, NodePath
 
 from galsdk.coords import Line2d, Point, Triangle2d
 from galsdk.module import CameraCut
@@ -16,6 +16,10 @@ class CameraCutObject(RoomObject):
         self.p3 = Point(cut.x3, 0, cut.z3)
         self.p4 = Point(cut.x4, 0, cut.z4)
 
+        super().__init__(name, self.calculate_centroid(), 0)
+        self.color = CUT_COLOR
+
+    def calculate_centroid(self) -> Point:
         triangle1 = Triangle2d(self.p1, self.p2, self.p3)
         triangle2 = Triangle2d(self.p1, self.p3, self.p4)
         triangle3 = Triangle2d(self.p1, self.p2, self.p4)
@@ -24,9 +28,17 @@ class CameraCutObject(RoomObject):
         line1 = Line2d(triangle1.centroid, triangle2.centroid)
         line2 = Line2d(triangle3.centroid, triangle4.centroid)
 
-        quad_centroid = line1.find_intersection(line2)
-        super().__init__(name, quad_centroid, 0)
-        self.color = CUT_COLOR
+        return line1.find_intersection(line2)
+
+    def recalculate_center(self):
+        centroid = self.calculate_centroid()
+        self.position.x = centroid.x
+        self.position.y = centroid.y
+
+    def add_to_scene(self, scene: NodePath):
+        super().add_to_scene(scene)
+        # vertices are not in a consistent order in the game data
+        self.node_path.setTwoSided(True)
 
     def get_model(self) -> Geom:
         return self._make_quad(

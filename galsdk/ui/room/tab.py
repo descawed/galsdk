@@ -9,6 +9,7 @@ from galsdk.project import Project, Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
     WallColliderObject, TriggerObject, CameraCutObject
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
+from galsdk.ui.room.cut import CameraCutEditor
 from galsdk.ui.room.replaceable import Replaceable
 from galsdk.ui.room.trigger import TriggerEditor
 from galsdk.ui.tab import Tab
@@ -180,6 +181,7 @@ class RoomTab(Tab):
     def select_item(self, _):
         iid = self.tree.selection()[0]
         room_level_ids = ['room', 'actors', 'colliders', 'cameras', 'cuts', 'triggers']
+        object_ids = ['collider', 'trigger', 'cut']
         if any(iid.startswith(f'{room_level_id}_') for room_level_id in room_level_ids):
             room_id = int(iid.split('_')[1])
             if self.current_room != room_id:
@@ -199,29 +201,32 @@ class RoomTab(Tab):
                         self.tree.insert(triggers_iid, tk.END, text=f'#{i}', iid=f'trigger_{i}_{room_id}')
             self.set_detail_widget(None)
             self.viewport.select(None)
-        elif iid.startswith('collider_'):
+        elif any(iid.startswith(f'{object_id}_') for object_id in object_ids):
             pieces = iid.split('_')
-            collider_id = int(pieces[1])
+            object_type = pieces[0]
+            object_id = int(pieces[1])
             room_id = int(pieces[2])
             if self.current_room != room_id:
                 self.current_room = room_id
                 self.viewport.set_room(self.rooms[room_id])
-            collider = Replaceable(self.viewport.colliders[collider_id],
-                                   lambda c: self.viewport.replace_collider(collider_id, c))
-            editor = ColliderEditor(collider, self)
+            match object_type:
+                case 'collider':
+                    collider = Replaceable(self.viewport.colliders[object_id],
+                                           lambda c: self.viewport.replace_collider(object_id, c))
+                    editor = ColliderEditor(collider, self)
+                    obj = collider.object
+                case 'trigger':
+                    obj = self.viewport.triggers[object_id]
+                    editor = TriggerEditor(obj, self.item_names, self)
+                case 'cut':
+                    obj = self.viewport.cuts[object_id]
+                    editor = CameraCutEditor(obj, self)
+                case _:
+                    self.set_detail_widget(None)
+                    self.viewport.select(None)
+                    return
             self.set_detail_widget(editor)
-            self.viewport.select(collider.object)
-        elif iid.startswith('trigger_'):
-            pieces = iid.split('_')
-            trigger_id = int(pieces[1])
-            room_id = int(pieces[2])
-            if self.current_room != room_id:
-                self.current_room = room_id
-                self.viewport.set_room(self.rooms[room_id])
-            trigger = self.viewport.triggers[trigger_id]
-            editor = TriggerEditor(trigger, self.item_names, self)
-            self.set_detail_widget(editor)
-            self.viewport.select(trigger)
+            self.viewport.select(obj)
 
     def set_active(self, is_active: bool):
         self.viewport.set_active(is_active)
