@@ -154,6 +154,14 @@ class Point:
         self.game_y -= other.game_y
         self.game_z -= other.game_z
 
+    def find_midpoint(self, other: Point) -> Point:
+        # we do the calculation in panda units to preserve float accuracy until the end
+        point = Point()
+        point.x.panda_units = self.panda_x + (other.panda_x - self.panda_x) / 2
+        point.y.panda_units = self.panda_y + (other.panda_y - self.panda_y) / 2
+        point.z.panda_units = self.panda_z + (other.panda_z - self.panda_z) / 2
+        return point
+
     @property
     def game_x(self) -> int:
         return self.x.game_units
@@ -201,3 +209,50 @@ class Point:
     @panda_z.setter
     def panda_z(self, value: float):
         self.z.panda_units = value
+
+
+class Line2d:
+    def __init__(self, a: Point, b: Point):
+        self.a = a
+        self.b = b
+
+    def find_intersection(self, other: Line2d) -> Point:
+        a1 = (self.a.panda_x, self.a.panda_y)
+        a2 = (self.b.panda_x, self.b.panda_y)
+        b1 = (other.a.panda_x, other.a.panda_y)
+        b2 = (other.b.panda_x, other.b.panda_y)
+
+        try:
+            am = (a2[1] - a1[1]) / (a2[0] - a1[0])
+        except ZeroDivisionError:
+            am = 0.
+        ab = a1[1] - am * a1[0]
+        try:
+            bm = (b2[1] - b1[1]) / (b2[0] - b1[0])
+        except ZeroDivisionError:
+            bm = 0.
+        bb = b1[1] - bm * b1[0]
+
+        point = Point()
+        try:
+            point.panda_x = (bb - ab) / (am - bm)
+        except ZeroDivisionError:
+            pass
+        point.panda_y = am * point.panda_x + ab
+        return point
+
+
+class Triangle2d:
+    def __init__(self, p1: Point, p2: Point, p3: Point):
+        self.p1 = p1
+        self.p2 = p2
+        self.p3 = p3
+
+    @property
+    def centroid(self) -> Point:
+        m12 = self.p1.find_midpoint(self.p2)
+        m23 = self.p2.find_midpoint(self.p3)
+
+        line1 = Line2d(m12, self.p3)
+        line2 = Line2d(self.p1, m23)
+        return line1.find_intersection(line2)

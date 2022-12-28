@@ -3,7 +3,7 @@ import io
 from panda3d.core import Geom, NodePath, PNMImage, SamplerState, StringStream, Texture
 from PIL import Image, ImageDraw
 
-from galsdk.coords import Dimension, Point
+from galsdk.coords import Dimension, Point, Triangle2d
 from galsdk.module import CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room.object import RoomObject
 
@@ -64,12 +64,37 @@ class WallColliderObject(RectangleColliderObject):
 
 class TriangleColliderObject(RoomObject):
     def __init__(self, name: str, bounds: TriangleCollider):
-        self.p1 = Point(bounds.x1, 0, bounds.z1)
-        self.p2 = Point(bounds.x2, 0, bounds.z2)
-        self.p3 = Point(bounds.x3, 0, bounds.z3)
-        centroid = self.find_centroid()
+        p1 = Point(bounds.x1, 0, bounds.z1)
+        p2 = Point(bounds.x2, 0, bounds.z2)
+        p3 = Point(bounds.x3, 0, bounds.z3)
+        self.triangle = Triangle2d(p1, p2, p3)
+        centroid = self.triangle.centroid
         super().__init__(name, centroid, 0)
         self.color = COLLIDER_COLOR
+
+    @property
+    def p1(self) -> Point:
+        return self.triangle.p1
+
+    @p1.setter
+    def p1(self, value: Point):
+        self.triangle.p1 = value
+
+    @property
+    def p2(self) -> Point:
+        return self.triangle.p2
+
+    @p2.setter
+    def p2(self, value: Point):
+        self.triangle.p2 = value
+
+    @property
+    def p3(self) -> Point:
+        return self.triangle.p3
+
+    @p3.setter
+    def p3(self, value: Point):
+        self.triangle.p3 = value
 
     def get_model(self) -> Geom:
         return self._make_triangle(
@@ -82,49 +107,8 @@ class TriangleColliderObject(RoomObject):
         super().add_to_scene(scene)
         self.node_path.setTwoSided(True)
 
-    @staticmethod
-    def _find_midpoint(p1: tuple[float, float], p2: tuple[float, float]) -> tuple[float, float]:
-        x = p1[0] + (p2[0] - p1[0]) / 2
-        y = p1[1] + (p2[1] - p1[1]) / 2
-        return x, y
-    
-    @staticmethod
-    def _find_intersection(a1: tuple[float, float], a2: tuple[float, float],
-                           b1: tuple[float, float], b2: tuple[float, float]) -> tuple[float, float]:
-        try:
-            am = (a2[1] - a1[1]) / (a2[0] - a1[0])
-        except ZeroDivisionError:
-            am = 0.
-        ab = a1[1] - am*a1[0]
-        try:
-            bm = (b2[1] - b1[1]) / (b2[0] - b1[0])
-        except ZeroDivisionError:
-            bm = 0.
-        bb = b1[1] - bm*b1[0]
-
-        try:
-            x = (bb - ab)/(am - bm)
-        except ZeroDivisionError:
-            x = 0.
-        y = am*x + ab
-        return x, y
-
-    def find_centroid(self) -> Point:
-        p1 = (self.p1.panda_x, self.p1.panda_y)
-        p2 = (self.p2.panda_x, self.p2.panda_y)
-        p3 = (self.p3.panda_x, self.p3.panda_y)
-
-        m12 = self._find_midpoint(p1, p2)
-        m23 = self._find_midpoint(p2, p3)
-
-        x, y = self._find_intersection(m12, p3, p1, m23)
-        point = Point()
-        point.panda_x = x
-        point.panda_y = y
-        return point
-
     def recalculate_center(self):
-        centroid = self.find_centroid()
+        centroid = self.triangle.centroid
         self.position.x = centroid.x
         self.position.y = centroid.y
 

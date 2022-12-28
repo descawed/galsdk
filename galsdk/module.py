@@ -240,7 +240,7 @@ class RoomModule:
             instances = []
             for i in range(cls.MAX_ACTORS):
                 start = 0x24 + i * cls.ACTOR_INSTANCE_SIZE
-                instances.append(ActorInstance(*struct.unpack_from('H4h3H', layout_data, start)))
+                instances.append(ActorInstance(*struct.unpack_from('<H4h3H', layout_data, start)))
             actor_layouts.layouts.append(ActorLayout(name, unknown, instances))
         if actor_layouts.address > 0:
             used_addresses.append(range(actor_layouts.address,
@@ -289,17 +289,17 @@ class RoomModule:
                 # reading the elements that are actually present
                 offset = i + 0x4b4
                 for _ in range(num_rects):
-                    room_layout.rectangle_colliders.append(RectangleCollider(*struct.unpack_from('5i', data, offset)))
+                    room_layout.rectangle_colliders.append(RectangleCollider(*struct.unpack_from('<5i', data, offset)))
                     offset += 20
 
                 offset = i + 0xc84
                 for _ in range(num_tris):
-                    room_layout.triangle_colliders.append(TriangleCollider(*struct.unpack_from('6i', data, offset)))
+                    room_layout.triangle_colliders.append(TriangleCollider(*struct.unpack_from('<6i', data, offset)))
                     offset += 24
 
                 offset = i + 0x15e4
                 for _ in range(num_circles):
-                    room_layout.circle_colliders.append(CircleCollider(*struct.unpack_from('3i', data, offset)))
+                    room_layout.circle_colliders.append(CircleCollider(*struct.unpack_from('<3i', data, offset)))
                     offset += 12
 
                 offset = i + 0x1a94
@@ -309,7 +309,7 @@ class RoomModule:
 
                 offset += 4
                 for _ in range(num_cameras):
-                    room_layout.cameras.append(Camera(*struct.unpack_from('10h', data, offset)))
+                    room_layout.cameras.append(Camera(*struct.unpack_from('<10h', data, offset)))
                     offset += 20
 
                 offset = i + 0x1b60
@@ -318,7 +318,7 @@ class RoomModule:
                     if marker < 0:
                         break
 
-                    room_layout.cuts.append(CameraCut(*struct.unpack_from('h8i', data, offset + 4)))
+                    room_layout.cuts.append(CameraCut(*struct.unpack_from('<h8i', data, offset + 2)))
                     offset += 0x24
 
                 offset = i + 0x2970
@@ -328,7 +328,7 @@ class RoomModule:
 
                 offset += 4
                 for _ in range(num_interactables):
-                    room_layout.interactables.append(Interactable(*struct.unpack_from('5h', data, offset)))
+                    room_layout.interactables.append(Interactable(*struct.unpack_from('<5h', data, offset)))
                     offset += 10
             except struct.error:
                 # parse error; this isn't the struct we're looking for
@@ -400,7 +400,7 @@ class RoomModule:
                             raise ValueError
                         background = Background(index, mask_ptr, [])
                         for _ in range(num_masks):
-                            background.masks.append(BackgroundMask(*struct.unpack_from('2I4h', data, mask_offset)))
+                            background.masks.append(BackgroundMask(*struct.unpack_from('<2I4h', data, mask_offset)))
                             mask_offset += 16
 
                         backgrounds.backgrounds.append(background)
