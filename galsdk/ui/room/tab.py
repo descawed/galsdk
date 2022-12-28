@@ -114,9 +114,8 @@ class RoomViewport(Viewport):
             trigger_object.add_to_scene(self.render_target)
             self.triggers.append(trigger_object)
 
-        self.camera.setPos(self.wall.position.panda_x, self.wall.position.panda_y,
-                           self.wall.position.panda_z + camera_distance)
-        self.camera.lookAt(self.wall.node_path)
+        self.max_zoom = camera_distance * 4
+        self.set_target(self.wall.node_path, (0, 0, camera_distance))
 
 
 class RoomTab(Tab):

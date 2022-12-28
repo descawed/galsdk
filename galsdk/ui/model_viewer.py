@@ -27,7 +27,9 @@ class ModelViewer(Viewport):
             self.node.addGeom(panda_model)
             self.node_path.setTexture(panda_texture, 1)
             self.node_path.setHpr(0, 0, 0)
-            self.camera.setPos(0, self.DEFAULT_ZOOM, 2)
+            self.set_target(self.node_path)
+        else:
+            self.clear_target()
 
     def handle_mouse(self, is_dragging: bool, is_panning: bool, x_diff: float, y_diff: float):
         # don't do anything unless we've been dragging for at least one frame
