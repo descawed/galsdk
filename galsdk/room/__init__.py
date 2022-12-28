@@ -1,6 +1,7 @@
 __all__ = ['RoomObject', 'CircleColliderObject', 'RectangleColliderObject', 'WallColliderObject',
-           'TriangleColliderObject', 'TriggerObject', 'CameraCutObject', 'CameraObject']
+           'TriangleColliderObject', 'TriggerObject', 'CameraCutObject', 'CameraObject', 'BillboardObject']
 
+from galsdk.room.billboard import BillboardObject
 from galsdk.room.camera import CameraObject
 from galsdk.room.collider import CircleColliderObject, RectangleColliderObject, WallColliderObject,\
     TriangleColliderObject

@@ -131,14 +131,7 @@ class CircleColliderObject(RoomObject):
         draw = ImageDraw.Draw(image)
         draw.ellipse([(0, 0), (width - 1, height - 1)], tuple(int(c * 255) for c in color))
 
-        buffer = io.BytesIO()
-        image.save(buffer, format='png')
-
-        panda_image = PNMImage()
-        panda_image.read(StringStream(buffer.getvalue()))
-
-        texture = Texture()
-        texture.load(panda_image)
+        texture = cls._create_texture_from_image(image)
         # prevents artifacts around the edge of the circle
         texture.setMagfilter(SamplerState.FT_nearest)
         texture.setMinfilter(SamplerState.FT_nearest)

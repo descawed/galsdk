@@ -84,7 +84,7 @@ class CameraEditor(ttk.Frame):
         self.camera.orientation = int(self.orientation_var.get() or '0')
 
     def on_change_fov(self, *_):
-        self.camera.set_fov(float(self.fov_var.get() or '0'))
+        self.camera.fov = float(self.fov_var.get() or '0')
 
     def on_change_scale(self, *_):
         self.camera.scale = int(self.scale_var.get() or '0')

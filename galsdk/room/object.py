@@ -1,12 +1,16 @@
+import io
 from abc import ABC, abstractmethod
 
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
-    Texture
+    Texture, StringStream, PNMImage
+from PIL import Image
 
 from galsdk.coords import Point
 
 
 class RoomObject(ABC):
+    node_path: NodePath | None
+
     def __init__(self, name: str, position: Point, angle: float):
         self.name = name
         self.position = position
@@ -61,6 +65,18 @@ class RoomObject(ABC):
         geom = Geom(vdata)
         geom.addPrimitive(primitive)
         return geom
+
+    @staticmethod
+    def _create_texture_from_image(image: Image) -> Texture:
+        buffer = io.BytesIO()
+        image.save(buffer, format='png')
+
+        panda_image = PNMImage()
+        panda_image.read(StringStream(buffer.getvalue()))
+
+        texture = Texture()
+        texture.load(panda_image)
+        return texture
 
     def add_to_scene(self, scene: NodePath):
         self.node = GeomNode(self.name)

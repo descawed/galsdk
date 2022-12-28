@@ -2,13 +2,14 @@ from direct.showbase.Loader import Loader
 from panda3d.core import Geom, NodePath
 
 from galsdk.coords import Point
-from galsdk.module import Camera
+from galsdk.module import Camera, Background
 from galsdk.room.object import RoomObject
 
 
 class CameraObject(RoomObject):
-    def __init__(self, name: str, camera: Camera, loader: Loader):
+    def __init__(self, name: str, camera: Camera, background: Background, loader: Loader):
         super().__init__(name, Point(camera.x, camera.y, camera.z), 0)
+        self.background = background
         self.target = Point(camera.target_x, camera.target_y, camera.target_z)
         self.orientation = camera.orientation
         self.fov = camera.vertical_fov / 10
@@ -17,9 +18,6 @@ class CameraObject(RoomObject):
         self.node_path = loader.loadModel('movie_camera.egg')
         self.node_path.setScale(2)
         self.color = (0.5, 0.5, 0.5, 0.9)
-
-    def set_fov(self, fov: float):
-        self.fov = int(fov * 10)
 
     def add_to_scene(self, scene: NodePath):
         self.node_path.reparentTo(scene)

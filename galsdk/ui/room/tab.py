@@ -4,10 +4,12 @@ from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
 
+from galsdk.manifest import Manifest
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project, Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
-    WallColliderObject, TriggerObject, CameraCutObject, CameraObject
+    WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject
+from galsdk.tim import TimDb
 from galsdk.ui.room.camera import CameraEditor
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
 from galsdk.ui.room.cut import CameraCutEditor
@@ -18,7 +20,8 @@ from galsdk.ui.viewport import Viewport
 
 
 class RoomViewport(Viewport):
-    def __init__(self, base: ShowBase, width: int, height: int, *args, **kwargs):
+    def __init__(self, base: ShowBase, width: int, height: int, stage_backgrounds: dict[Stage, Manifest],
+                 *args, **kwargs):
         super().__init__('room', base, width, height, *args, **kwargs)
         self.wall = None
         self.selected_item = None
@@ -31,10 +34,18 @@ class RoomViewport(Viewport):
         self.cameras = []
         self.camera_node = self.render_target.attachNewNode('room_viewport_cameras')
         self.default_fov = self.camera.node().getLens().getMinFov()
+        self.stage_backgrounds = stage_backgrounds
+        self.current_stage = Stage.A
+        self.background = None
+        self.loaded_tims = {}
 
     def clear(self):
         self.wall = None
         self.selected_item = None
+        if self.background:
+            self.background.remove_from_scene()
+            self.background = None
+        self.loaded_tims = {}
         for obj in [*self.colliders, *self.triggers, *self.cuts, *self.cameras]:
             obj.remove_from_scene()
         self.colliders = []
@@ -65,12 +76,27 @@ class RoomViewport(Viewport):
     def replace_trigger(self, index: int, trigger: TriggerObject):
         self.replace_item('triggers', index, trigger)
 
+    def calculate_screen_fill_distance(self, width: float, height: float) -> float:
+        width = abs(width)
+        height = abs(height)
+        if width > height:
+            dimension = width
+            fov = self.camera.node().getLens().getHfov()
+        else:
+            dimension = height
+            fov = self.camera.node().getLens().getVfov()
+        fov = math.radians(fov)
+        # according to the formula I found online, I'm supposed to be dividing dimension by 2, but I had to remove that
+        # to get backgrounds to show up correctly. this does make the initial view of the floor layout more zoomed out
+        # than I intended, but that's a minor issue.
+        return dimension / math.tan(fov / 2)
+
     def get_default_camera_distance(self) -> float:
-        height = max(abs(self.wall.width.panda_units), abs(self.wall.height.panda_units))
-        fov = math.radians(self.camera.node().getLens().getVfov())
-        return height / 2 / math.tan(fov / 2)
+        return self.calculate_screen_fill_distance(self.wall.width.panda_units, self.wall.height.panda_units)
 
     def set_camera_view(self, camera: CameraObject | None):
+        if self.background:
+            self.background.remove_from_scene()
         if camera:
             # TODO: this should track changes to the camera in real-time. also, we should make the camera target
             #  targetable with set_target
@@ -79,11 +105,18 @@ class RoomViewport(Viewport):
             self.camera.setPos(camera.position.panda_x, camera.position.panda_y, camera.position.panda_z)
             self.camera.lookAt(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
             self.camera.node().getLens().setMinFov(camera.fov)
+            bg_tim = self.loaded_tims[camera.background.index][0]
+            self.background = BillboardObject('room_viewport_background', bg_tim)
+            self.background.add_to_scene(self.render_target)
+            distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
+            self.background.node_path.setPos(self.camera, 0, distance, 0)
+            self.background.node_path.setHpr(self.camera, 0, 90, 0)
         else:
             self.camera.node().getLens().setMinFov(self.default_fov)
             camera_distance = self.get_default_camera_distance()
             self.max_zoom = camera_distance * 4
             self.set_target(self.wall.node_path, (0, 0, camera_distance))
+            self.background = None
 
     def select(self, item: RoomObject | None):
         if self.selected_item:
@@ -106,8 +139,8 @@ class RoomViewport(Viewport):
         rect_iter = iter(module.layout.rectangle_colliders)
         tri_iter = iter(module.layout.triangle_colliders)
         circle_iter = iter(module.layout.circle_colliders)
-        camera_distance = 0.
         module_name = module.name or 'UNKWN'
+        self.current_stage = Stage(module_name[0])
 
         for cut in module.layout.cuts:
             object_name = f'room{module_name}_cut{len(self.cuts)}'
@@ -145,11 +178,16 @@ class RoomViewport(Viewport):
             trigger_object.add_to_scene(self.trigger_node)
             self.triggers.append(trigger_object)
 
-        for camera in module.layout.cameras:
+        for camera, background in zip(module.layout.cameras, module.backgrounds.backgrounds, strict=True):
             object_name = f'room{module_name}_camera{len(self.cameras)}'
-            camera_object = CameraObject(object_name, camera, self.base.loader)
+            camera_object = CameraObject(object_name, camera, background, self.base.loader)
             camera_object.add_to_scene(self.camera_node)
             self.cameras.append(camera_object)
+            if camera_object.background.index not in self.loaded_tims:
+                db = TimDb()
+                with open(self.stage_backgrounds[self.current_stage][camera_object.background.index].path, 'rb') as f:
+                    db.read(f)
+                self.loaded_tims[camera_object.background.index] = db
 
         self.set_camera_view(None)
 
@@ -171,6 +209,8 @@ class RoomTab(Tab):
         for item in key_items:
             self.item_names[item.id] = item.name
 
+        stage_backgrounds = {}
+
         self.group_menu = tk.Menu(self, tearoff=False)
         self.group_menu.add_command(label='Hide', command=self.toggle_current_group)
 
@@ -181,6 +221,8 @@ class RoomTab(Tab):
         for stage in Stage:
             stage: Stage
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
+
+            stage_backgrounds[stage] = self.project.get_stage_backgrounds(stage)
 
             for room in self.project.get_stage_rooms(stage):
                 room_id = len(self.rooms)
@@ -199,7 +241,7 @@ class RoomTab(Tab):
                 trigger_iid = f'triggers_{room_id}'
                 self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
 
-        self.viewport = RoomViewport(self.base, 1024, 768, self)
+        self.viewport = RoomViewport(self.base, 1024, 768, stage_backgrounds, self)
 
         self.tree.grid(row=0, column=0, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, sticky=tk.NS)
