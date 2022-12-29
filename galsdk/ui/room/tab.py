@@ -4,12 +4,12 @@ from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
 
-from galsdk.manifest import Manifest
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project, Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
-    WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject
+    WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject
 from galsdk.tim import TimDb
+from galsdk.ui.room.actor import ActorEditor
 from galsdk.ui.room.camera import CameraEditor
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
 from galsdk.ui.room.cut import CameraCutEditor
@@ -20,9 +20,9 @@ from galsdk.ui.viewport import Viewport
 
 
 class RoomViewport(Viewport):
-    def __init__(self, base: ShowBase, width: int, height: int, stage_backgrounds: dict[Stage, Manifest],
-                 *args, **kwargs):
+    def __init__(self, base: ShowBase, width: int, height: int, project: Project, *args, **kwargs):
         super().__init__('room', base, width, height, *args, **kwargs)
+        self.name = None
         self.wall = None
         self.selected_item = None
         self.colliders = []
@@ -33,25 +33,39 @@ class RoomViewport(Viewport):
         self.cut_node = self.render_target.attachNewNode('room_viewport_cuts')
         self.cameras = []
         self.camera_node = self.render_target.attachNewNode('room_viewport_cameras')
+        self.actors = []
+        self.actor_node = self.render_target.attachNewNode('room_viewport_actors')
         self.default_fov = self.camera.node().getLens().getMinFov()
-        self.stage_backgrounds = stage_backgrounds
+        self.project = project
+        self.stage_backgrounds = {}
+        for stage in Stage:
+            stage: Stage
+            self.stage_backgrounds[stage] = self.project.get_stage_backgrounds(stage)
+        self.actor_models = list(self.project.get_actor_models(True))
         self.current_stage = Stage.A
         self.background = None
         self.loaded_tims = {}
+        self.actor_layouts = []
+        self.current_layout = -1
 
     def clear(self):
+        self.name = None
         self.wall = None
         self.selected_item = None
         if self.background:
             self.background.remove_from_scene()
             self.background = None
         self.loaded_tims = {}
-        for obj in [*self.colliders, *self.triggers, *self.cuts, *self.cameras]:
+        for obj in [*self.colliders, *self.triggers, *self.cuts, *self.cameras, *self.actors]:
             obj.remove_from_scene()
         self.colliders = []
         self.triggers = []
         self.cuts = []
         self.cameras = []
+        self.actor_layouts = []
+        self.actors = []
+        self.current_layout = -1
+        self.current_stage = Stage.A
 
     def set_group_visibility(self, group: str, visibility: bool):
         if node_path := self.render_target.find(f'**/room_viewport_{group}'):
@@ -100,6 +114,7 @@ class RoomViewport(Viewport):
         if camera:
             # TODO: this should track changes to the camera in real-time. also, we should make the camera target
             #  targetable with set_target
+            # TODO: implement camera orientation and scale
             # FIXME: hide the camera model for the camera we're currently viewing
             self.clear_target()
             self.camera.setPos(camera.position.panda_x, camera.position.panda_y, camera.position.panda_z)
@@ -129,9 +144,30 @@ class RoomViewport(Viewport):
             r, g, b, a = item.color
             self.selected_item = (item, a)
             item.set_color((r, g, b, 1.))
+            # FIXME: doesn't look good on actor models
             item.node_path.setDepthTest(False)
         else:
             self.selected_item = None
+
+    def set_actor_layout(self, index: int):
+        if self.current_layout == index:
+            return
+
+        self.current_layout = index
+        if self.actors:
+            for actor in self.actors:
+                actor.remove_from_scene()
+            self.actors = []
+
+        layout = self.actor_layouts[index]
+        for actor_instance in layout.actors:
+            if actor_instance.type >= 0:
+                model = self.actor_models[actor_instance.type]
+            else:
+                model = None
+            actor = ActorObject(f'room{self.name}_actor{len(self.actors)}', model, actor_instance)
+            actor.add_to_scene(self.actor_node)
+            self.actors.append(actor)
 
     def set_room(self, module: RoomModule):
         self.clear()
@@ -139,12 +175,13 @@ class RoomViewport(Viewport):
         rect_iter = iter(module.layout.rectangle_colliders)
         tri_iter = iter(module.layout.triangle_colliders)
         circle_iter = iter(module.layout.circle_colliders)
-        module_name = module.name or 'UNKWN'
-        self.current_stage = Stage(module_name[0])
+        self.name = module.name or 'UNKWN'
+        self.current_stage = Stage(self.name[0])
 
         for cut in module.layout.cuts:
-            object_name = f'room{module_name}_cut{len(self.cuts)}'
+            object_name = f'room{self.name}_cut{len(self.cuts)}'
             cut_object = CameraCutObject(object_name, cut)
+            # FIXME: use proper depth sorting instead of this hack, which doesn't look right in many circumstances
             cut_object.position.game_y += 1
             cut_object.add_to_scene(self.cut_node)
             self.cuts.append(cut_object)
@@ -152,7 +189,7 @@ class RoomViewport(Viewport):
         for collider in module.layout.colliders:
             index = len(self.colliders)
             is_wall = False
-            object_name = f'room{module_name}_collider{index}'
+            object_name = f'room{self.name}_collider{index}'
             match collider.type:
                 case ColliderType.WALL:
                     collider_object = self.wall = WallColliderObject(object_name, next(rect_iter))
@@ -171,15 +208,18 @@ class RoomViewport(Viewport):
             collider_object.add_to_scene(self.collider_node)
             self.colliders.append(collider_object)
 
-        for interactable, trigger in zip(module.layout.interactables, module.triggers.triggers, strict=True):
-            object_name = f'room{module_name}_trigger{len(self.triggers)}'
+        # I used to have strict=True here, but there's one room (D1003) that has interaction regions defined, but, as
+        # far as I can tell, no triggers. it appears to be a copy of D0101 with the triggers removed. still, I should
+        # check the code to see if I'm missing something.
+        for interactable, trigger in zip(module.layout.interactables, module.triggers.triggers):
+            object_name = f'room{self.name}_trigger{len(self.triggers)}'
             trigger_object = TriggerObject(object_name, interactable, trigger)
             trigger_object.position.game_y += 3
             trigger_object.add_to_scene(self.trigger_node)
             self.triggers.append(trigger_object)
 
         for camera, background in zip(module.layout.cameras, module.backgrounds.backgrounds, strict=True):
-            object_name = f'room{module_name}_camera{len(self.cameras)}'
+            object_name = f'room{self.name}_camera{len(self.cameras)}'
             camera_object = CameraObject(object_name, camera, background, self.base.loader)
             camera_object.add_to_scene(self.camera_node)
             self.cameras.append(camera_object)
@@ -188,6 +228,10 @@ class RoomViewport(Viewport):
                 with open(self.stage_backgrounds[self.current_stage][camera_object.background.index].path, 'rb') as f:
                     db.read(f)
                 self.loaded_tims[camera_object.background.index] = db
+
+        self.actor_layouts = module.actor_layouts.layouts
+        if len(self.actor_layouts) > 0:
+            self.set_actor_layout(0)
 
         self.set_camera_view(None)
 
@@ -202,14 +246,12 @@ class RoomTab(Tab):
         self.detail_widget = None
         self.menu_item = None
         self.rooms = []
-        self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True}
+        self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True, 'actors': True}
 
         key_items = list(self.project.get_items(True))
         self.item_names = [f'Unused #{i}' for i in range(len(key_items))]
         for item in key_items:
             self.item_names[item.id] = item.name
-
-        stage_backgrounds = {}
 
         self.group_menu = tk.Menu(self, tearoff=False)
         self.group_menu.add_command(label='Hide', command=self.toggle_current_group)
@@ -222,8 +264,6 @@ class RoomTab(Tab):
             stage: Stage
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
 
-            stage_backgrounds[stage] = self.project.get_stage_backgrounds(stage)
-
             for room in self.project.get_stage_rooms(stage):
                 room_id = len(self.rooms)
                 self.rooms.append(room)
@@ -231,7 +271,7 @@ class RoomTab(Tab):
                 self.tree.insert(stage, tk.END, text=room.name, iid=iid)
 
                 actor_iid = f'actors_{room_id}'
-                self.tree.insert(iid, tk.END, text='Actors', iid=actor_iid)
+                self.tree.insert(iid, tk.END, text='Actors', iid=actor_iid, open=True)
                 collider_iid = f'colliders_{room_id}'
                 self.tree.insert(iid, tk.END, text='Colliders', iid=collider_iid)
                 camera_iid = f'cameras_{room_id}'
@@ -241,7 +281,7 @@ class RoomTab(Tab):
                 trigger_iid = f'triggers_{room_id}'
                 self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
 
-        self.viewport = RoomViewport(self.base, 1024, 768, stage_backgrounds, self)
+        self.viewport = RoomViewport(self.base, 1024, 768, self.project, self)
 
         self.tree.grid(row=0, column=0, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, sticky=tk.NS)
@@ -304,6 +344,19 @@ class RoomTab(Tab):
                 self.add_children(room_id, 'cut', self.viewport.cuts)
                 self.add_children(room_id, 'trigger', self.viewport.triggers)
                 self.add_children(room_id, 'camera', self.viewport.cameras)
+                iid = f'actors_{room_id}'
+                if not self.tree.get_children(iid):
+                    for i, layout in enumerate(self.viewport.actor_layouts):
+                        layout_iid = f'layout_{i}_{room_id}'
+                        self.tree.insert(iid, tk.END, text=f'Layout #{i}', iid=layout_iid)
+                        for j, actor_instance in enumerate(layout.actors):
+                            actor_iid = f'layout_{i}_actor_{j}_{room_id}'
+                            if actor_instance.type < 0:
+                                name = 'None'
+                            else:
+                                model_name = self.viewport.actor_models[actor_instance.type].name
+                                name = f'#{actor_instance.id}: {model_name}'
+                            self.tree.insert(layout_iid, tk.END, text=name, iid=actor_iid)
             self.set_detail_widget(None)
             self.viewport.select(None)
         elif any(iid.startswith(f'{object_id}_') for object_id in object_ids):
@@ -335,6 +388,17 @@ class RoomTab(Tab):
             self.set_detail_widget(editor)
             self.viewport.select(obj)
             self.viewport.set_camera_view(camera_view)
+        elif iid.startswith('layout_'):
+            pieces = iid.split('_')
+            layout_id = int(pieces[1])
+            room_id = int(pieces[-1])
+            self.set_room(room_id)
+            self.viewport.set_actor_layout(layout_id)
+            if pieces[2] == 'actor':
+                actor_id = int(pieces[3])
+                actor = self.viewport.actors[actor_id]
+                self.set_detail_widget(ActorEditor(actor, self.viewport.actor_models, self))
+                self.viewport.select(actor)
 
     def set_active(self, is_active: bool):
         self.viewport.set_active(is_active)

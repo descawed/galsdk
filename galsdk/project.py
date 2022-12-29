@@ -477,11 +477,13 @@ class Project:
                 with manifest_file.path.open('rb') as f:
                     yield RoomModule.load(f)
 
-    def get_actor_models(self) -> Iterable[ActorModel]:
+    def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
         manifest = Manifest.load_from(self.project_dir / 'models')
         for actor in ACTORS:
             if actor.model_index is None:
                 model_index = self.actor_models[actor.id]
+            elif usable_only:
+                continue
             else:
                 model_index = actor.model_index
             model_file = manifest[model_index]

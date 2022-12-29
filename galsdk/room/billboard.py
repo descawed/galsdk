@@ -28,8 +28,7 @@ class BillboardObject(RoomObject):
 
     def add_to_scene(self, scene: NodePath):
         super().add_to_scene(scene)
-        # I think this is the "right" way to do a 2D background, but
+        # I think this is the "right" way to do a 2D background, but when I tried this the background disappeared
         # self.node_path.setBillboardPointEye(-5, fixed_depth=True)
         self.node_path.setDepthWrite(False)
         self.node_path.setDepthTest(False)
-        self.node_path.setTwoSided(True)

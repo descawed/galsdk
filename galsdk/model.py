@@ -4,6 +4,7 @@ import functools
 import io
 import struct
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import BinaryIO
 
 from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, PNMImage,\
@@ -12,6 +13,12 @@ from PIL import Image
 
 from galsdk.coords import Dimension, Point
 from psx.tim import BitsPerPixel, Tim, Transparency
+
+
+class Origin(Enum):
+    DEFAULT = auto()
+    TOP = auto()
+    BOTTOM = auto()
 
 
 @dataclass
@@ -179,7 +186,7 @@ class Model:
         self.use_transparency = use_transparency
 
     @functools.cache
-    def get_panda3d_model(self) -> Geom:
+    def get_panda3d_model(self, origin: Origin = Origin.DEFAULT) -> Geom:
         # convert quads to triangles
         triangles = [*self.triangles]
         for q in self.quads:
@@ -204,6 +211,14 @@ class Model:
                     vertices[index] = (x, y, z, u, v)
                 final_tris[i][j] = index
 
+        points = [(Point(x, y, z), u, v) for x, y, z, u, v in vertices]
+        height_offset = 0
+        match origin:
+            case Origin.TOP:
+                height_offset = max(point[0].panda_z for point in points)
+            case Origin.BOTTOM:
+                height_offset = min(point[0].panda_z for point in points)
+
         vdata = GeomVertexData('', GeomVertexFormat.getV3t2(), Geom.UHStatic)
         vdata.setNumRows(len(vertices))
 
@@ -212,7 +227,7 @@ class Model:
         tex_height = self.texture_height
         for x, y, z, u, v in vertices:
             point = Point(x, y, z)
-            vertex.addData3(point.panda_x, point.panda_y, point.panda_z)
+            vertex.addData3(point.panda_x, point.panda_y, point.panda_z - height_offset)
             texcoord.addData2(u / TEXTURE_WIDTH, (tex_height - v) / tex_height)
 
         primitive = GeomTriangles(Geom.UHStatic)
