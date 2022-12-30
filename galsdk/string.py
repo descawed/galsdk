@@ -36,15 +36,16 @@ class StringDb(FileFormat):
         db = cls()
         try:
             db.read(f)
-            return f
+            return db
         except Exception:
             return None
 
     def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
-        with path.open('wb') as f:
+        new_path = path.with_suffix('.txt')
+        with new_path.open('wb') as f:
             for string in self.strings:
                 f.write(string + b'\n')
-        return path
+        return new_path
 
     def read(self, f: BinaryIO):
         """

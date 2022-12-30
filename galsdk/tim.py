@@ -177,7 +177,7 @@ class TimDb(FileFormat):
                 else:
                     directory[i] = (offset, file_size - offset)
         else:
-            directory = [(util.int_from_bytes(f.read(4)), util.int_from_bytes(f.read(4)))
+            directory = [(util.int_from_bytes(f.read(4)), util.int_from_bytes(f.read(4)) & 0xffffff)
                          for _ in range(num_images)]
         for offset, size in directory:
             f.seek(offset)
@@ -185,12 +185,15 @@ class TimDb(FileFormat):
             with io.BytesIO(data) as buf:
                 self.images.append(GameTim.read_compressed(buf) if with_compression else GameTim.read(buf))
 
-    def write(self, f: BinaryIO, with_compression: bool = None):
+    def write(self, f: BinaryIO, with_compression: bool = None, use_alternate_format: bool = None):
         """
         Write the images in this object out to a database file
 
         :param f: Binary data stream to write the TIM database to
         :param with_compression: Whether the entries in the database file should be compressed
+        :param use_alternate_format: Whether the database file should use the alternate header format with offsets
+            stored in number of words. If None (the default), the format used when the database was read will be used.
+            If None and the database has not been read, the alternate format will not be used.
         """
         raw_tims = []
         for image in self.images:
@@ -199,15 +202,17 @@ class TimDb(FileFormat):
                 data = buf.getvalue()
                 raw_tims.append(data)
 
+        if use_alternate_format is None:
+            use_alternate_format = self.use_alternate_format
         f.write(len(self.images).to_bytes(4, 'little'))
-        if self.use_alternate_format:
+        if use_alternate_format:
             header_size = 0  # offsets are relative to end of header
         else:
             header_size = 4 + len(raw_tims)*8  # 2 32-bit integers per TIM
         offset = header_size
         for data in raw_tims:
             size = len(data)
-            if self.use_alternate_format:
+            if use_alternate_format:
                 f.write((offset // 4).to_bytes(4, 'little'))
             else:
                 f.write(offset.to_bytes(4, 'little'))
