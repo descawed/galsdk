@@ -1,10 +1,14 @@
 import math
 import os.path
+import pathlib
 
-from typing import BinaryIO, Container, Iterable
+from typing import BinaryIO, Container, Iterable, Self
+
+from galsdk import util
+from galsdk.format import FileFormat
 
 
-class Database:
+class Database(FileFormat):
     """
     A packed database of game files
 
@@ -25,6 +29,26 @@ class Database:
         self.extended = extended
         self.files = []
 
+    @property
+    def suggested_extension(self) -> str:
+        return '.CDB'
+
+    @classmethod
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        db = cls()
+        try:
+            db.read(f)
+            return db
+        except Exception:
+            return None
+
+    def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
+        path.mkdir(exist_ok=True)
+        for i, data in enumerate(self.files):
+            with (path / str(i)).open('wb') as f:
+                f.write(data)
+        return path
+
     def read(self, f: BinaryIO):
         """
         Read a database file from a given path
@@ -32,25 +56,25 @@ class Database:
         :param f: Binary data stream to read the database file from
         """
         self.files = []
-        num_entries = int.from_bytes(f.read(2), 'little')
-        self.extended = int.from_bytes(f.read(2), 'little') != 0
+        num_entries = util.int_from_bytes(f.read(2))
+        self.extended = util.int_from_bytes(f.read(2)) != 0
         if self.extended:
             # skip over 4 dummy bytes
             f.seek(4, 1)
         directory = f.read((8 if self.extended else 4)*num_entries)
         i = 0
         while i < len(directory):
-            start_sector = int.from_bytes(directory[i:i+2], 'little')
-            num_sectors = int.from_bytes(directory[i+2:i+4], 'little')
+            start_sector = util.int_from_bytes(directory[i:i+2])
+            num_sectors = util.int_from_bytes(directory[i+2:i+4])
             if self.extended:
-                final_sector_len = int.from_bytes(directory[i+4:i+6], 'little')
+                final_sector_len = util.int_from_bytes(directory[i+4:i+6])
                 i += 8
             else:
                 final_sector_len = self.SECTOR_SIZE
                 i += 4
             f.seek(start_sector*self.SECTOR_SIZE)
             size = (num_sectors - 1)*self.SECTOR_SIZE + final_sector_len
-            self.append(f.read(size))
+            self.append(util.read_some(f, size))
 
     def write(self, f: BinaryIO):
         """

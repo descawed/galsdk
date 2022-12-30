@@ -1,9 +1,12 @@
-from typing import BinaryIO, Iterable
+import pathlib
+from typing import BinaryIO, Iterable, Self
+
+from galsdk.format import FileFormat
 
 
 # we keep everything as bytes internally because there are some cases where there are bogus characters in the data
 # that we don't want to overwrite unless requested
-class StringDb:
+class StringDb(FileFormat):
     """
     A database of text strings used within a game stage
 
@@ -24,11 +27,30 @@ class StringDb:
         self.strings = []
         self.encoding = encoding
 
+    @property
+    def suggested_extension(self) -> str:
+        return '.SDB'
+
+    @classmethod
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        db = cls()
+        try:
+            db.read(f)
+            return f
+        except Exception:
+            return None
+
+    def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
+        with path.open('wb') as f:
+            for string in self.strings:
+                f.write(string + b'\n')
+        return path
+
     def read(self, f: BinaryIO):
         """
         Read a string database file
 
-        :param f: Binary data stream to read the string databse from
+        :param f: Binary data stream to read the string database from
         """
         self.strings = []
         magic = f.read(2)
@@ -124,9 +146,7 @@ def unpack(input_path: str, output_path: str):
     sdb = StringDb()
     with open(input_path, 'rb') as f:
         sdb.read(f)
-    with open(output_path, 'wb') as f:
-        for string in sdb.iter_raw():
-            f.write(string + b'\n')
+    sdb.export(pathlib.Path(output_path))
 
 
 if __name__ == '__main__':

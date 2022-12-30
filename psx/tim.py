@@ -4,7 +4,7 @@ import argparse
 import os.path
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import BinaryIO, ByteString, Iterable
+from typing import BinaryIO, ByteString, Iterable, Self
 
 from PIL import Image
 
@@ -201,7 +201,7 @@ class Tim:
         destination.write(block.data)
 
     @classmethod
-    def read(cls, source: BinaryIO) -> Tim:
+    def read(cls, source: BinaryIO) -> Self:
         """
         Read a TIM image from a provided data source
 

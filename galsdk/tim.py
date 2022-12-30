@@ -1,26 +1,23 @@
+import copy
 import io
 import os.path
-from typing import BinaryIO, Container, Iterable
+import pathlib
+from typing import BinaryIO, Container, Iterable, Self
 
+from galsdk import util
+from galsdk.format import FileFormat
 from psx.tim import Tim
 
 
-class TimDb:
-    """
-    A database of TIM images
-
-    The game keeps TIM images for scene backgrounds and their associated masks in a combined database. This class reads
-    and writes such databases.
-    """
-
-    images: list[Tim]
+class GameTim(Tim, FileFormat):
+    MAX_ITERATIONS = 10000
 
     def __init__(self):
-        """Create a new, empty TIM database"""
-        self.images = []
+        super().__init__()
+        self.is_compressed = False
 
-    @staticmethod
-    def decompress(data: bytes) -> bytes:
+    @classmethod
+    def decompress(cls, data: bytes) -> bytes:
         # not sure what this compression algorithm is, if it even is a well-known algorithm. it seems to take advantage
         # of the fact that the data being compressed doesn't contain all possible byte values, so it maps the unused
         # values to sequences of two values, which are recursively expanded. initially, all values are mapped to
@@ -28,7 +25,7 @@ class TimDb:
         # sequences. the second part (starting from stream_len) is the actual compressed data.
         output = bytearray()
         with io.BytesIO(data) as f:
-            data_len = int.from_bytes(f.read(4), 'little')
+            data_len = util.int_from_bytes(f.read(4))
             data_end = f.tell() + data_len
             while f.tell() < data_end:
                 dictionary = [(i, None) for i in range(0x100)]
@@ -53,10 +50,11 @@ class TimDb:
                             dictionary[index] = (byte, f.read(1)[0])
                         index += 1
 
-                stream_len = int.from_bytes(f.read(2), 'big')
+                stream_len = util.int_from_bytes(f.read(2), 'big')
                 end = f.tell() + stream_len
                 while f.tell() != end:
                     stack = [f.read(1)[0]]
+                    i = 0
                     while len(stack) > 0:
                         index = stack.pop()
                         values = dictionary[index]
@@ -65,6 +63,9 @@ class TimDb:
                         else:
                             stack.append(values[1])
                             stack.append(values[0])
+                        i += 1
+                        if i > cls.MAX_ITERATIONS:
+                            raise RuntimeError('The decompression routine appears to be stuck in an infinite loop')
 
         return bytes(output)
 
@@ -80,6 +81,76 @@ class TimDb:
         output = len(output).to_bytes(4, 'little') + output
         return output
 
+    @classmethod
+    def read_compressed(cls, source: BinaryIO) -> Self:
+        data = cls.decompress(source.read())
+        f = io.BytesIO(data)
+        result = cls.read(f)
+        result.is_compressed = True
+        return result
+
+    def write(self, destination: BinaryIO, with_compression: bool = None):
+        if with_compression is None:
+            with_compression = self.is_compressed
+        if with_compression:
+            f = io.BytesIO()
+        else:
+            f = destination
+        super().write(f)
+        if with_compression:
+            destination.write(self.compress(f.read()))
+
+    @property
+    def suggested_extension(self) -> str:
+        return '.TMC' if self.is_compressed else '.TIM'
+
+    @classmethod
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        try:
+            return cls.read(f)
+        except Exception:
+            try:
+                f.seek(0)
+                return cls.read_compressed(f)
+            except Exception:
+                return None
+
+    def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
+        if fmt is None:
+            fmt = 'png'
+        new_path = path.with_suffix(f'.{fmt}')
+        self.to_image().save(str(new_path))
+        return new_path
+
+    @classmethod
+    def from_tim(cls, tim: Tim) -> Self:
+        if isinstance(tim, cls):
+            return tim
+        new = cls()
+        new.raw_clut_bounds = tim.raw_clut_bounds
+        new.raw_image_bounds = tim.raw_image_bounds
+        new.palettes = copy.deepcopy(tim.palettes)
+        new.image_data = tim.image_data
+        new.width = tim.width
+        new.height = tim.height
+        new.bpp = tim.bpp
+        return new
+
+
+class TimDb(FileFormat):
+    """
+    A database of TIM images
+
+    The game keeps TIM images for scene backgrounds and their associated masks in a combined database. This class reads
+    and writes such databases.
+    """
+
+    images: list[GameTim]
+
+    def __init__(self):
+        """Create a new, empty TIM database"""
+        self.images = []
+
     def read(self, f: BinaryIO, with_compression: bool = False):
         """
         Read a TIM database file
@@ -88,18 +159,16 @@ class TimDb:
         :param with_compression: Whether the entries in the database file are compressed
         """
         self.images = []
-        num_images = int.from_bytes(f.read(4), 'little')
-        directory = [(int.from_bytes(f.read(4), 'little'), int.from_bytes(f.read(4), 'little'))
+        num_images = util.int_from_bytes(f.read(4))
+        directory = [(util.int_from_bytes(f.read(4)), util.int_from_bytes(f.read(4)))
                      for _ in range(num_images)]
         for offset, size in directory:
             f.seek(offset)
-            data = f.read(size)
-            if with_compression:
-                data = self.decompress(data)
+            data = util.read_some(f, size)
             with io.BytesIO(data) as buf:
-                self.images.append(Tim.read(buf))
+                self.images.append(GameTim.read_compressed(buf) if with_compression else GameTim.read(buf))
 
-    def write(self, f: BinaryIO, with_compression: bool = False):
+    def write(self, f: BinaryIO, with_compression: bool = None):
         """
         Write the images in this object out to a database file
 
@@ -109,10 +178,8 @@ class TimDb:
         raw_tims = []
         for image in self.images:
             with io.BytesIO() as buf:
-                image.write(buf)
+                image.write(buf, with_compression)
                 data = buf.getvalue()
-                if with_compression:
-                    data = self.compress(data)
                 raw_tims.append(data)
 
         f.write(len(self.images).to_bytes(4, 'little'))
@@ -126,15 +193,15 @@ class TimDb:
         for data in raw_tims:
             f.write(data)
 
-    def __getitem__(self, item: int) -> Tim:
+    def __getitem__(self, item: int) -> GameTim:
         """Get an image from the database"""
         return self.images[item]
 
     def __setitem__(self, key: int, value: Tim):
         """Set an image in the database"""
-        self.images[key] = value
+        self.images[key] = GameTim.from_tim(value)
 
-    def __iter__(self) -> Iterable[Tim]:
+    def __iter__(self) -> Iterable[GameTim]:
         """Iterate over images in the database"""
         yield from self.images
 
@@ -148,7 +215,39 @@ class TimDb:
 
         :param image: The TIM image to add to the database
         """
-        self.images.append(image)
+        self.images.append(GameTim.from_tim(image))
+
+    @property
+    def suggested_extension(self) -> str:
+        return '.TDC' if all(image.is_compressed for image in self.images) else '.TDB'
+
+    @classmethod
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        try:
+            db = cls()
+            db.read(f)
+            return db
+        except Exception:
+            try:
+                f.seek(0)
+                db = cls()
+                db.read(f, True)
+                return db
+            except Exception:
+                return None
+
+    def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
+        if fmt is None:
+            fmt = 'png'
+        path.mkdir(exist_ok=True)
+        for i, image in enumerate(self.images):
+            image_path = path / str(i)
+            if fmt == 'raw':
+                with image_path.open('wb') as f:
+                    image.write(f)
+            else:
+                image.export(image_path, fmt)
+        return path
 
 
 def pack(compressed: bool, files: Iterable[str], db_path: str):

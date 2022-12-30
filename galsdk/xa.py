@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, ByteString
+from typing import BinaryIO, ByteString, Self
 
 import ffmpeg
 
+from galsdk import util
+from galsdk.format import FileFormat
 from galsdk.media import Media
 from psx.cd.disc import Sector, SubMode
 
@@ -42,7 +44,7 @@ class XaRegion:
         return bytes(output)
 
 
-class XaDatabase:
+class XaDatabase(FileFormat):
     MAGIC = b'\x41\x89'
 
     def __init__(self, regions: list[XaRegion] = None, data: ByteString = None):
@@ -87,14 +89,15 @@ class XaDatabase:
     @classmethod
     def read(cls, f: BinaryIO) -> XaDatabase:
         magic = f.read(2)
-        assert magic == cls.MAGIC
+        if magic != cls.MAGIC:
+            raise ValueError('Not an XA database')
 
-        num_entries = int.from_bytes(f.read(2), 'little')
+        num_entries = util.int_from_bytes(f.read(2))
         regions = []
         for _ in range(num_entries):
-            channel = int.from_bytes(f.read(4), 'little')
-            start = int.from_bytes(f.read(4), 'little')
-            end = int.from_bytes(f.read(4), 'little')
+            channel = util.int_from_bytes(f.read(4))
+            start = util.int_from_bytes(f.read(4))
+            end = util.int_from_bytes(f.read(4))
             regions.append(XaRegion(channel, start, end))
 
         return cls(regions)
@@ -106,3 +109,17 @@ class XaDatabase:
             f.write(region.channel.to_bytes(4, 'little'))
             f.write(region.start.to_bytes(4, 'little'))
             f.write(region.end.to_bytes(4, 'little'))
+
+    @property
+    def suggested_extension(self) -> str:
+        return '.XDB'
+
+    @classmethod
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        try:
+            return cls.read(f)
+        except Exception:
+            return None
+
+    def export(self, path: Path, fmt: str = None) -> Path:
+        raise NotImplementedError

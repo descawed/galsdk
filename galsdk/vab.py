@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from typing import BinaryIO, Iterable
+import pathlib
+from typing import BinaryIO, Iterable, Self
+
+from galsdk import util
+from galsdk.format import FileFormat
 
 
-class VabDb:
+class VabDb(FileFormat):
     def __init__(self, vhs: list[bytes], seqs: list[bytes], vbs: list[bytes], use_alt_order: bool = False):
         self.vhs = vhs
         self.seqs = seqs
@@ -45,12 +49,12 @@ class VabDb:
         toc_len = int.from_bytes(f.read(4), 'little')
         # should be the length of the header section below, but sometimes it's not? just ignore it for now
 
-        vh_len = int.from_bytes(f.read(4), 'little')
-        vh_count = int.from_bytes(f.read(4), 'little')
-        seq_len = int.from_bytes(f.read(4), 'little')
-        seq_count = int.from_bytes(f.read(4), 'little')
-        vb_len = int.from_bytes(f.read(4), 'little')
-        vb_count = int.from_bytes(f.read(4), 'little', signed=True)
+        vh_len = util.int_from_bytes(f.read(4))
+        vh_count = util.int_from_bytes(f.read(4))
+        seq_len = util.int_from_bytes(f.read(4))
+        seq_count = util.int_from_bytes(f.read(4))
+        vb_len = util.int_from_bytes(f.read(4))
+        vb_count = util.int_from_bytes(f.read(4), signed=True)
 
         if toc_len + vh_len + seq_len == 0 or vb_count <= 0:
             # try alternate read
@@ -59,19 +63,19 @@ class VabDb:
 
         vh_offsets = []
         for i in range(vh_count):
-            offset = int.from_bytes(f.read(4), 'little')
+            offset = util.int_from_bytes(f.read(4))
             if i == 0 or offset != 0:
                 vh_offsets.append(offset)
 
         seq_offsets = []
         for _ in range(seq_count):
-            offset = int.from_bytes(f.read(4), 'little')
+            offset = util.int_from_bytes(f.read(4))
             if offset != 0:
                 seq_offsets.append(offset)
 
         vb_offsets = []
         for _ in range(vb_count):
-            offset = int.from_bytes(f.read(4), 'little')
+            offset = util.int_from_bytes(f.read(4))
             if offset != 0:
                 vb_offsets.append(offset)
 
@@ -90,19 +94,19 @@ class VabDb:
         for offset in vh_offsets:
             size = sizes[offset]
             f.seek(data_start + offset)
-            vhs.append(f.read(size))
+            vhs.append(util.read_some(f, size))
 
         seqs = []
         for offset in seq_offsets:
             size = sizes[offset]
             f.seek(data_start + offset)
-            seqs.append(f.read(size))
+            seqs.append(util.read_some(f, size))
 
         vbs = []
         for offset in vb_offsets:
             size = sizes[offset]
             f.seek(data_start + offset)
-            vbs.append(f.read(size))
+            vbs.append(util.read_some(f, size))
 
         return cls(vhs, seqs, vbs)
 
@@ -155,3 +159,27 @@ class VabDb:
             f.write(offset.to_bytes(4, 'little'))
 
         f.write(data)
+
+    @property
+    def suggested_extension(self) -> str:
+        return '.VDA' if self.use_alt_order else '.VDB'
+
+    @classmethod
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        try:
+            return cls.read(f)
+        except Exception:
+            return None
+
+    def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
+        path.mkdir(exist_ok=True)
+        for i, vh in enumerate(self.vhs):
+            with (path / str(i)).with_suffix('.VH').open('wb') as f:
+                f.write(vh)
+        for i, vb in enumerate(self.vbs):
+            with (path / str(i)).with_suffix('.VB').open('wb') as f:
+                f.write(vb)
+        for i, seq in enumerate(self.seqs):
+            with (path / str(i)).with_suffix('.SEQ').open('wb') as f:
+                f.write(seq)
+        return path
