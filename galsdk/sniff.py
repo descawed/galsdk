@@ -1,4 +1,5 @@
 import pathlib
+import sys
 
 from galsdk.db import Database
 from galsdk.format import FileFormat
@@ -42,7 +43,7 @@ def sniff_paths(paths: list[str | pathlib.Path], export_path: str | pathlib.Path
                     print(f'\t{path} does not support exporting')
             counter += 1
         else:
-            print(f'The format of {path} could not be determined')
+            print(f'The format of {path} could not be determined', file=sys.stderr)
 
     return counter
 

@@ -150,18 +150,35 @@ class TimDb(FileFormat):
     def __init__(self):
         """Create a new, empty TIM database"""
         self.images = []
+        self.use_alternate_format = False
 
-    def read(self, f: BinaryIO, with_compression: bool = False):
+    def read(self, f: BinaryIO, with_compression: bool = False, use_alternate_format: bool = False):
         """
         Read a TIM database file
 
         :param f: Binary data stream to read the database file from
         :param with_compression: Whether the entries in the database file are compressed
+        :param use_alternate_format: Whether the database file uses the alternate header format with offsets stored in
+            number of words
         """
         self.images = []
+        self.use_alternate_format = use_alternate_format
         num_images = util.int_from_bytes(f.read(4))
-        directory = [(util.int_from_bytes(f.read(4)), util.int_from_bytes(f.read(4)))
-                     for _ in range(num_images)]
+        if self.use_alternate_format:
+            f.seek(0, 2)
+            file_size = f.tell()
+            f.seek(4)
+            header_size = (num_images + 1) * 4  # +1 for the image count itself
+            directory = [(header_size + util.int_from_bytes(f.read(4)) * 4, 0) for _ in range(num_images)]
+            for i in range(num_images):
+                offset = directory[i][0]
+                if i + 1 < num_images:
+                    directory[i] = (offset, directory[i + 1][0] - offset)
+                else:
+                    directory[i] = (offset, file_size - offset)
+        else:
+            directory = [(util.int_from_bytes(f.read(4)), util.int_from_bytes(f.read(4)))
+                         for _ in range(num_images)]
         for offset, size in directory:
             f.seek(offset)
             data = util.read_some(f, size)
@@ -173,7 +190,7 @@ class TimDb(FileFormat):
         Write the images in this object out to a database file
 
         :param f: Binary data stream to write the TIM database to
-        :param with_compression: Whether the entries in the databse file should be compressed
+        :param with_compression: Whether the entries in the database file should be compressed
         """
         raw_tims = []
         for image in self.images:
@@ -183,12 +200,18 @@ class TimDb(FileFormat):
                 raw_tims.append(data)
 
         f.write(len(self.images).to_bytes(4, 'little'))
-        header_size = 4 + len(raw_tims)*8  # 2 32-bit integers per TIM
+        if self.use_alternate_format:
+            header_size = 0  # offsets are relative to end of header
+        else:
+            header_size = 4 + len(raw_tims)*8  # 2 32-bit integers per TIM
         offset = header_size
         for data in raw_tims:
             size = len(data)
-            f.write(offset.to_bytes(4, 'little'))
-            f.write(size.to_bytes(4, 'little'))
+            if self.use_alternate_format:
+                f.write((offset // 4).to_bytes(4, 'little'))
+            else:
+                f.write(offset.to_bytes(4, 'little'))
+                f.write(size.to_bytes(4, 'little'))
             offset += size
         for data in raw_tims:
             f.write(data)
@@ -219,22 +242,47 @@ class TimDb(FileFormat):
 
     @property
     def suggested_extension(self) -> str:
-        return '.TDC' if all(image.is_compressed for image in self.images) else '.TDB'
+        if all(image.is_compressed for image in self.images):
+            return '.TAC' if self.use_alternate_format else '.TDC'
+        else:
+            return '.TDA' if self.use_alternate_format else '.TDB'
 
     @classmethod
     def sniff(cls, f: BinaryIO) -> Self | None:
         try:
+            # is it a regular TIM DB?
             db = cls()
             db.read(f)
             return db
         except Exception:
-            try:
-                f.seek(0)
-                db = cls()
-                db.read(f, True)
-                return db
-            except Exception:
-                return None
+            pass
+
+        f.seek(0)
+        try:
+            # is it a compressed TIM DB?
+            db = cls()
+            db.read(f, True)
+            return db
+        except Exception:
+            pass
+
+        f.seek(0)
+        try:
+            # is it an alternate TIM DB?
+            db = cls()
+            db.read(f, False, True)
+            return db
+        except Exception:
+            pass
+
+        f.seek(0)
+        try:
+            # is it a compressed alternate TIM DB?
+            db = cls()
+            db.read(f, True, True)
+            return db
+        except Exception:
+            return None
 
     def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
         if fmt is None:
