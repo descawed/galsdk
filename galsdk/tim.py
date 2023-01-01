@@ -213,8 +213,8 @@ class TimDb(Archive[Tim]):
             while f.tell() < file_size:
                 # this is a bit of a hack because it relies on TimFormat not doing absolute seeks
                 db.append(TimFormat.read(f))
-                # skip any padding (but mainly this catches zeroes at the end of the file)
-                while (last_char := f.read(1)) == b'\0':
+                # skip any padding or zeroes at the end of the file
+                while (last_char := f.read(1)) in [b'\0', b'0']:
                     pass
                 if last_char != b'':
                     f.seek(-1, 1)
