@@ -598,6 +598,10 @@ class Project:
     def get_item_art(self) -> Manifest:
         return Manifest.load_from(self.project_dir / 'art' / 'MENU').get_manifest('item_art')
 
+    def get_art_manifests(self) -> Iterable[Manifest]:
+        for path in (self.project_dir / 'art').iterdir():
+            yield Manifest.load_from(path)
+
     def get_items(self, key_items: bool | None = None) -> Iterable[Item]:
         model_manifest = Manifest.load_from(self.project_dir / 'models')
         json_path = self.project_dir / 'item.json'
