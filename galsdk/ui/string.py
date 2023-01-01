@@ -34,6 +34,17 @@ class StringTab(Tab):
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
 
+        for i, string_db in enumerate(project.get_unmapped_strings()):
+            iid = f'unmapped_{i}'
+            self.tree.insert('', tk.END, text='Unmapped', iid=iid, open=False)
+            for j, (raw, string) in enumerate(string_db.iter_both()):
+                string_id = len(self.strings)
+                self.strings.append(GameString(raw, string, 0, string_db))
+                preview = f'{j}: {string}'
+                if len(preview) > self.MAX_PREVIEW_LEN:
+                    preview = preview[:self.MAX_PREVIEW_LEN - 3] + '...'
+                self.tree.insert(iid, tk.END, text=preview, iid=str(string_id))
+
         for i, stage in enumerate(Stage):
             stage: Stage
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
@@ -70,13 +81,13 @@ class StringTab(Tab):
         self.image_label.configure(image=tk_image)
         self.image_label.image = tk_image
 
-    def string_changed(self, _):
+    def string_changed(self, _=None):
         text = self.text_box.get('1.0', tk.END).strip('\n')
         string = self.strings[self.current_index]
         try:
             string.raw = string.source_db.encode(text, string.stage_index)
             self.show()
-        except IndexError:
+        except (IndexError, ValueError):
             pass  # user is probably editing
 
     def select_string(self, _):

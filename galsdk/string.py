@@ -342,11 +342,12 @@ class JapaneseStringDb(StringDb):
                 end = string[i:].index('>')
                 code = int(string[i+1:end])
                 out.append(code)
-                i = end + 1
+                i = end
             elif c in cls.BASIC:
                 out.append(cls.BASIC.index(c))
             else:
                 out.append(cls.KANJI[stage_index].index(c) | 0x800)
+            i += 1
         return cls._pack(out)
 
     @classmethod

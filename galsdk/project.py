@@ -558,6 +558,23 @@ class Project:
             else:
                 return LatinStringDb.read(f)
 
+    def get_unmapped_strings(self) -> Iterable[StringDb]:
+        mapped_strings = set()
+        for stage in Stage:
+            path = self.project_dir / 'stages' / stage / 'stage.json'
+            with path.open('r') as f:
+                stage_info = json.load(f)
+            mapped_strings.add(self.project_dir / stage_info['strings'])
+
+        messages = Manifest.load_from(self.project_dir / 'messages')
+        for entry in messages:
+            if entry.path not in mapped_strings:
+                with entry.path.open('rb') as f:
+                    if self.version.region == Region.NTSC_J:
+                        yield JapaneseStringDb.read(f)
+                    else:
+                        yield LatinStringDb.read(f)
+
     def get_stage_rooms(self, stage: Stage) -> Iterable[RoomModule]:
         manifest = Manifest.load_from(self.project_dir / 'modules')
         for manifest_file in manifest:
