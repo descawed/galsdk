@@ -47,6 +47,8 @@ class LatinFont(Font):
     CHAR_WIDTH = 16
     CHAR_HEIGHT = 16
     SPACE_WIDTH = 8
+    # TODO: verify how the game actually handles tab characters (I've only seen one in one string in stage C)
+    TAB_WIDTH = 4
 
     def __init__(self, image: Tim, char_widths: dict[int, int]):
         self.tile_set = TileSet(image, self.CHAR_WIDTH, self.CHAR_HEIGHT)
@@ -66,6 +68,8 @@ class LatinFont(Font):
                     else:
                         if c in b' ':
                             current_width += self.SPACE_WIDTH
+                        elif c in b'\t':
+                            current_width += self.SPACE_WIDTH * self.TAB_WIDTH
                         else:
                             current_width += self.char_widths[c]
                         result.append(c)
@@ -129,6 +133,8 @@ class LatinFont(Font):
                 y += self.CHAR_HEIGHT
             elif elem in b' ':
                 x += self.SPACE_WIDTH
+            elif elem in b'\t':
+                x += self.SPACE_WIDTH * self.TAB_WIDTH
             else:
                 # regular character
                 width = self.char_widths[elem]
