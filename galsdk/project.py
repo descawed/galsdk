@@ -13,13 +13,14 @@ from pathlib import Path
 from typing import Iterable
 
 from galsdk.db import Database
-from galsdk.font import Font
+from galsdk.font import Font, LatinFont, JapaneseFont
 from galsdk.manifest import Manifest
 from galsdk.model import ACTORS, ActorModel, ItemModel
 from galsdk.module import RoomModule
 from galsdk.movie import Movie
-from galsdk.string import StringDb
-from galsdk.xa import XaAudio
+from galsdk.string import StringDb, LatinStringDb, JapaneseStringDb
+from galsdk.tim import TimDb
+from galsdk.xa import XaAudio, XaDatabase
 from psx import Region
 from psx.cd import PsxCd
 from psx.config import Config
@@ -144,13 +145,31 @@ VERSIONS = [
 ADDRESSES = {
     'SLUS-00986': {
         'FontMetrics': 0x80191364,
+        'StageMessageIndexes': 0x80191450,
         'ActorModels': 0x80192F18,
         'ItemArt': 0x80190ED4,
         'KeyItemDescriptions': 0x80192A28,
         'MedItemDescriptions': 0x80192ACC,
         'ModuleSets': 0x80191BE0,
-    }
+        'RoomLoad': 0x801EC628,
+    },
+    'SLPS-02192': {
+        'FontPages': 0x8019144C,
+        'StageMessageIndexes': 0x80191494,
+        'ActorModels': 0x80192CE8,
+        'ItemArt': 0x80190EB0,
+        'KeyItemDescriptions': 0x80192854,
+        'MedItemDescriptions': 0x801928F8,
+        'ModuleSets': 0x801918D4,
+        'RoomLoad': 0x801EDC28,
+    },
 }
+
+ADDRESSES['SLUS-01098'] = ADDRESSES['SLUS-00986']
+ADDRESSES['SLUS-01099'] = ADDRESSES['SLUS-00986']
+
+ADDRESSES['SLPS-02193'] = ADDRESSES['SLPS-02192']
+ADDRESSES['SLPS-02194'] = ADDRESSES['SLPS-02192']
 
 
 class Project:
@@ -171,6 +190,7 @@ class Project:
         self.last_export_date = last_export_date or datetime.datetime.utcnow()
         self.actor_models = actor_models or []
         self.module_sets = module_sets or []
+        self.addresses = ADDRESSES[self.version.id]
 
     @classmethod
     def _extract_dir(cls, path: str, destination: Path, cd: PsxCd, raw: bool = False):
@@ -245,14 +265,13 @@ class Project:
 
         # determine game version
         version = cls.detect_files_version(game_dir)
-        if version.region != Region.NTSC_U or version.is_demo:
-            raise NotImplementedError('Currently only the US retail version of the game is supported')
+        if version.region == Region.PAL or version.is_demo:
+            raise NotImplementedError('Currently only the US and Japanese retail versions of the game are supported')
 
         addresses = ADDRESSES[version.id]
         # locate files we're interested in
         config_path = game_path / 'SYSTEM.CNF'
         game_data = game_path / 'T4'
-        display_db_path = game_data / 'DISPLAY.CDB'
 
         with config_path.open() as f:
             config = Config.read(f)
@@ -261,30 +280,71 @@ class Project:
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
 
-        display_db = Database()
-        with display_db_path.open('rb') as f:
-            display_db.read(f)
-
         # prepare project directory
         export_dir = project_path / 'export'
         export_dir.mkdir(exist_ok=True)
         shutil.copy(base_image, export_dir / 'output.bin')
-        shutil.copy(display_db_path, export_dir)
 
-        font_image_path = project_path / 'font.tim'
-        with font_image_path.open('wb') as f:
-            f.write(display_db[4])
+        art_dir = project_path / 'art'
+        art_dir.mkdir(exist_ok=True)
+        if version.region == Region.NTSC_J:
+            art_dbs = ['CARD.CDB', 'DISPLAY.CDB', 'FONT.CDB', 'ITEMTIM.CDB', 'MAIN_TEX.CDB', 'MENU.CDB', 'TIT.CDB']
+        else:
+            art_dbs = ['DISPLAY.CDB', 'ITEMTIM.CDB', 'MENU.CDB']
+
+        for art_db_name in art_dbs:
+            art_db_path = game_data / art_db_name
+            with art_db_path.open('rb') as f:
+                art_db = Database.read(f)
+            project_art_dir = art_dir / art_db_path.stem
+            project_art_dir.mkdir(exist_ok=True)
+            Manifest.from_archive(project_art_dir, art_db_path.stem, art_db, sniff=True, flatten=True)
+
+        display_db_path = game_data / 'DISPLAY.CDB'
+        with display_db_path.open('rb') as f:
+            display_db = Database.read(f)
+        display_manifest = Manifest.load_from(art_dir / 'DISPLAY')
+
+        num_stage_ints = len(Stage)
+        raw_message_indexes = exe[addresses['StageMessageIndexes']:addresses['StageMessageIndexes'] + 4*num_stage_ints]
+        message_indexes = list(struct.unpack(f'<{num_stage_ints}I', raw_message_indexes))
+
+        message_dir = project_path / 'messages'
+        message_dir.mkdir(exist_ok=True)
+        if version.region == Region.NTSC_J:
+            message_db_path = game_data / 'MES.CDB'
+            with message_db_path.open('rb') as f:
+                message_db = Database.read(f)
+            message_manifest = Manifest.from_archive(message_dir, 'MES', message_db)
+        else:
+            # make an empty manifest for convenience of loading
+            dummy = Manifest(message_dir, 'MES')
+            dummy.save()
+            message_manifest = display_manifest
+
         font_path = project_path / 'font.json'
-        font_metrics = exe[addresses['FontMetrics']:addresses['FontMetrics']+224]
-        font = {'image': 'font.tim', 'widths': {}}
-        for i, width in enumerate(font_metrics):
-            font['widths'][i + 0x20] = width
-        with font_path.open('w') as f:
-            json.dump(font, f)
+        if version.region == Region.NTSC_J:
+            font_manifest = Manifest.load_from(art_dir / 'FONT')
+            raw_font_pages = exe[addresses['FontPages']:addresses['FontPages']+4*num_stage_ints]
+            font_pages = list(struct.unpack(f'<{num_stage_ints}I', raw_font_pages))
+            page_mapping = []
+            for i, page in enumerate(font_pages):
+                kanji_path = font_manifest[page].path
+                page_mapping.append({'image': str(kanji_path.relative_to(project_path)), 'index': page})
+
+            font = {'image': str(font_manifest[2].path.relative_to(project_path)), 'kanji': page_mapping}
+            with font_path.open('w') as f:
+                json.dump(font, f)
+        else:
+            font_metrics = exe[addresses['FontMetrics']:addresses['FontMetrics']+224]
+            font = {'image': str(display_manifest[4].path.relative_to(project_path)), 'widths': {}}
+            for i, width in enumerate(font_metrics):
+                font['widths'][i + 0x20] = width
+            with font_path.open('w') as f:
+                json.dump(font, f)
 
         stages_dir = project_path / 'stages'
         stages_dir.mkdir(exist_ok=True)
-        string_offset = 5
         for i, stage in enumerate(Stage):
             stage_dir = stages_dir / stage
             stage_dir.mkdir(exist_ok=True)
@@ -300,35 +360,99 @@ class Project:
                 shutil.copytree(movie_src, movie_dir)
 
             bg_db_path = game_data / f'BGTIM_{stage}.CDB'
-            Manifest.from_database(bg_dir, bg_db_path, 'TDB')
+            with bg_db_path.open('rb') as f:
+                bg_db = Database.read(f)
+            fmt = '.TMM' if version.region == Region.NTSC_J else '.TDB'
+            Manifest.from_archive(bg_dir, f'BGTIM_{stage}', bg_db, fmt, recursive=False)
 
-            string_path = stage_dir / 'strings.db'
-            with string_path.open('wb') as f:
-                f.write(display_db[string_offset + i])
+            stage_info_path = stage_dir / 'stage.json'
+            stage_info = {
+                'index': i,
+                'strings': str(message_manifest[message_indexes[i]].path.relative_to(project_path)),
+            }
+            with stage_info_path.open('w') as f:
+                json.dump(stage_info, f)
 
         model_db_path = game_data / 'MODEL.CDB'
         model_dir = project_path / 'models'
         model_dir.mkdir(exist_ok=True)
-        Manifest.from_database(model_dir, model_db_path)
+        with model_db_path.open('rb') as f:
+            model_db = Database.read(f)
+        Manifest.from_archive(model_dir, 'MODEL', model_db)
         # only actors without a manually-assigned model index are in the list
         num_actors = sum(1 if actor.model_index is None else 0 for actor in ACTORS)
         actor_models = list(
-            struct.unpack(f'{num_actors}h', exe[addresses['ActorModels']:addresses['ActorModels'] + 2 * num_actors])
+            struct.unpack(f'<{num_actors}h', exe[addresses['ActorModels']:addresses['ActorModels'] + 2 * num_actors])
         )
 
-        raw_item_art = struct.unpack(f'{4 * NUM_KEY_ITEMS}I',
+        module_dir = project_path / 'modules'
+        module_dir.mkdir(exist_ok=True)
+
+        module_db_path = game_data / 'MODULE.BIN'
+        with module_db_path.open('rb') as f:
+            module_db = Database.read(f)
+        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db)
+        with module_manifest:
+            for i, module_file in enumerate(module_manifest):
+                # FIXME: figure out how the module sets work and pull the list from there
+                with module_file.path.open('rb') as f:
+                    module = RoomModule.load(f, addresses['RoomLoad'])
+                if module.is_valid:
+                    module_manifest.rename(i, module.name)
+
+        module_set_addr = addresses['ModuleSets']
+        module_set_addrs = struct.unpack(f'<{NUM_MODULE_SETS}I',
+                                         exe[module_set_addr:module_set_addr + 4 * NUM_MODULE_SETS])
+        module_sets = []
+        for i in range(len(module_set_addrs)):
+            this_addr = module_set_addrs[i]
+            if i + 1 >= NUM_MODULE_SETS:
+                next_addr = module_set_addr
+            else:
+                next_addr = module_set_addrs[i + 1]
+            num_modules = (next_addr - this_addr) // MODULE_ENTRY_SIZE
+            raw_entries = struct.unpack('<' + ('2I' * num_modules), exe[this_addr:next_addr])
+            module_sets.append([
+                {'index': raw_entries[j], 'entry_point': raw_entries[j + 1]}
+                for j in range(0, len(raw_entries), 2)
+            ])
+
+        menu_manifest = Manifest.load_from(art_dir / 'MENU')
+        with menu_manifest:
+            # sub-databases
+            item_art_id = 8 if version.region == Region.NTSC_J else 53
+            menu_manifest.rename(item_art_id, 'item_art')
+            item_art_dir = menu_manifest[item_art_id].path
+            item_art_manifest = Manifest.load_from(item_art_dir)
+            with item_art_manifest:
+                item_art_manifest.rename(36, 'medicine_icons')
+                item_art_manifest.rename(37, 'key_item_icons')
+                item_art_manifest.rename(41, 'ability_icons')
+
+        raw_item_art = struct.unpack(f'<{4 * NUM_KEY_ITEMS}I',
                                      exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * NUM_KEY_ITEMS])
-        item_art = [(raw_item_art[i], raw_item_art[i+1], raw_item_art[i+2], raw_item_art[i+3])
+        item_art = [(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
                     for i in range(0, len(raw_item_art), 4)]
 
         key_item_descriptions = list(
-            struct.unpack(f'{NUM_KEY_ITEMS}I',
+            struct.unpack(f'<{NUM_KEY_ITEMS}I',
                           exe[addresses['KeyItemDescriptions']:addresses['KeyItemDescriptions'] + 4 * NUM_KEY_ITEMS])
         )
         med_item_descriptions = list(
-            struct.unpack(f'{NUM_MED_ITEMS}I',
+            struct.unpack(f'<{NUM_MED_ITEMS}I',
                           exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * NUM_MED_ITEMS])
         )
+        if version.region == Region.NTSC_J:
+            # the Japanese version uses offsets instead of indexes, so we need to convert
+            menu_db_path = game_data / 'MENU.CDB'
+            with menu_db_path.open('rb') as f:
+                menu_db = Database.read(f)
+            item_art_db = TimDb.read_bytes(menu_db[item_art_id],
+                                           fmt=TimDb.Format.from_extension(item_art_manifest.type))
+            for i in range(len(key_item_descriptions)):
+                key_item_descriptions[i] = item_art_db.get_index_from_offset(key_item_descriptions[i])
+            for i in range(len(med_item_descriptions)):
+                med_item_descriptions[i] = item_art_db.get_index_from_offset(med_item_descriptions[i])
 
         item_path = project_path / 'item.json'
         items = []
@@ -340,68 +464,26 @@ class Project:
         with item_path.open('w') as f:
             json.dump(items, f)
 
-        module_dir = project_path / 'modules'
-        module_dir.mkdir(exist_ok=True)
-
-        module_db_path = game_data / 'MODULE.BIN'
-        module_manifest = Manifest.from_database(module_dir, module_db_path)
-        for i, module_file in enumerate(module_manifest):
-            # FIXME: figure out how the module sets work and pull the list from there
-            with module_file.path.open('rb') as f:
-                module = RoomModule.load(f)
-            if module.is_valid:
-                module_manifest.rename(i, module.name)
-        module_manifest.save()
-
-        module_set_addr = addresses['ModuleSets']
-        module_set_addrs = struct.unpack(f'{NUM_MODULE_SETS}I',
-                                         exe[module_set_addr:module_set_addr + 4 * NUM_MODULE_SETS])
-        module_sets = []
-        for i in range(len(module_set_addrs)):
-            this_addr = module_set_addrs[i]
-            if i + 1 >= NUM_MODULE_SETS:
-                next_addr = module_set_addr
-            else:
-                next_addr = module_set_addrs[i + 1]
-            num_modules = (next_addr - this_addr) // MODULE_ENTRY_SIZE
-            raw_entries = struct.unpack('2I' * num_modules, exe[this_addr:next_addr])
-            module_sets.append([
-                {'index': raw_entries[j], 'entry_point': raw_entries[j + 1]}
-                for j in range(0, len(raw_entries), 2)
-            ])
-
-        menu_dir = project_path / 'menu'
-        menu_dir.mkdir(exist_ok=True)
-
-        menu_db_path = game_data / 'MENU.CDB'
-        # TODO: figure out what all of the stuff in here does
-        menu_manifest = Manifest.from_database(menu_dir, menu_db_path)
-        # sub-databases
-        item_art_dir = menu_dir / 'item_art'
-        item_art_dir.mkdir(exist_ok=True)
-        item_art_file = menu_manifest[53]
-        item_art_manifest = Manifest.from_tim_database(item_art_dir, item_art_file.path, True)
-        item_art_manifest.rename(36, 'medicine_icons')
-        item_art_manifest.rename(37, 'key_item_icons')
-        item_art_manifest.rename(41, 'ability_icons')
-        item_art_manifest.save()
-
         sound_dir = project_path / 'sound'
         sound_dir.mkdir(exist_ok=True)
         sound_db_path = game_data / 'SOUND.CDB'
-        sound_manifest = Manifest.from_database(sound_dir, sound_db_path)
-        # make sub-databases for all the VAB DBs
-        for i, entry in enumerate(sound_manifest):
-            vab_dir = sound_dir / str(i)
-            vab_dir.mkdir(exist_ok=True)
+        with sound_db_path.open('rb') as f:
+            sound_db = Database.read(f)
+        Manifest.from_archive(sound_dir, 'SOUND', sound_db, sniff=True)
 
         voice_dir = project_path / 'voice'
         voice_dir.mkdir(exist_ok=True)
 
-        xa_map = display_db[version.disc]
-        mxa_path = game_data / 'XA.MXA'
-        buf = io.BytesIO(xa_map)
-        Manifest.from_xa_database(voice_dir, buf, mxa_path)
+        if version.region == Region.NTSC_J:
+            # I don't know where the XA DB lives in the Japanese version yet, so create a dummy manifest
+            dummy = Manifest(voice_dir, 'XA', 'xdb')
+            dummy.save()
+        else:
+            xa_map = display_db[version.disc]
+            mxa_path = game_data / 'XA.MXA'
+            xa_db = XaDatabase.read_bytes(xa_map)
+            xa_db.set_data(mxa_path.read_bytes())
+            Manifest.from_archive(voice_dir, 'XA', xa_db, '.XA')
 
         project = cls(project_path, version, actor_models, module_sets)
         project.save()
@@ -461,21 +543,27 @@ class Project:
             yield XaAudio(f.path)
 
     def get_font(self) -> Font:
-        return Font.load(self.project_dir)
+        font_type = JapaneseFont if self.version.region == Region.NTSC_J else LatinFont
+        return font_type.load(self.project_dir)
 
     def get_stage_strings(self, stage: Stage) -> StringDb:
-        path = self.project_dir / 'stages' / stage / 'strings.db'
-        db = StringDb()
-        with path.open('rb') as f:
-            db.read(f)
-        return db
+        path = self.project_dir / 'stages' / stage / 'stage.json'
+        with path.open('r') as f:
+            stage_info = json.load(f)
+        stage_index = stage_info['index']
+        string_path = self.project_dir / stage_info['strings']
+        with string_path.open('rb') as f:
+            if self.version.region == Region.NTSC_J:
+                return JapaneseStringDb.read(f, kanji_index=stage_index)
+            else:
+                return LatinStringDb.read(f)
 
     def get_stage_rooms(self, stage: Stage) -> Iterable[RoomModule]:
         manifest = Manifest.load_from(self.project_dir / 'modules')
         for manifest_file in manifest:
             if manifest_file.name[0] == stage:
                 with manifest_file.path.open('rb') as f:
-                    yield RoomModule.load(f)
+                    yield RoomModule.load(f, self.addresses['RoomLoad'])
 
     def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
         manifest = Manifest.load_from(self.project_dir / 'models')
@@ -491,7 +579,7 @@ class Project:
                 yield ActorModel.read(actor, f)
 
     def get_item_art(self) -> Manifest:
-        return Manifest.load_from(self.project_dir / 'menu' / 'item_art')
+        return Manifest.load_from(self.project_dir / 'art' / 'MENU').get_manifest('item_art')
 
     def get_items(self, key_items: bool | None = None) -> Iterable[Item]:
         model_manifest = Manifest.load_from(self.project_dir / 'models')

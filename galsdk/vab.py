@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import pathlib
+from pathlib import Path
 from typing import BinaryIO, Iterable, Self
 
 from galsdk import util
-from galsdk.format import FileFormat
+from galsdk.format import Archive
 
 
-class VabDb(FileFormat):
+class VabDb(Archive[bytes]):
     def __init__(self, vhs: list[bytes], seqs: list[bytes], vbs: list[bytes], use_alt_order: bool = False):
         self.vhs = vhs
         self.seqs = seqs
@@ -45,7 +45,7 @@ class VabDb(FileFormat):
         return cls([vh], [seq] if seq else [], [vb], True)
 
     @classmethod
-    def read(cls, f: BinaryIO) -> VabDb:
+    def read(cls, f: BinaryIO, **kwargs) -> VabDb:
         toc_len = int.from_bytes(f.read(4), 'little')
         # should be the length of the header section below, but sometimes it's not? just ignore it for now
 
@@ -110,7 +110,36 @@ class VabDb(FileFormat):
 
         return cls(vhs, seqs, vbs)
 
-    def write(self, f: BinaryIO):
+    def _resolve_index(self, index: int) -> tuple[list[bytes], int, str]:
+        if index >= len(self.vhs):
+            index -= len(self.vhs)
+            if index >= len(self.vbs):
+                index -= len(self.vbs)
+                return self.seqs, index, '.SEQ'
+            return self.vbs, index, '.VB'
+        return self.vhs, index, '.VH'
+
+    def __getitem__(self, item: int) -> bytes:
+        a, i, _ = self._resolve_index(item)
+        return a[i]
+
+    def __setitem__(self, key: int, value: bytes):
+        a, i, _ = self._resolve_index(key)
+        a[i] = value
+
+    def __delitem__(self, key: int):
+        a, i, _ = self._resolve_index(key)
+        del a[i]
+
+    def __len__(self) -> int:
+        return len(self.vhs) + len(self.vbs) + len(self.seqs)
+
+    def __iter__(self) -> Iterable[bytes]:
+        yield from self.vhs
+        yield from self.vbs
+        yield from self.seqs
+
+    def write(self, f: BinaryIO, **kwargs):
         if self.use_alt_order:
             # just raw data, no headers
             for vb in self.vbs:
@@ -160,9 +189,16 @@ class VabDb(FileFormat):
 
         f.write(data)
 
+    def append(self, item: bytes | Self):
+        raise NotImplementedError
+
     @property
     def suggested_extension(self) -> str:
         return '.VDA' if self.use_alt_order else '.VDB'
+
+    @property
+    def supports_nesting(self) -> bool:
+        return False
 
     @classmethod
     def sniff(cls, f: BinaryIO) -> Self | None:
@@ -171,15 +207,44 @@ class VabDb(FileFormat):
         except Exception:
             return None
 
-    def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
+    def unpack_one(self, path: Path, index: int) -> Path:
+        a, i, ext = self._resolve_index(index)
+        new_path = path.with_suffix(ext)
+        new_path.write_bytes(a[i])
+        return new_path
+
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
+        files = list(path.glob('*VH')) + list(path.glob('*.VB')) + list(path.glob('*.SEQ'))
+        return cls.import_explicit(files, fmt)
+
+    @classmethod
+    def import_explicit(cls, paths: Iterable[Path], fmt: str = None) -> Self:
+        use_alt_order = fmt == 'alt'
+        vhs = []
+        vbs = []
+        seqs = []
+
+        for path in paths:
+            data = path.read_bytes()
+            match path.suffix.lower():
+                case '.vh':
+                    vhs.append(data)
+                case '.vb':
+                    vbs.append(data)
+                case '.seq':
+                    seqs.append(data)
+                case _:
+                    raise ValueError('Unknown file type encountered while importing VAB DB')
+
+        return cls(vhs, seqs, vbs, use_alt_order)
+
+    def export(self, path: Path, fmt: str = None) -> Path:
         path.mkdir(exist_ok=True)
         for i, vh in enumerate(self.vhs):
-            with (path / str(i)).with_suffix('.VH').open('wb') as f:
-                f.write(vh)
+            (path / f'{i:03}').with_suffix('.VH').write_bytes(vh)
         for i, vb in enumerate(self.vbs):
-            with (path / str(i)).with_suffix('.VB').open('wb') as f:
-                f.write(vb)
+            (path / f'{i:03}').with_suffix('.VB').write_bytes(vb)
         for i, seq in enumerate(self.seqs):
-            with (path / str(i)).with_suffix('.SEQ').open('wb') as f:
-                f.write(seq)
+            (path / f'{i:03}').with_suffix('.SEQ').write_bytes(seq)
         return path

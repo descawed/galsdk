@@ -1,3 +1,5 @@
+import shutil
+from pathlib import Path
 from typing import BinaryIO, Literal, TextIO, overload
 
 
@@ -39,3 +41,10 @@ def read_some(f: BinaryIO | TextIO, size: int) -> bytes | str:
     if len(data) == 0 and size != 0:
         raise EOFError(f'EOF encountered when attempting to read {size} bytes')
     return data
+
+
+def unlink(path: Path):
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink(True)

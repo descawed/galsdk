@@ -1,14 +1,13 @@
 import math
 import os.path
-import pathlib
-
+from pathlib import Path
 from typing import BinaryIO, Container, Iterable, Self
 
 from galsdk import util
-from galsdk.format import FileFormat
+from galsdk.format import Archive
 
 
-class Database(FileFormat):
+class Database(Archive[bytes]):
     """
     A packed database of game files
 
@@ -33,6 +32,10 @@ class Database(FileFormat):
     def suggested_extension(self) -> str:
         return '.CDB'
 
+    @property
+    def supports_nesting(self) -> bool:
+        return False
+
     @classmethod
     def sniff(cls, f: BinaryIO) -> Self | None:
         db = cls()
@@ -42,41 +45,60 @@ class Database(FileFormat):
         except Exception:
             return None
 
-    def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
+        return cls.import_explicit(path.iterdir(), fmt)
+
+    @classmethod
+    def import_explicit(cls, paths: Iterable[Path], fmt: str = None) -> Self:
+        is_extended = fmt == 'extended'
+        db = cls(is_extended)
+        for path in paths:
+            db.append_file(path)
+        return db
+
+    def export(self, path: Path, fmt: str = None) -> Path:
         path.mkdir(exist_ok=True)
         for i, data in enumerate(self.files):
-            with (path / str(i)).open('wb') as f:
+            with (path / f'{i:03}').open('wb') as f:
                 f.write(data)
         return path
 
-    def read(self, f: BinaryIO):
+    def unpack_one(self, path: Path, index: int) -> Path:
+        path.write_bytes(self.files[index])
+        return path
+
+    @classmethod
+    def read(cls, f: BinaryIO, **kwargs) -> Self:
         """
         Read a database file from a given path
 
         :param f: Binary data stream to read the database file from
         """
-        self.files = []
         num_entries = util.int_from_bytes(f.read(2))
-        self.extended = util.int_from_bytes(f.read(2)) != 0
-        if self.extended:
+        extended = util.int_from_bytes(f.read(2)) != 0
+        db = cls(extended)
+        if extended:
             # skip over 4 dummy bytes
             f.seek(4, 1)
-        directory = f.read((8 if self.extended else 4)*num_entries)
+        directory = f.read((8 if extended else 4)*num_entries)
         i = 0
         while i < len(directory):
             start_sector = util.int_from_bytes(directory[i:i+2])
             num_sectors = util.int_from_bytes(directory[i+2:i+4])
-            if self.extended:
+            if extended:
                 final_sector_len = util.int_from_bytes(directory[i+4:i+6])
                 i += 8
             else:
-                final_sector_len = self.SECTOR_SIZE
+                final_sector_len = cls.SECTOR_SIZE
                 i += 4
-            f.seek(start_sector*self.SECTOR_SIZE)
-            size = (num_sectors - 1)*self.SECTOR_SIZE + final_sector_len
-            self.append(util.read_some(f, size))
+            f.seek(start_sector*cls.SECTOR_SIZE)
+            size = (num_sectors - 1)*cls.SECTOR_SIZE + final_sector_len
+            db.append(util.read_some(f, size))
 
-    def write(self, f: BinaryIO):
+        return db
+
+    def write(self, f: BinaryIO, **kwargs):
         """
         Write the files in this database to a single packed database file
 
@@ -120,6 +142,10 @@ class Database(FileFormat):
         """Set the contents of the file in the database at the given index"""
         self.files[key] = value
 
+    def __delitem__(self, key: int):
+        """Deletes the file in the database at the given index. Note that this will re-number subsequent files."""
+        del self.files[key]
+
     def __len__(self) -> int:
         """The number of files in the database"""
         return len(self.files)
@@ -128,24 +154,24 @@ class Database(FileFormat):
         """
         Append data to the database as a new file
 
-        :param data: The data of the file to be aded to the database
+        :param data: The data of the file to be added to the database
         """
         self.files.append(data)
 
-    def append_file(self, path: str):
+    def append_file(self, path: Path):
         """
         Append a file to the database
 
         :param path: Path to the file to be added to the database
         """
-        with open(path, 'rb') as f:
+        with path.open('rb') as f:
             self.append(f.read())
 
 
 def pack(extended: bool, files: Iterable[str], cdb: str):
     db = Database(extended)
     for path in files:
-        db.append_file(path)
+        db.append_file(Path(path))
     with open(cdb, 'wb') as f:
         db.write(f)
 

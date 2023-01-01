@@ -179,7 +179,6 @@ class RoomLayout:
 class RoomModule:
     ACTOR_INSTANCE_SIZE = 16
     ACTOR_LAYOUT_SIZE = 100
-    LOAD_ADDRESS = 0x801EC628
     MAX_ACTORS = 4
     MAX_ADDRESS = 0x801FFFFF
     MAX_CAMERAS = 10
@@ -215,7 +214,7 @@ class RoomModule:
         return p == 0 or cls.MIN_ADDRESS <= p <= cls.MAX_ADDRESS
 
     @classmethod
-    def load(cls, f: BinaryIO) -> RoomModule:
+    def load(cls, f: BinaryIO, load_address: int) -> RoomModule:
         data = f.read()
         room_id = int.from_bytes(data[:4], 'little')
 
@@ -395,7 +394,7 @@ class RoomModule:
                         mask_ptr = int.from_bytes(data[offset + 4:offset + 8], 'little')
 
                         # find masks
-                        mask_offset = mask_ptr - cls.LOAD_ADDRESS
+                        mask_offset = mask_ptr - load_address
                         if mask_offset < 0 or mask_offset >= len(data):
                             raise ValueError
                         background = Background(index, mask_ptr, [])

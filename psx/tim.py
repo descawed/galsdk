@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os.path
 from dataclasses import dataclass
 from enum import Enum, IntEnum
@@ -162,6 +163,36 @@ class Tim:
                 return self._decode_pixel_16(self.image_data)
             case BitsPerPixel.BPP_24:
                 return self._decode_pixel_24(self.image_data)
+
+    def _update_image(self, image: Image, bpp: BitsPerPixel):
+        if bpp in [BitsPerPixel.BPP_4, BitsPerPixel.BPP_8]:
+            raise NotImplementedError('Importing images as 4- or 8-bit TIMs is not supported')
+
+        width, _ = image.size
+        if bpp == BitsPerPixel.BPP_24:
+            rgb = image.convert('RGB')
+            data = rgb.tobytes()
+            if len(data) & 1:
+                data += b'0'
+            self.set_image(data, bpp, width * 3 // 2)
+        else:
+            rgba = image.convert('RGBA')
+            data = rgba.tobytes()
+            pixels = [tuple(data[i:i + 4]) for i in range(0, len(data), 4)]
+            tim_data = self._encode_pixel_16(pixels)
+            self.set_image(tim_data, bpp, width)
+
+    @classmethod
+    def from_image(cls, image: Image, bpp: BitsPerPixel = BitsPerPixel.BPP_24) -> Self:
+        tim = cls()
+        tim._update_image(image, bpp)
+        return tim
+
+    def update_image_in_place(self, image: Image):
+        width, height = image.size
+        if width != self.width or height != self.height:
+            raise ValueError('Image dimensions do not match TIM')
+        self._update_image(image, self.bpp)
 
     def to_image(self, clut_index: int = 0, transparency: Transparency = Transparency.FULL) -> Image:
         """

@@ -1,4 +1,5 @@
 import tkinter as tk
+from pathlib import Path
 from typing import Optional
 
 from galsdk.ui.image import ImageViewerTab
@@ -10,7 +11,7 @@ from psx.tim import Tim
 class BackgroundTab(ImageViewerTab):
     """Editor tab for viewing room background images"""
 
-    dbs: list[tuple[str, Optional[TimDb]]]
+    dbs: list[tuple[Path, Optional[TimDb]]]
     current_image: Optional[Tim]
 
     def __init__(self, project: Project):
@@ -25,7 +26,7 @@ class BackgroundTab(ImageViewerTab):
             bg_manifest = self.project.get_stage_backgrounds(stage)
             for bg_db in bg_manifest:
                 db_id = len(self.dbs)
-                self.dbs.append((str(bg_db.path), None))
+                self.dbs.append((bg_db.path, None))
                 bg_id = f'db_{db_id}'
                 self.tree.insert(stage, tk.END, text=bg_db.name, iid=bg_id, open=False)
                 # dummy item so we have the option to expand
@@ -37,9 +38,8 @@ class BackgroundTab(ImageViewerTab):
             index = int(focused[3:])
             db_path = self.dbs[index]
             if db_path[1] is None:
-                db = TimDb()
-                with open(db_path[0], 'rb') as f:
-                    db.read(f)
+                with db_path[0].open('rb') as f:
+                    db = TimDb.read(f, fmt=TimDb.Format.from_extension(db_path[0].suffix))
                 self.dbs[index] = (db_path[0], db)
                 db_id = f'db_{index}'
                 self.tree.set_children(db_id)  # remove the dummy entry

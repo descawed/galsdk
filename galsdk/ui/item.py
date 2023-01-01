@@ -4,10 +4,11 @@ from tkinter import ttk
 from direct.showbase.ShowBase import ShowBase
 from PIL import ImageTk
 
-from galsdk.ui.model_viewer import ModelViewer
-from galsdk.ui.tab import Tab
+from galsdk.manifest import Manifest
 from galsdk.project import Project
 from galsdk.tile import TileSet
+from galsdk.ui.model_viewer import ModelViewer
+from galsdk.ui.tab import Tab
 from psx.tim import Tim
 
 
@@ -22,18 +23,19 @@ class ItemTab(Tab):
         self.base = base
         self.items = []
         self.item_art = self.project.get_item_art()
-        with self.item_art['key_item_icons'].path.open('rb') as f:
+        with self.item_art.get_first('key_item_icons').path.open('rb') as f:
             self.key_item_icons = TileSet(Tim.read(f), self.ICON_WIDTH, self.ICON_HEIGHT)
-        with self.item_art['medicine_icons'].path.open('rb') as f:
+        with self.item_art.get_first('medicine_icons').path.open('rb') as f:
             self.med_item_icons = TileSet(Tim.read(f), self.ICON_WIDTH, self.ICON_HEIGHT)
         # pre-load description images
         self.descriptions = []
-        for description in self.item_art:
-            if description.name not in ['key_item_icons', 'medicine_icons', 'ability_icons']:
+        for description in self.item_art.iter_flat():
+            if any(description.name.startswith(name) for name in ['key_item_icons', 'medicine_icons', 'ability_icons']):
+                self.descriptions.append(None)  # just to keep the indexes the same
+            else:
                 with description.path.open('rb') as f:
                     self.descriptions.append(Tim.read(f))
-            else:
-                self.descriptions.append(None)  # just to keep the indexes the same
+
         self.current_index = None
 
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')

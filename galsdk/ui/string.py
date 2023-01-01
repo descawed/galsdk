@@ -1,16 +1,28 @@
 import tkinter as tk
+from dataclasses import dataclass
 from tkinter import ttk
 
 from PIL import ImageTk
 
 from galsdk.ui.tab import Tab
 from galsdk.project import Project, Stage
+from galsdk.string import StringDb
+
+
+@dataclass
+class GameString:
+    raw: bytes
+    text: str
+    stage_index: int
+    source_db: StringDb
 
 
 class StringTab(Tab):
     """Tab for viewing and editing text strings"""
 
     MAX_PREVIEW_LEN = 20
+
+    current_index: int | None
 
     def __init__(self, project: Project):
         super().__init__('String', project)
@@ -22,14 +34,15 @@ class StringTab(Tab):
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
 
-        for stage in Stage:
+        for i, stage in enumerate(Stage):
             stage: Stage
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
 
-            for i, (raw, string) in enumerate(project.get_stage_strings(stage).iter_both()):
+            string_db = project.get_stage_strings(stage)
+            for j, (raw, string) in enumerate(string_db.iter_both()):
                 string_id = len(self.strings)
-                self.strings.append((raw, string))
-                preview = f'{i}: {string}'
+                self.strings.append(GameString(raw, string, i, string_db))
+                preview = f'{j}: {string}'
                 if len(preview) > self.MAX_PREVIEW_LEN:
                     preview = preview[:self.MAX_PREVIEW_LEN-3] + '...'
                 self.tree.insert(stage, tk.END, text=preview, iid=str(string_id))
@@ -48,9 +61,9 @@ class StringTab(Tab):
         self.text_box.bind('<KeyRelease>', self.string_changed)
 
     def show(self):
-        raw, _ = self.strings[self.current_index]
+        string = self.strings[self.current_index]
         try:
-            pil_image = self.font.draw(raw)
+            pil_image = self.font.draw(string.raw, string.stage_index)
         except ValueError:
             return  # if the text is invalid, just ignore it; the user might be in the middle of changing it
         tk_image = ImageTk.PhotoImage(pil_image)
@@ -59,10 +72,12 @@ class StringTab(Tab):
 
     def string_changed(self, _):
         text = self.text_box.get('1.0', tk.END).strip('\n')
-        # FIXME: should use the encoding from the string DB
-        raw = text.encode()
-        self.strings[self.current_index] = (raw, text)
-        self.show()
+        string = self.strings[self.current_index]
+        try:
+            string.raw = string.source_db.encode(text, string.stage_index)
+            self.show()
+        except IndexError:
+            pass  # user is probably editing
 
     def select_string(self, _):
         try:
@@ -73,7 +88,7 @@ class StringTab(Tab):
 
         if index != self.current_index:
             self.current_index = index
-            raw, string = self.strings[self.current_index]
+            string = self.strings[self.current_index]
             self.text_box.delete('1.0', tk.END)
-            self.text_box.insert('1.0', string)
+            self.text_box.insert('1.0', string.text)
             self.show()

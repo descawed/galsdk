@@ -1,12 +1,66 @@
-import pathlib
+import struct
+from abc import abstractmethod
+from pathlib import Path
 from typing import BinaryIO, Iterable, Self
 
 from galsdk.format import FileFormat
 
 
+class StringDb(FileFormat):
+    @classmethod
+    @abstractmethod
+    def encode(cls, string: str, stage_index: int) -> bytes:
+        """Encode a string for storage in the database for the given stage_index"""
+
+    @classmethod
+    @abstractmethod
+    def decode(cls, data: bytes, stage_index: int) -> str:
+        """Decode a string from the database using the given stage_index"""
+
+    @abstractmethod
+    def __getitem__(self, item: int) -> str:
+        """Get a string from the database"""
+
+    @abstractmethod
+    def __setitem__(self, key: int, value: str):
+        """Change a string in the database"""
+
+    @abstractmethod
+    def __iter__(self) -> Iterable[str]:
+        """Iterate over the strings in the database"""
+
+    @abstractmethod
+    def __len__(self) -> int:
+        """Number of strings in the database"""
+
+    @abstractmethod
+    def iter_raw(self) -> Iterable[bytes]:
+        """Iterate over the strings as raw (un-decoded) bytes"""
+
+    @abstractmethod
+    def iter_both(self) -> Iterable[tuple[bytes, str]]:
+        """Iterate over the strings as both raw and decoded strings"""
+
+    @abstractmethod
+    def append(self, string: str):
+        """
+        Append a string to the database
+
+        :param string: The string to append to the database
+        """
+
+    @abstractmethod
+    def append_raw(self, string: bytes):
+        """
+        Append a raw byte string to the database with no encoding applied
+
+        :param string: The byte string to append to the database
+        """
+
+
 # we keep everything as bytes internally because there are some cases where there are bogus characters in the data
 # that we don't want to overwrite unless requested
-class StringDb(FileFormat):
+class LatinStringDb(StringDb):
     """
     A database of text strings used within a game stage
 
@@ -15,10 +69,11 @@ class StringDb(FileFormat):
     Strings are referenced in code by their index in these databases.
     """
     MAGIC = b'\x41\x84'
+    DEFAULT_ENCODING = 'windows-1252'
 
     strings: list[bytes]
 
-    def __init__(self, encoding: str = 'windows-1252'):
+    def __init__(self, encoding: str = DEFAULT_ENCODING):
         """
         Create a new string database with a given encoding
 
@@ -33,29 +88,43 @@ class StringDb(FileFormat):
 
     @classmethod
     def sniff(cls, f: BinaryIO) -> Self | None:
-        db = cls()
         try:
-            db.read(f)
-            return db
+            return cls.read(f)
         except Exception:
             return None
 
-    def export(self, path: pathlib.Path, fmt: str = None) -> pathlib.Path:
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
+        db = cls()
+        with open(path, 'rb') as f:
+            s = b''
+            while c := f.read(1):
+                if c == b'\n':
+                    db.append_raw(s)
+                    s = b''
+                else:
+                    s += c
+            if s:
+                db.append_raw(s)
+        return db
+
+    def export(self, path: Path, fmt: str = None) -> Path:
         new_path = path.with_suffix('.txt')
         with new_path.open('wb') as f:
             for string in self.strings:
                 f.write(string + b'\n')
         return new_path
 
-    def read(self, f: BinaryIO):
+    @classmethod
+    def read(cls, f: BinaryIO, **kwargs) -> Self:
         """
         Read a string database file
 
         :param f: Binary data stream to read the string database from
         """
-        self.strings = []
+        db = cls()
         magic = f.read(2)
-        if magic != self.MAGIC:
+        if magic != cls.MAGIC:
             raise ValueError('Not a string database')
         num_strings = int.from_bytes(f.read(2), 'little')
         offsets = [int.from_bytes(f.read(4), 'little') for _ in range(num_strings)]
@@ -66,9 +135,10 @@ class StringDb(FileFormat):
                 if c == b'\0':
                     break
                 data += c
-            self.strings.append(data)
+            db.append_raw(data)
+        return db
 
-    def write(self, f: BinaryIO):
+    def write(self, f: BinaryIO, **kwargs):
         """
         Write the strings in this object out to a database file
 
@@ -101,6 +171,14 @@ class StringDb(FileFormat):
         """Number of strings in the database"""
         return len(self.strings)
 
+    @classmethod
+    def decode(cls, data: bytes, stage_index: int) -> str:
+        return data.decode(cls.DEFAULT_ENCODING, 'replace')
+
+    @classmethod
+    def encode(cls, string: str, stage_index: int) -> bytes:
+        return string.encode(cls.DEFAULT_ENCODING)
+
     def iter_raw(self) -> Iterable[bytes]:
         """Iterate over the strings as raw (un-decoded) bytes"""
         yield from self.strings
@@ -127,44 +205,276 @@ class StringDb(FileFormat):
         self.strings.append(string)
 
 
-def pack(input_path: str, output_path: str):
-    sdb = StringDb()
-    with open(input_path, 'rb') as f:
-        s = b''
-        while c := f.read(1):
-            if c == b'\n':
-                sdb.append(s)
-                s = b''
+class JapaneseStringDb(StringDb):
+    BASIC = (
+        ' .\u2bc8\u300c\u300d()\uff62\uff63\u201c\u201d\u2bc6012345'
+        '6789:\u3001\u3002\u201d!? ABCDEFG'
+        'HIJKLMNOPQRSTUVWXY'
+        "Z[/]'-\u00b7abcdefghijk"
+        'lmnopqrstuvwxyzあいう'
+        'えおかきくけこさしすせそたちつてとな'
+        'にぬねのはひふへほまみむめもやゆよら'
+        'りるれろわをんがぎぐげござじずぜぞだ'
+        'ぢづでどばびぶべぼぱぴぷぺぽぁぃぅぇ'
+        'ぉゃゅょっアイウエオカキクケコサシス'
+        'セソタチツテトナニヌネノハヒフヘホマ'
+        'ミムメモヤユヨラリルレロワヲンガギグ'
+        'ゲゴザジズゼゾダヂヅデドバビブベボパ'
+        'ピプペポァィゥェォャュョッヷ\u2e3a\u200b\0\0'
+        '&\u2026+\uff0d#$%=          '
+        '\0\0\0\0\0\0\0\0\u21e7\u21e9\u21e6\u21e8'
+    )
+
+    KANJI = [
+        (
+            '生命維持注射回復剤隔離病棟階地図医局'
+            '員資料両親写真実験院長画像液体火薬冷'
+            '凍室品庫発電機起動製工場双頭蛇眼球猿'
+            '狼鷲設定書換源遮断向解除開戦避使事特'
+            '何年制作月日時分足爆破血並差込口圧報'
+            '告棚引出取入手配録力違外＊点決視変更'
+            '始直座標目淮番号部屋移禁止終左右残度'
+            '用御研究武器切調戻大懐感隣映監視減逃'
+            '美女人誰側神抜版壊一倉箱具不気味意蔵'
+            '細胞氷寒早巨拘束性必要通路障療空数字'
+            '械別鉄格子廊下続思他死殺居前割化物警'
+            '備念捕査助先行私僕名今憶呼聞見家帰過'
+            '去脱君彼来話掛声殊務閉痛方法操返押線'
+            '構成絵保育世界新創造主反応描供給装置'
+            '補議怪立街灯胎児闘無傷覆落忘黒浮色路'
+            '台着端末赤中灰皿自的仕頑丈山積扉鏡吹'
+            '壁服配盤石'
+        ),
+        # TODO: transcribe remaining three kanji pages
+        '',
+        '',
+        '',
+    ]
+
+    strings: list[bytes]
+
+    def __init__(self, kanji_index: int = None):
+        """Create a new Japanese string database with a given encoding"""
+        self.strings = []
+        self.kanji_index = kanji_index
+
+    @property
+    def suggested_extension(self) -> str:
+        return '.JSD'
+
+    @classmethod
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        try:
+            db = cls.read(f)
+            # look for invalid characters
+            if any(
+                    0xff < code < 0x800
+                    or 0x8ff < code < 0x8000
+                    or (code & 0xc000 and (code & 0xff) > 6)
+                    for string in db.iter_raw() for code in cls._unpack(string)
+            ):
+                return None
+            return db
+        except Exception:
+            return None
+
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
+        if fmt is None:
+            fmt = '0'
+        kanji_index = int(fmt)
+        db = cls()
+        strings = path.read_text().split('\n')
+        if strings[-1] == '':
+            del strings[-1]
+        for string in strings:
+            db.append(string, kanji_index)
+        return db
+
+    def export(self, path: Path, fmt: str = None) -> Path:
+        if fmt is None:
+            fmt = str(self.kanji_index) if self.kanji_index is not None else '0'
+        kanji_index = int(fmt)
+        new_path = path.with_suffix('.txt')
+        with new_path.open('w') as f:
+            for string in self.strings:
+                f.write(self.decode(string, kanji_index) + '\n')
+        return new_path
+
+    @classmethod
+    def read(cls, f: BinaryIO, *, kanji_index: int = None, **kwargs) -> Self:
+        """
+        Read a string database file
+
+        :param f: Binary data stream to read the string database from
+        :param kanji_index: Index of the kanji set the strings were encoded for
+        """
+        db = cls(kanji_index)
+        db.strings = f.read().split(b'\xff\xff')
+        if db.strings[-1] == b'':
+            del db.strings[-1]
+        return db
+
+    def write(self, f: BinaryIO, **kwargs):
+        """
+        Write the strings in this object out to a database file
+
+        :param f: Binary data stream to write the string database to
+        """
+        for s in self.strings:
+            f.write(s + b'\xff\xff')
+
+    @staticmethod
+    def _unpack(data: bytes) -> list[int]:
+        return list(struct.unpack(f'<{len(data) >> 1}H', data))
+
+    @staticmethod
+    def _pack(data: list[int]) -> bytes:
+        return struct.pack(f'<{len(data)}H', *data)
+
+    @classmethod
+    def encode(cls, string: str, stage_index: int) -> bytes:
+        out = []
+        i = 0
+        while i < len(string):
+            c = string[i]
+            if c == '<':
+                end = string[i:].index('>')
+                code = int(string[i+1:end])
+                out.append(code)
+                i = end + 1
+            elif c in cls.BASIC:
+                out.append(cls.BASIC.index(c))
             else:
-                s += c
-        if s:
-            sdb.append_raw(s)
+                out.append(cls.KANJI[stage_index].index(c) | 0x800)
+        return cls._pack(out)
+
+    @classmethod
+    def decode(cls, data: bytes | list[int], stage_index: int, allow_unknown: bool = True) -> str:
+        if isinstance(data, bytes):
+            data = cls._unpack(data)
+        out = ''
+        expect_argument = False
+        for code in data:
+            if expect_argument:
+                c = '\0'
+                expect_argument = False
+            elif code & 0xc000:
+                c = '\0'
+                expect_argument = (code & 0xff) in [3, 6]
+            else:
+                if code & 0x800:
+                    try:
+                        c = cls.KANJI[stage_index][code & 0xff]
+                    except IndexError:
+                        if allow_unknown:
+                            c = '\0'
+                        else:
+                            raise
+                else:
+                    try:
+                        c = cls.BASIC[code]
+                    except IndexError:
+                        if allow_unknown:
+                            c = '\0'
+                        else:
+                            raise
+
+            if c == '\0':
+                out += f'<{code}>'
+            else:
+                out += c
+        return out
+
+    def __getitem__(self, item: int) -> str:
+        """Get a string from the database"""
+        return self.decode(self.strings[item], self.kanji_index or 0)
+
+    def __setitem__(self, key: int, value: list[int] | bytes | str):
+        """Change a string in the database"""
+        self.strings[key] = value if isinstance(value, bytes) else self._pack(value)
+
+    def __iter__(self) -> Iterable[str]:
+        """Iterate over the strings in the database"""
+        for string in self.strings:
+            yield self.decode(string, self.kanji_index or 0)
+
+    def __len__(self) -> int:
+        """Number of strings in the database"""
+        return len(self.strings)
+
+    def iter_raw(self) -> Iterable[bytes]:
+        """Iterate over the strings as raw (un-decoded) bytes"""
+        yield from self.strings
+
+    def iter_both(self) -> Iterable[tuple[bytes, str]]:
+        """Iterate over the strings as both raw and decoded strings"""
+        for string in self.strings:
+            yield string, self.decode(string, self.kanji_index or 0)
+
+    def as_str(self, index: int, kanji_index: int = None) -> str:
+        if kanji_index is None:
+            kanji_index = self.kanji_index
+        return self.decode(self.strings[index], kanji_index or 0)
+
+    def append(self, string: str, kanji_index: int = None):
+        """
+        Append a string to the database
+
+        :param string: The string to append to the database
+        :param kanji_index: Index of the kanji set to use for encoding this string
+        """
+        if kanji_index is None:
+            kanji_index = self.kanji_index
+        self.strings.append(self.encode(string, kanji_index or 0))
+
+    def append_raw(self, string: bytes):
+        """
+        Append a raw byte string to the database with no encoding applied
+
+        :param string: The byte string to append to the database
+        """
+        self.strings.append(string)
+
+
+def pack(input_path: str, output_path: str, kanji_index: int | None):
+    input_path = Path(input_path)
+    if kanji_index is None:
+        sdb = LatinStringDb.import_(input_path)
+    else:
+        sdb = JapaneseStringDb.import_(input_path, str(kanji_index))
     with open(output_path, 'wb') as f:
         sdb.write(f)
 
 
-def unpack(input_path: str, output_path: str):
-    sdb = StringDb()
+def unpack(input_path: str, output_path: str, kanji_index: int | None):
     with open(input_path, 'rb') as f:
-        sdb.read(f)
-    sdb.export(pathlib.Path(output_path))
+        if kanji_index is None:
+            sdb = LatinStringDb.read(f)
+        else:
+            sdb = JapaneseStringDb.read(f, kanji_index=kanji_index)
+    sdb.export(Path(output_path))
 
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Pack or unpack Galerians string files')
+    parser.add_argument('-j', '--japanese',
+                        help='Pack or unpack a Japanese string database. The argument to this option should be the '
+                        'index of the kanji set the strings were encoded for.',
+                        type=int)
     subparsers = parser.add_subparsers()
 
     pack_parser = subparsers.add_parser('pack', help='Create a string database from a text file')
     pack_parser.add_argument('input', help='Text file to pack (must use LF line endings, not CRLF)')
     pack_parser.add_argument('output', help='Path to string database to be created')
-    pack_parser.set_defaults(action=lambda a: pack(a.input, a.output))
+    pack_parser.set_defaults(action=lambda a: pack(a.input, a.output, a.japanese))
 
     unpack_parser = subparsers.add_parser('unpack', help='Unpack strings from a string database')
     unpack_parser.add_argument('input', help='Path to string database to be unpacked')
     unpack_parser.add_argument('output', help='Path to string file to be created')
-    unpack_parser.set_defaults(action=lambda a: unpack(a.input, a.output))
+    unpack_parser.set_defaults(action=lambda a: unpack(a.input, a.output, a.japanese))
 
     args = parser.parse_args()
     args.action(args)

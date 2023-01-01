@@ -11,9 +11,8 @@ def test_db(tmp_path):
     with cdb_path.open('wb') as f:
         db.write(f)
 
-    new_db = Database()
     with cdb_path.open('rb') as f:
-        new_db.read(f)
+        new_db = Database.read(f)
     assert len(new_db) == 2
     assert new_db[0].startswith(first_file) and all(b == 0 for b in new_db[0][len(first_file):])
     assert new_db[1].startswith(second_file) and all(b == 0 for b in new_db[1][len(second_file):])
@@ -29,9 +28,8 @@ def test_extended_db(tmp_path):
     with cdb_path.open('wb') as f:
         db.write(f)
 
-    new_db = Database()
     with cdb_path.open('rb') as f:
-        new_db.read(f)
+        new_db = Database.read(f)
     assert len(new_db) == 2
     assert new_db[0] == first_file
     assert new_db[1] == second_file

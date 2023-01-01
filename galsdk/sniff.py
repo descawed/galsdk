@@ -3,13 +3,13 @@ import sys
 
 from galsdk.db import Database
 from galsdk.format import FileFormat
-from galsdk.string import StringDb
-from galsdk.tim import GameTim, TimDb
+from galsdk.string import LatinStringDb, JapaneseStringDb
+from galsdk.tim import TimFormat, TimDb
 from galsdk.vab import VabDb
 from galsdk.xa import XaDatabase
 
 
-formats: list[type[FileFormat]] = [StringDb, XaDatabase, GameTim, TimDb, Database, VabDb]
+formats: list[type[FileFormat]] = [LatinStringDb, XaDatabase, TimDb, TimFormat, Database, VabDb, JapaneseStringDb]
 
 
 def sniff_file(path: pathlib.Path) -> FileFormat | None:

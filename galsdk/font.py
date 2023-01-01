@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import struct
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
 from PIL import Image
 
@@ -24,8 +27,22 @@ YesNo = object()
 Wait = object()
 
 
-class Font:
-    """The in-game font"""
+class Font(ABC):
+    CHAR_WIDTH = 0
+    CHAR_HEIGHT = 0
+
+    @abstractmethod
+    def draw(self, text: bytes, stage_index: int, bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image:
+        pass
+
+    @classmethod
+    @abstractmethod
+    def load(cls, path: Path) -> Self:
+        pass
+
+
+class LatinFont(Font):
+    """The in-game font for Western versions of the game"""
 
     CHAR_WIDTH = 16
     CHAR_HEIGHT = 16
@@ -96,7 +113,7 @@ class Font:
             max_width = current_width
         return result, max_width, height
 
-    def draw(self, text: bytes, bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image:
+    def draw(self, text: bytes, stage_index: int = 0, bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image:
         parsed, width, height = self._parse_string(text)
         image = Image.new('RGBA', (width, height), bg_color)
         x = y = clut = 0
@@ -131,11 +148,82 @@ class Font:
         char_widths = {int(k): v for k, v in info['widths'].items()}
         return cls(image, char_widths)
 
-    def save(self, path: Path, image_name: str):
-        image_path = path / image_name
-        with image_path.open('wb') as f:
-            self.tile_set.image.write(f)
 
+class JapaneseFont(Font):
+    """The in-game font for the Japanese version of the game"""
+
+    CHAR_WIDTH = 14
+    CHAR_HEIGHT = 14
+
+    def __init__(self, basic: Tim, kanji: list[Tim]):
+        self.basic = TileSet(basic, self.CHAR_WIDTH, self.CHAR_HEIGHT)
+        self.kanji = [TileSet(image, self.CHAR_WIDTH, self.CHAR_HEIGHT) for image in kanji]
+
+    def _calculate_size(self, string: list[int]) -> tuple[int, int]:
+        max_width = current_width = 0
+        height = 0
+        new_line = True
+        for c in string:
+            if c & 0xc000:
+                if (c & 0xff) in [1, 4]:
+                    if current_width > max_width:
+                        max_width = current_width
+                    current_width = 0
+                    new_line = True
+            else:
+                current_width += self.CHAR_WIDTH
+                if new_line:
+                    height += self.CHAR_HEIGHT
+                    new_line = False
+
+        if current_width > max_width:
+            max_width = current_width
+        return max_width, height
+
+    def draw(self, text: bytes | list[int], stage_index: int,
+             bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image:
+        if isinstance(text, bytes):
+            text = list(struct.unpack(f'<{len(text) >> 1}H', text))
+        width, height = self._calculate_size(text)
+        image = Image.new('RGBA', (width, height), bg_color)
+        x = y = clut = 0
+        i = 0
+        while i < len(text):
+            code = text[i]
+            if code & 0xc000:
+                control_code = code & 0xff
+                match control_code:
+                    case 1 | 4:
+                        x = 0
+                        y += self.CHAR_HEIGHT
+                    case 3:
+                        i += 1
+                    case 6:
+                        i += 1
+                        clut = text[i]
+            else:
+                # regular character
+                if code & 0x800:
+                    char = self.kanji[stage_index].get(code & 0xff, clut)
+                else:
+                    char = self.basic.get(code, clut)
+
+                image.paste(char, (x, y))
+                x += self.CHAR_WIDTH
+            i += 1
+        return image
+
+    @classmethod
+    def load(cls, path: Path) -> JapaneseFont:
         json_path = path / 'font.json'
-        with json_path.open('w') as f:
-            json.dump({'image': image_name, 'widths': self.char_widths}, f)
+        with json_path.open() as f:
+            info = json.load(f)
+        basic_path = path / info['image']
+        with basic_path.open('rb') as f:
+            basic = Tim.read(f)
+        kanji = []
+        for kanji_set in info['kanji']:
+            kanji_path = path / kanji_set['image']
+            with kanji_path.open('rb') as f:
+                kanji.append(Tim.read(f))
+        return cls(basic, kanji)

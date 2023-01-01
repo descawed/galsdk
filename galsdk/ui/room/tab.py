@@ -224,9 +224,9 @@ class RoomViewport(Viewport):
             camera_object.add_to_scene(self.camera_node)
             self.cameras.append(camera_object)
             if camera_object.background.index not in self.loaded_tims:
-                db = TimDb()
-                with open(self.stage_backgrounds[self.current_stage][camera_object.background.index].path, 'rb') as f:
-                    db.read(f)
+                path = self.stage_backgrounds[self.current_stage][camera_object.background.index].path
+                with path.open('rb') as f:
+                    db = TimDb.read(f, fmt=TimDb.Format.from_extension(path.suffix))
                 self.loaded_tims[camera_object.background.index] = db
 
         self.actor_layouts = module.actor_layouts.layouts

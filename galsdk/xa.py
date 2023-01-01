@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, ByteString, Self
+from typing import BinaryIO, ByteString, Iterable, Self
 
 import ffmpeg
 
 from galsdk import util
-from galsdk.format import FileFormat
+from galsdk.format import Archive
 from galsdk.media import Media
 from psx.cd.disc import Sector, SubMode
 
@@ -43,8 +43,11 @@ class XaRegion:
         process.wait()
         return bytes(output)
 
+    def as_str(self) -> str:
+        return f'{self.channel} {self.start} {self.end}'
 
-class XaDatabase(FileFormat):
+
+class XaDatabase(Archive[bytes]):
     MAGIC = b'\x41\x89'
 
     def __init__(self, regions: list[XaRegion] = None, data: ByteString = None):
@@ -75,7 +78,7 @@ class XaDatabase(FileFormat):
     def __getitem__(self, item: int) -> bytes:
         return self.regions[item].data
 
-    def __setitem__(self, key: int, value: ByteString):
+    def __setitem__(self, key: int, value: bytes):
         region = self.regions[key]
         first_sector = Sector(value[:Sector.SIZE])
         region.channel = first_sector.channel
@@ -83,11 +86,21 @@ class XaDatabase(FileFormat):
             raise ValueError('Not a valid XA sector')
         region.data = value
 
+    def __delitem__(self, key: int):
+        del self.regions[key]
+
     def __len__(self) -> int:
         return len(self.regions)
 
+    def __iter__(self) -> Iterable[bytes]:
+        for region in self.regions:
+            yield region.data
+
+    def append(self, item: bytes | Self):
+        raise NotImplementedError
+
     @classmethod
-    def read(cls, f: BinaryIO) -> XaDatabase:
+    def read(cls, f: BinaryIO, **kwargs) -> XaDatabase:
         magic = f.read(2)
         if magic != cls.MAGIC:
             raise ValueError('Not an XA database')
@@ -102,7 +115,7 @@ class XaDatabase(FileFormat):
 
         return cls(regions)
 
-    def write(self, f: BinaryIO):
+    def write(self, f: BinaryIO, **kwargs):
         f.write(self.MAGIC)
         f.write(len(self.regions).to_bytes(2, 'little'))
         for region in self.regions:
@@ -111,8 +124,16 @@ class XaDatabase(FileFormat):
             f.write(region.end.to_bytes(4, 'little'))
 
     @property
+    def is_ready(self) -> bool:
+        return all(region.data for region in self.regions)
+
+    @property
     def suggested_extension(self) -> str:
         return '.XDB'
+
+    @property
+    def supports_nesting(self) -> bool:
+        return False
 
     @classmethod
     def sniff(cls, f: BinaryIO) -> Self | None:
@@ -121,5 +142,27 @@ class XaDatabase(FileFormat):
         except Exception:
             return None
 
-    def export(self, path: Path, fmt: str = None) -> Path:
+    def unpack_one(self, path: Path, index: int) -> Path:
+        region = self.regions[index]
+        if region.data:
+            path.write_bytes(region.data)
+        else:
+            raise ValueError('Attempted to unpack an XA database entry with no data set')
+        return path
+
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
         raise NotImplementedError
+
+    @classmethod
+    def import_explicit(cls, paths: Iterable[Path], fmt: str = None) -> Self:
+        raise NotImplementedError
+
+    def export(self, path: Path, fmt: str = None) -> Path:
+        path.mkdir(exist_ok=True)
+        if self.is_ready:
+            for i, region in enumerate(self.regions):
+                (path / f'{i:003}.XA').write_bytes(region.data)
+        else:
+            raise ValueError('Attempted to export an XA database with no data set')
+        return path
