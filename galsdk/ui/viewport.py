@@ -29,6 +29,7 @@ class Viewport(ttk.Frame):
         self.was_dragging_last_frame = False
         self.was_panning_last_frame = False
         self.target = None
+        self.target_orbit = None
         self.min_zoom = self.DEFAULT_MIN_ZOOM
         self.max_zoom = self.DEFAULT_MAX_ZOOM
 
@@ -68,10 +69,10 @@ class Viewport(ttk.Frame):
                 new_direction = self.max_zoom - current_zoom
             else:
                 new_direction = direction
-            camera_pos = self.camera.getPos()
-            vector = self.target.getPos() - camera_pos
+            camera_pos = self.camera.getPos(self.render_target)
+            vector = self.target.getPos(self.render_target) - camera_pos
             vector.normalize()
-            self.camera.setPos(camera_pos + vector * new_direction)
+            self.camera.setPos(self.render_target, camera_pos + vector * new_direction)
         else:
             self.camera.setY(self.camera, direction)
 
@@ -79,14 +80,20 @@ class Viewport(ttk.Frame):
         self.target = target
         if camera_pos is None:
             camera_pos = (0, self.DEFAULT_ZOOM, self.DEFAULT_HEIGHT)
-        self.camera.setPos(self.target, *camera_pos)
+        # prepare camera for orbit
+        if self.target_orbit is not None:
+            self.target_orbit.removeNode()
+        self.target_orbit = self.target.attachNewNode(f'viewport_orbit_{self.name}')
+        self.camera.reparentTo(self.target_orbit)
+        self.camera.setPos(*camera_pos)
         self.camera.lookAt(self.target)
 
     def clear_target(self):
+        self.camera.wrtReparentTo(self.render_target)
         self.target = None
-
-    def handle_mouse(self, is_dragging: bool, is_panning: bool, x_diff: float, y_diff: float):
-        pass
+        if self.target_orbit is not None:
+            self.target_orbit.removeNode()
+        self.target_orbit = None
 
     def watch_mouse(self, _) -> int:
         if not self.base.mouseWatcherNode.hasMouse() or not self.window.is_active():
@@ -101,7 +108,10 @@ class Viewport(ttk.Frame):
             x_diff = (mouse_x - self.last_x) / self.window.getXSize()
             y_diff = (mouse_y - self.last_y) / self.window.getYSize()
 
-            self.handle_mouse(is_dragging, is_panning, x_diff, y_diff)
+            # don't do anything unless we've been dragging for at least one frame
+            if is_dragging and self.was_dragging_last_frame and self.target_orbit:
+                self.target_orbit.setH(self.target_orbit, -x_diff * self.ROTATE_SCALE_X % 360)
+                self.target_orbit.setP(self.target_orbit, -y_diff * self.ROTATE_SCALE_Y % 360)
 
             if is_panning and self.was_panning_last_frame:
                 self.camera.setX(self.camera, self.camera.getX(self.camera) - x_diff * self.PAN_SCALE_X)

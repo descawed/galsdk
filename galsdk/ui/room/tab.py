@@ -25,6 +25,7 @@ class RoomViewport(Viewport):
         self.name = None
         self.wall = None
         self.selected_item = None
+        self.camera_target = None
         self.colliders = []
         self.collider_node = self.render_target.attachNewNode('room_viewport_colliders')
         self.triggers = []
@@ -111,21 +112,28 @@ class RoomViewport(Viewport):
     def set_camera_view(self, camera: CameraObject | None):
         if self.background:
             self.background.remove_from_scene()
+        if self.camera_target:
+            self.camera_target.removeNode()
+            self.camera_target = None
         if camera:
             # TODO: this should track changes to the camera in real-time. also, we should make the camera target
             #  targetable with set_target
             # TODO: implement camera orientation and scale
             # FIXME: hide the camera model for the camera we're currently viewing
-            self.clear_target()
-            self.camera.setPos(camera.position.panda_x, camera.position.panda_y, camera.position.panda_z)
-            self.camera.lookAt(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
+            self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
+            self.camera_target.setPos(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
+            self.camera_target.setHpr(0, 0, 0)
             self.camera.node().getLens().setMinFov(camera.fov)
+            self.set_target(self.camera_target)
+            self.camera.setPos(self.render_target, camera.position.panda_x, camera.position.panda_y,
+                               camera.position.panda_z)
+            self.camera.lookAt(self.camera_target)
             bg_tim = self.loaded_tims[camera.background.index][0]
             self.background = BillboardObject('room_viewport_background', bg_tim)
-            self.background.add_to_scene(self.render_target)
+            self.background.add_to_scene(self.camera)
             distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
-            self.background.node_path.setPos(self.camera, 0, distance, 0)
-            self.background.node_path.setHpr(self.camera, 0, 90, 0)
+            self.background.node_path.setPos(0, distance, 0)
+            self.background.node_path.setHpr(0, 90, 0)
         else:
             self.camera.node().getLens().setMinFov(self.default_fov)
             camera_distance = self.get_default_camera_distance()

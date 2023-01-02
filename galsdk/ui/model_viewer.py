@@ -31,13 +31,6 @@ class ModelViewer(Viewport):
         else:
             self.clear_target()
 
-    def handle_mouse(self, is_dragging: bool, is_panning: bool, x_diff: float, y_diff: float):
-        # don't do anything unless we've been dragging for at least one frame
-        if is_dragging and self.was_dragging_last_frame:
-            # this seems to be relative to any existing rotations, whereas setPos is absolute
-            self.node_path.setH(self.node_path, x_diff * self.ROTATE_SCALE_X % 360)
-            self.node_path.setP(self.node_path, y_diff * self.ROTATE_SCALE_Y % 360)
-
 
 class ModelViewerTab(Tab, metaclass=ABCMeta):
     """Tab for viewing arbitrary 3D models from the game"""
