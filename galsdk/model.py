@@ -351,7 +351,7 @@ illum 0
                 node.addGeom(model)
                 node_path = NodePath(node)
                 node_path.setTexture(texture)
-                node_path.writeBamFile(str(new_path))
+                node_path.writeBamFile(util.panda_path(new_path))
             case 'tim':
                 new_path = path.with_suffix('.tim')
                 with new_path.open('wb') as f:

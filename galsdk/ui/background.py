@@ -44,12 +44,13 @@ class BackgroundTab(ImageViewerTab):
                 db_id = f'db_{index}'
                 self.tree.set_children(db_id)  # remove the dummy entry
                 for i in range(len(db)):
-                    self.tree.insert(db_id, tk.END, text=str(i), iid=f'img_{index}_{i}')
+                    iid = f'img_{index}_{i}'
+                    self.tree.insert(db_id, tk.END, text=str(i), iid=iid)
+                    self.exportable_ids.add(iid)
 
-    def get_image(self) -> Optional[Tim]:
-        selected = self.tree.selection()[0]
-        if selected.startswith('img_'):
-            db_index, img_index = [int(piece) for piece in selected[4:].split('_')]
+    def get_image_from_iid(self, iid: str) -> Optional[Tim]:
+        if iid.startswith('img_'):
+            db_index, img_index = [int(piece) for piece in iid[4:].split('_')]
             db = self.dbs[db_index][1]
             return db[img_index]
         return None

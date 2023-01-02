@@ -34,7 +34,7 @@ class ArtTab(ImageViewerTab):
                     iid = new_iid
                 with art_file.path.open('rb') as f:
                     self.images[iid] = Tim.read(f)
+                    self.exportable_ids.add(iid)
 
-    def get_image(self) -> Optional[Tim]:
-        selected = self.tree.selection()[0]
-        return self.images.get(selected)
+    def get_image_from_iid(self, iid: str) -> Optional[Tim]:
+        return self.images.get(iid)

@@ -48,3 +48,14 @@ def unlink(path: Path):
         shutil.rmtree(path)
     else:
         path.unlink(True)
+
+
+def panda_path(path: Path) -> str:
+    if drive := path.drive:
+        # panda requires a Unix-style path
+        path_str = path.as_posix()[len(drive):]
+        # TODO: check if this works with UNC paths
+        clean_drive = drive.replace(':', '').replace('\\', '/').lower()
+        return f'/{clean_drive}{path_str}'
+    else:
+        return str(path)

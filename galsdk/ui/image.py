@@ -1,5 +1,7 @@
 import tkinter as tk
+import tkinter.filedialog as tkfile
 from abc import ABCMeta, abstractmethod
+from pathlib import Path
 from tkinter import ttk
 from typing import Literal, Optional
 
@@ -7,6 +9,7 @@ from PIL import ImageTk
 
 from galsdk.ui.tab import Tab
 from galsdk.project import Project
+from galsdk.tim import TimFormat
 from psx.tim import Tim, Transparency
 
 
@@ -20,6 +23,8 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
         super().__init__(name, project)
 
         self.current_image = None
+        self.exportable_ids = set()
+        self.export_iid = None
         self.tree = ttk.Treeview(self, selectmode=selectmode, show=show)
 
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
@@ -39,6 +44,9 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
         transparency_toggle.grid(row=0, column=2, sticky=tk.E)
         self.zoom.grid(row=0, column=3, sticky=tk.E)
 
+        self.export_menu = tk.Menu(self, tearoff=False)
+        self.export_menu.add_command(label='Export', command=self.on_export)
+
         self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NSEW)
         scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
         self.image_label.grid(row=0, column=2, sticky=tk.NSEW)
@@ -48,6 +56,7 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
 
         self.tree.bind('<<TreeviewSelect>>', self.on_selection_change)
         self.tree.bind('<<TreeviewOpen>>', self.on_node_open)
+        self.tree.bind('<Button-3>', self.handle_right_click)
         self.clut_select.bind('<<ComboboxSelected>>', self.update_image)
 
     def on_selection_change(self, _: tk.Event):
@@ -62,12 +71,32 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
             self.clut_index = 0
             self.update_image()
 
+    def handle_right_click(self, event: tk.Event):
+        iid = self.tree.identify_row(event.y)
+        if iid in self.exportable_ids:
+            self.export_iid = iid
+            self.export_menu.post(event.x_root, event.y_root)
+
     def on_node_open(self, event: tk.Event):
         """Event handler when a tree node is opened; by default does nothing"""
 
-    @abstractmethod
+    def on_export(self, *_):
+        if not (image := self.get_image_from_iid(self.export_iid)):
+            return
+
+        if filename := tkfile.asksaveasfilename(filetypes=[('Images', '*.png *.jpg *.bmp *.tga *.webp *.tim'),
+                                                           ('All Files', '*.*')]):
+            path = Path(filename)
+            tim = TimFormat.from_tim(image)
+            tim.export(path, path.suffix)
+
     def get_image(self) -> Optional[Tim]:
         """Get the currently selected TIM image"""
+        return self.get_image_from_iid(self.tree.selection()[0])
+
+    @abstractmethod
+    def get_image_from_iid(self, iid: str) -> Optional[Tim]:
+        """Get the image for the given IID, if any"""
 
     @property
     def clut_index(self) -> int:

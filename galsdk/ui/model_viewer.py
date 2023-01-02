@@ -1,5 +1,7 @@
 import tkinter as tk
+import tkinter.filedialog as tkfile
 from abc import ABCMeta, abstractmethod
+from pathlib import Path
 from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
@@ -40,10 +42,15 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         self.base = base
         self.models = []
         self.current_index = None
+        self.exportable_ids = set()
+        self.export_index = None
 
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
+
+        self.export_menu = tk.Menu(self, tearoff=False)
+        self.export_menu.add_command(label='Export', command=self.on_export)
 
         self.model_frame = ModelViewer(name.lower(), self.base, 1280, 720, self)
         self.fill_tree()
@@ -55,10 +62,31 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         self.grid_columnconfigure(2, weight=1)
 
         self.tree.bind('<<TreeviewSelect>>', self.select_model)
+        self.tree.bind('<Button-3>', self.handle_right_click)
 
     @abstractmethod
     def fill_tree(self):
         pass
+
+    def handle_right_click(self, event: tk.Event):
+        try:
+            index = int(self.tree.identify_row(event.y))
+        except ValueError:
+            return
+
+        self.export_index = index
+        self.export_menu.post(event.x_root, event.y_root)
+
+    def on_export(self, *_):
+        if self.export_index is None:
+            return
+
+        model = self.models[self.export_index]
+        if filename := tkfile.asksaveasfilename(filetypes=[('3D models', '*.ply *.obj *.bam'),
+                                                           ('Images', '*.png *.jpg *.bmp *.tga *.webp *.tim'),
+                                                           ('All Files', '*.*')]):
+            path = Path(filename)
+            model.export(path, path.suffix)
 
     def select_model(self, _):
         try:

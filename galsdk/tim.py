@@ -44,7 +44,11 @@ class TimFormat(Tim, FileFormat):
 
     def export(self, path: Path, fmt: str = None) -> Path:
         if fmt is None:
-            fmt = 'png'
+            fmt = path.suffix
+            if not fmt:
+                fmt = 'png'
+        if fmt[0] == '.':
+            fmt = fmt[1:]
         if fmt.lower() in ['raw', 'tim']:
             new_path = path.with_suffix('.TIM')
             with new_path.open('wb') as f:
