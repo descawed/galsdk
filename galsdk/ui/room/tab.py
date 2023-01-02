@@ -116,8 +116,7 @@ class RoomViewport(Viewport):
             self.camera_target.removeNode()
             self.camera_target = None
         if camera:
-            # TODO: this should track changes to the camera in real-time. also, we should make the camera target
-            #  targetable with set_target
+            # TODO: this should track changes to the camera in real-time
             # TODO: implement camera orientation and scale
             # FIXME: hide the camera model for the camera we're currently viewing
             self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
