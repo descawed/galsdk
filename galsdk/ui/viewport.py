@@ -10,7 +10,7 @@ class Viewport(ttk.Frame):
     ROTATE_SCALE_Y = 10000
     PAN_SCALE_X = 1000
     PAN_SCALE_Y = 1000
-    DEFAULT_MIN_ZOOM = 1
+    DEFAULT_MIN_ZOOM = 5
     DEFAULT_MAX_ZOOM = 50
     DEFAULT_ZOOM = 25
     DEFAULT_HEIGHT = 2
@@ -56,17 +56,21 @@ class Viewport(ttk.Frame):
         self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{name}')
 
     def zoom(self, direction: int):
+        if not self.base.mouseWatcherNode.hasMouse() or not self.window.is_active():
+            return
+
         if self.target:
             current_zoom = self.camera.getDistance(self.target)
-            new_zoom = current_zoom + direction
+            new_zoom = current_zoom - direction
             if new_zoom < self.min_zoom:
-                new_zoom = self.min_zoom
+                new_direction = current_zoom - self.min_zoom
             elif new_zoom > self.max_zoom:
-                new_zoom = self.max_zoom
+                new_direction = self.max_zoom - current_zoom
+            else:
+                new_direction = direction
             camera_pos = self.camera.getPos()
             vector = self.target.getPos() - camera_pos
             vector.normalize()
-            new_direction = new_zoom - current_zoom
             self.camera.setPos(camera_pos + vector * new_direction)
         else:
             self.camera.setY(self.camera, direction)
