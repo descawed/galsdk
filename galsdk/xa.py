@@ -162,7 +162,34 @@ class XaDatabase(Archive[bytes]):
         path.mkdir(exist_ok=True)
         if self.is_ready:
             for i, region in enumerate(self.regions):
-                (path / f'{i:003}.XA').write_bytes(region.data)
+                new_path = (path / f'{i:003}.XA')
+                new_path.write_bytes(region.data)
+                if fmt == 'wav':
+                    audio = XaAudio(new_path)
+                    audio.convert(new_path.with_suffix('.wav'))
+                    new_path.unlink()
         else:
             raise ValueError('Attempted to export an XA database with no data set')
         return path
+
+
+def unpack(db_path: str, xa_path: str, out_path: str, convert: bool):
+    with open(db_path, 'rb') as f:
+        db = XaDatabase.read(f)
+    with open(xa_path, 'rb') as f:
+        db.set_data(f.read())
+    db.export(Path(out_path), 'wav' if convert else None)
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Export Galerians XA audio')
+    parser.add_argument('-c', '--convert', help='Convert the audio to wav when exporting. If not given, the audio '
+                        'will be exported in the original XA format.')
+    parser.add_argument('db', help='Path to the XA database')
+    parser.add_argument('xa', help='Path to the XA audio data')
+    parser.add_argument('target', help='Path to the directory where audio files will be exported')
+
+    args = parser.parse_args()
+    unpack(args.db, args.xa, args.target, args.convert)

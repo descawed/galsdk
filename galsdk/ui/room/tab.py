@@ -348,7 +348,7 @@ class RoomTab(Tab):
                 if not self.tree.get_children(iid):
                     for i, layout in enumerate(self.viewport.actor_layouts):
                         layout_iid = f'layout_{i}_{room_id}'
-                        self.tree.insert(iid, tk.END, text=f'Layout #{i}', iid=layout_iid)
+                        self.tree.insert(iid, tk.END, text=f'Layout #{i}: {layout.name}', iid=layout_iid)
                         for j, actor_instance in enumerate(layout.actors):
                             actor_iid = f'layout_{i}_actor_{j}_{room_id}'
                             if actor_instance.type < 0:

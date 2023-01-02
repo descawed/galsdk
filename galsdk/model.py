@@ -3,15 +3,19 @@ from __future__ import annotations
 import functools
 import io
 import struct
+from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import BinaryIO
+from pathlib import Path
+from typing import BinaryIO, Self
 
-from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, PNMImage,\
-    StringStream, Texture
+from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
+    PNMImage, StringStream, Texture
 from PIL import Image
 
+from galsdk import util
 from galsdk.coords import Dimension, Point
+from galsdk.format import FileFormat
 from psx.tim import BitsPerPixel, Tim, Transparency
 
 
@@ -136,7 +140,7 @@ MECH_SUIT_ALT = Actor('Mech Suit (unused?)', 29, LILIA.skeleton)
 RABBIT_UNARMED = Actor('Rabbit (unarmed)', 30, LILIA.skeleton)
 ARABESQUE_QUADRUPED = Actor('Arabesque (quadruped)', 31, LILIA.skeleton)
 HOTEL_KNOCK_GUY_2 = Actor('Hotel knock guy 2', 32, HOTEL_KNOCK_GUY.skeleton)
-UNKNOWN_ACTOR = Actor('Unknown', 33, LILIA.skeleton)
+RAINHEART_SUMMON_ACTOR = Actor('Rainheart summon', 33, LILIA.skeleton)
 CROVIC_ALT = Actor('Crovic (holding something)', 34, CROVIC.skeleton)
 DOROTHY_EYE = Actor("Dorothy's eye", 35, {
     0: 0,  # eye
@@ -162,8 +166,8 @@ ACTORS = [
     GUARD_HOSPITAL_BURLY, GUARD_HOSPITAL_GLASSES, GUARD_MECH_SUIT, GUARD_HAZARD_SUIT, SNIPER, DOCTOR_BROWN_HAIR,
     DOCTOR_BLONDE, DOCTOR_BALD, RABBIT_KNIFE, RABBIT_TRENCH_COAT, ARABESQUE_BIPED, HOTEL_KNOCK_GUY, DANCER,
     HOTEL_RECEPTIONIST, HOTEL_GUN_GUY, TERRORIST, PRIEST, RAINHEART_HAT, MECH_SUIT_ALT, RABBIT_UNARMED,
-    ARABESQUE_QUADRUPED, HOTEL_KNOCK_GUY_2, UNKNOWN_ACTOR, CROVIC_ALT, DOROTHY_EYE, RION_PHONE, RION_ALT_1, RION_ALT_2,
-    UNKNOWN_UNUSED, DOCTOR_UNUSED_1, DOCTOR_UNUSED_2, DOCTOR_UNUSED_3, RION_UNUSED,
+    ARABESQUE_QUADRUPED, HOTEL_KNOCK_GUY_2, RAINHEART_SUMMON_ACTOR, CROVIC_ALT, DOROTHY_EYE, RION_PHONE, RION_ALT_1,
+    RION_ALT_2, UNKNOWN_UNUSED, DOCTOR_UNUSED_1, DOCTOR_UNUSED_2, DOCTOR_UNUSED_3, RION_UNUSED,
 ]
 
 CLUT_WIDTH = 16
@@ -172,7 +176,7 @@ TEXTURE_WIDTH = 0x100
 TEXTURE_HEIGHT = 0x100
 
 
-class Model:
+class Model(FileFormat):
     """A 3D model of a game object"""
 
     def __init__(self, vertices: list[tuple[int, int, int]],
@@ -184,6 +188,11 @@ class Model:
         self.quads = quads
         self.texture = texture
         self.use_transparency = use_transparency
+
+    @property
+    @abstractmethod
+    def suggested_extension(self) -> str:
+        pass
 
     @functools.cache
     def get_panda3d_model(self, origin: Origin = Origin.DEFAULT) -> Geom:
@@ -311,6 +320,57 @@ illum 0
 
         return obj, mtl
 
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
+        raise NotImplementedError
+
+    def export(self, path: Path, fmt: str = None) -> Path:
+        if fmt is None:
+            fmt = 'obj'
+        if fmt[0] == '.':
+            fmt = fmt[1:]
+
+        match fmt.lower():
+            case 'ply':
+                new_path = path.with_suffix('.ply')
+                new_path.write_text(self.as_ply())
+            case 'obj':
+                new_path = obj_path = path.with_suffix('.obj')
+                mtl_path = path.with_suffix('.mtl')
+                tex_path = path.with_suffix('.png')
+                texture = self.get_texture_image()
+                texture.save(tex_path)
+                obj, mtl = self.as_obj(mtl_path.name, mtl_path.stem, tex_path.name)
+                obj_path.write_text(obj)
+                mtl_path.write_text(mtl)
+            case 'bam':
+                new_path = path.with_suffix('.bam')
+                model = self.get_panda3d_model()
+                texture = self.get_panda3d_texture()
+                node = GeomNode('model_export')
+                node.addGeom(model)
+                node_path = NodePath(node)
+                node_path.setTexture(texture)
+                node_path.writeBamFile(str(new_path))
+            case 'tim':
+                new_path = path.with_suffix('.tim')
+                with new_path.open('wb') as f:
+                    self.texture.write(f)
+            case _:
+                raise ValueError(f'Unknown format {fmt}')
+
+        return new_path
+
+    @classmethod
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        try:
+            return cls.read(f)
+        except Exception:
+            return None
+
+    def write(self, f: BinaryIO, **kwargs):
+        raise NotImplementedError
+
     def get_texture_image(self) -> Image:
         image = Image.new('RGBA', (TEXTURE_WIDTH, self.texture_height))
         for i in range(self.texture.num_palettes):
@@ -327,7 +387,7 @@ illum 0
         num_shorts = num_vertices * 3
         num_bytes = num_vertices * 2
         data_size = num_shorts * 2 + num_bytes
-        count = int.from_bytes(f.read(2), 'little')
+        count = util.int_from_bytes(f.read(2))
         verts = []
         tex = []
         for k in range(count):
@@ -355,11 +415,11 @@ illum 0
         return tim
 
     @classmethod
-    def _read_bone(cls, f: BinaryIO, vertices: dict[tuple[int, int, int], int],
-                   uvs: dict[tuple[int, int], int],
-                   triangles: list[tuple[Vertex, Vertex, Vertex]],
-                   quads: list[tuple[Vertex, Vertex, Vertex, Vertex]],
-                   offset: tuple[int, int, int] = (0, 0, 0)):
+    def _read_segment(cls, f: BinaryIO, vertices: dict[tuple[int, int, int], int],
+                      uvs: dict[tuple[int, int], int],
+                      triangles: list[tuple[Vertex, Vertex, Vertex]],
+                      quads: list[tuple[Vertex, Vertex, Vertex, Vertex]],
+                      offset: tuple[int, int, int] = (0, 0, 0)):
         clut_index = int.from_bytes(f.read(2), 'little')
         tri_verts = []
         tri_uvs = []
@@ -416,7 +476,7 @@ illum 0
 class ActorModel(Model):
     """A 3D model of an actor (character)"""
 
-    NUM_BONES = 19
+    NUM_SEGMENTS = 19
 
     def __init__(self, name: str, actor_id: int, vertices: list[tuple[int, int, int]],
                  uvs: list[tuple[int, int]], triangles: list[tuple[Vertex, Vertex, Vertex]],
@@ -425,11 +485,19 @@ class ActorModel(Model):
         self.name = name
         self.id = actor_id
 
+    @property
+    def suggested_extension(self) -> str:
+        return '.G3A'
+
     @classmethod
-    def read(cls, actor: Actor, f: BinaryIO) -> ActorModel:
-        # a list of the x/y/z positions of each bone relative to its parent
+    def read(cls, f: BinaryIO, *, actor: Actor = None, **kwargs) -> ActorModel:
+        if actor is None:
+            # this is probably wrong, but FileFormat needs some refactoring if we want to make it mandatory
+            actor = ACTORS[0]
+
+        # a list of the x/y/z positions of each segment relative to its parent
         # the size of this list is not a multiple of 3, so the last number goes unused, and it also isn't long enough
-        # to have entries for every bone, so the last 4 bones can't be the parent of another bone
+        # to have entries for every segment, so the last 4 segments can't be the parent of another segment
         offsets = struct.unpack('46h', f.read(0x5c))
         tim = cls._read_tim(f)
 
@@ -437,7 +505,7 @@ class ActorModel(Model):
         uvs = {}
         triangles: list[tuple[Vertex, Vertex, Vertex]] = []
         quads: list[tuple[Vertex, Vertex, Vertex, Vertex]] = []
-        for i in range(cls.NUM_BONES):
+        for i in range(cls.NUM_SEGMENTS):
             match actor.skeleton.get(i):
                 case [*indexes]:
                     offset = (0, 0, 0)
@@ -452,7 +520,7 @@ class ActorModel(Model):
                     offset = (i * 0x80, -0x40 if (i & 1) == 1 else 0x40, 0)
                 case index:
                     offset = (offsets[index * 3], offsets[index * 3 + 1], offsets[index * 3 + 2])
-            cls._read_bone(f, vertices, uvs, triangles, quads, offset)
+            cls._read_segment(f, vertices, uvs, triangles, quads, offset)
 
         return cls(actor.name, actor.id, list(vertices), list(uvs), triangles, quads, tim)
 
@@ -460,7 +528,7 @@ class ActorModel(Model):
 class ItemModel(Model):
     """A 3D model of an item"""
 
-    MAX_BONES = 19
+    MAX_SEGMENTS = 19
 
     def __init__(self, name: str, vertices: list[tuple[int, int, int]],
                  uvs: list[tuple[int, int]], triangles: list[tuple[Vertex, Vertex, Vertex]],
@@ -468,17 +536,63 @@ class ItemModel(Model):
         super().__init__(vertices, uvs, triangles, quads, texture, use_transparency)
         self.name = name
 
+    @property
+    def suggested_extension(self) -> str:
+        return '.G3I'
+
     @classmethod
-    def read(cls, name: str, f: BinaryIO, use_transparency: bool = False) -> ItemModel:
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        try:
+            model = cls.read(f, strict_mode=True)
+            if len(model.vertices) > 0:
+                return model
+            return None
+        except Exception:
+            return None
+
+    @classmethod
+    def read(cls, f: BinaryIO, *, name: str = '', use_transparency: bool = False, strict_mode: bool = False,
+             **kwargs) -> ItemModel:
         tim = cls._read_tim(f)
 
         vertices = {}
         uvs = {}
         triangles = []
         quads = []
-        for _ in range(cls.MAX_BONES):
+        for _ in range(cls.MAX_SEGMENTS):
             try:
-                cls._read_bone(f, vertices, uvs, triangles, quads)
+                cls._read_segment(f, vertices, uvs, triangles, quads)
+            except ValueError:
+                # MODEL.CDB 92 and 93 fail to load with this enabled, but it's appropriate for sniffing
+                if strict_mode:
+                    raise
+                break
             except struct.error:
                 break
         return cls(name, list(vertices), list(uvs), triangles, quads, tim, use_transparency)
+
+
+def export(model_path: str, target_path: str, actor_id: int | None):
+    model_path = Path(model_path)
+    target_path = Path(target_path)
+    with model_path.open('rb') as f:
+        if actor_id is None:
+            model = ItemModel.read(f)
+        else:
+            model = ActorModel.read(f, actor=ACTORS[actor_id])
+    model.export(target_path, target_path.suffix)
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Export Galerians 3D models and textures')
+    parser.add_argument('-a', '--actor', type=int, help='The given model file is an actor model. The argument should '
+                        'be the ID of the actor the model belongs to.')
+    parser.add_argument('model', help='The model file to be exported')
+    parser.add_argument('target', help='The path to export the model to. The format will be detected from the file '
+                        'extension. Supported extensions are ply, obj, bam, and tim (in which case only the texture '
+                        'will be exported).')
+
+    args = parser.parse_args()
+    export(args.model, args.target, args.actor)

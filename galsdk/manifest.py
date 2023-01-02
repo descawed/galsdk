@@ -58,7 +58,7 @@ class Manifest:
         entry = parent[i]
         if not isinstance(entry, Archive) or not recursive:
             mf.path = parent.unpack_one(mf.path, i)
-            if detected_format := sniff_file(mf.path):
+            if sniff and (detected_format := sniff_file(mf.path)):
                 mf.format = detected_format.suggested_extension
                 new_path = mf.path.with_suffix(detected_format.suggested_extension)
                 if new_path != mf.path:
@@ -173,6 +173,8 @@ class Manifest:
         """Rename a file in the manifest by index or name"""
         mf = self.files[key] if isinstance(key, int) else self.name_map[key]
         if name != mf.name:
+            if name in self.name_map:
+                raise KeyError(f'There is already an entry named {name}')
             if on_disk:
                 new_path = mf.path.with_stem(name)
                 util.unlink(new_path)
@@ -181,8 +183,6 @@ class Manifest:
                     sub_manifest = Manifest.load_from(mf.path)
                     sub_manifest.name = name
                     sub_manifest.save()
-            if name in self.name_map:
-                raise KeyError(f'There is already an entry named {name}')
             del self.name_map[mf.name]
             mf.name = name
             self.name_map[name] = mf

@@ -151,7 +151,7 @@ ADDRESSES = {
         'KeyItemDescriptions': 0x80192A28,
         'MedItemDescriptions': 0x80192ACC,
         'ModuleSets': 0x80191BE0,
-        'RoomLoad': 0x801EC628,
+        'RoomLoad': RoomModule.LOAD_ADDRESSES['en-US'],
     },
     'SLPS-02192': {
         'FontPages': 0x8019144C,
@@ -161,7 +161,7 @@ ADDRESSES = {
         'KeyItemDescriptions': 0x80192854,
         'MedItemDescriptions': 0x801928F8,
         'ModuleSets': 0x801918D4,
-        'RoomLoad': 0x801EDC28,
+        'RoomLoad': RoomModule.LOAD_ADDRESSES['ja'],
     },
 }
 
@@ -378,7 +378,7 @@ class Project:
         model_dir.mkdir(exist_ok=True)
         with model_db_path.open('rb') as f:
             model_db = Database.read(f)
-        Manifest.from_archive(model_dir, 'MODEL', model_db)
+        Manifest.from_archive(model_dir, 'MODEL', model_db, sniff=True)
         # only actors without a manually-assigned model index are in the list
         num_actors = sum(1 if actor.model_index is None else 0 for actor in ACTORS)
         actor_models = list(
@@ -391,14 +391,18 @@ class Project:
         module_db_path = game_data / 'MODULE.BIN'
         with module_db_path.open('rb') as f:
             module_db = Database.read(f)
-        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db)
+        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db, sniff=True)
         with module_manifest:
             for i, module_file in enumerate(module_manifest):
                 # FIXME: figure out how the module sets work and pull the list from there
                 with module_file.path.open('rb') as f:
                     module = RoomModule.load(f, addresses['RoomLoad'])
                 if module.is_valid:
-                    module_manifest.rename(i, module.name)
+                    try:
+                        module_manifest.rename(i, module.name)
+                    except KeyError:
+                        # there are a few modules that use the same name
+                        module_manifest.rename(i, f'{module.name}_{i}')
 
         module_set_addr = addresses['ModuleSets']
         module_set_addrs = struct.unpack(f'<{NUM_MODULE_SETS}I',
@@ -593,7 +597,7 @@ class Project:
                 model_index = actor.model_index
             model_file = manifest[model_index]
             with model_file.path.open('rb') as f:
-                yield ActorModel.read(actor, f)
+                yield ActorModel.read(f, actor=actor)
 
     def get_item_art(self) -> Manifest:
         return Manifest.load_from(self.project_dir / 'art' / 'MENU').get_manifest('item_art')
@@ -615,7 +619,7 @@ class Project:
                 name = KEY_ITEM_NAMES[entry['id']]
                 model_file = model_manifest[entry['model']]
                 with model_file.path.open('rb') as f:
-                    model = ItemModel.read(name, f, entry['flags'] & 1 == 0)
+                    model = ItemModel.read(f, name=name, use_transparency=entry['flags'] & 1 == 0)
             else:
                 name = MED_ITEM_NAMES[entry['id']]
                 model = None
@@ -647,11 +651,11 @@ class Project:
         for i, model_file in enumerate(model_manifest):
             with model_file.path.open('rb') as f:
                 if i in actor_models:
-                    actors[i] = ActorModel.read(actor_models[i], f)
+                    actors[i] = ActorModel.read(f, actor=actor_models[i])
                 elif i in item_models:
                     name, use_transparency = item_models[i]
-                    items[i] = ItemModel.read(name, f, use_transparency)
+                    items[i] = ItemModel.read(f, name=name, use_transparency=use_transparency)
                 else:
-                    other[i] = ItemModel.read(str(i), f)
+                    other[i] = ItemModel.read(f, name=str(i))
 
         return actors, items, other

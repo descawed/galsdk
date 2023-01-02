@@ -100,6 +100,28 @@ class TimDb(Archive[Tim]):
                     return cls.STREAM
             return None
 
+        @property
+        def extension(self) -> str:
+            match self:
+                case self.DEFAULT:
+                    return '.TDB'
+                case self.ALTERNATE:
+                    return '.TDA'
+                case self.COMPRESSED_DB:
+                    return '.TDC'
+                case self.COMPRESSED_STREAM:
+                    return '.TMC'
+                case self.STREAM:
+                    return '.TMM'
+
+        @property
+        def is_stream(self) -> bool:
+            return self in [self.COMPRESSED_STREAM, self.STREAM]
+
+        @property
+        def is_compressed(self) -> bool:
+            return self in [self.COMPRESSED_STREAM, self.COMPRESSED_DB]
+
     MAX_ITERATIONS = 10000
 
     images: list[TimFormat | TimDb]
@@ -213,8 +235,8 @@ class TimDb(Archive[Tim]):
             while f.tell() < file_size:
                 # this is a bit of a hack because it relies on TimFormat not doing absolute seeks
                 db.append(TimFormat.read(f))
-                # skip any padding or zeroes at the end of the file
-                while (last_char := f.read(1)) in [b'\0', b'0']:
+                # skip any padding or unused data at the end of the file
+                while (last_char := f.read(1)) not in [Tim.MAGIC, b'']:
                     pass
                 if last_char != b'':
                     f.seek(-1, 1)
@@ -262,11 +284,11 @@ class TimDb(Archive[Tim]):
             with io.BytesIO() as buf:
                 image.write(buf)
                 data = buf.getvalue()
-                if fmt in [self.Format.COMPRESSED_DB, self.Format.COMPRESSED_STREAM] and isinstance(image, Tim):
+                if fmt.is_compressed and isinstance(image, Tim):
                     data = self.compress(data)
                 raw_tims.append(data)
 
-        if fmt not in [self.Format.COMPRESSED_STREAM, self.Format.STREAM]:
+        if not fmt.is_stream:
             f.write(len(self.images).to_bytes(4, 'little'))
             if fmt == self.Format.ALTERNATE:
                 header_size = 0  # offsets are relative to end of header
@@ -324,61 +346,30 @@ class TimDb(Archive[Tim]):
 
     @property
     def suggested_extension(self) -> str:
-        match self.format:
-            case self.Format.DEFAULT:
-                return '.TDB'
-            case self.Format.ALTERNATE:
-                return '.TDA'
-            case self.Format.COMPRESSED_DB:
-                return '.TDC'
-            case self.Format.COMPRESSED_STREAM:
-                return '.TMC'
-            case self.Format.STREAM:
-                return '.TMM'
+        return self.format.extension
 
     @property
     def supports_nesting(self) -> bool:
         return True
 
     @classmethod
-    def sniff(cls, f: BinaryIO) -> Self | None:
-        try:
-            # is it a regular TIM DB?
-            return cls.read(f)
-        except Exception:
-            pass
+    def sniff(cls, f: BinaryIO, *, formats_to_check: list[Format] = None,
+              allow_single_element_stream: bool = False) -> Self | None:
+        if formats_to_check is None:
+            formats_to_check = [cls.Format.DEFAULT, cls.Format.COMPRESSED_DB, cls.Format.ALTERNATE,
+                                cls.Format.COMPRESSED_STREAM, cls.Format.STREAM]
 
-        f.seek(0)
-        try:
-            # is it a compressed TIM DB?
-            return cls.read(f, fmt=cls.Format.COMPRESSED_DB)
-        except Exception:
-            pass
+        for fmt in formats_to_check:
+            f.seek(0)
+            try:
+                db = cls.read(f, fmt=fmt)
+                if fmt == cls.Format.STREAM and len(db) == 1 and not allow_single_element_stream:
+                    continue
+                return db
+            except Exception:
+                pass
 
-        f.seek(0)
-        try:
-            # is it an alternate TIM DB?
-            return cls.read(f, fmt=cls.Format.ALTERNATE)
-        except Exception:
-            pass
-
-        f.seek(0)
-        try:
-            # is it a compressed TIM stream?
-            return cls.read(f, fmt=cls.Format.COMPRESSED_STREAM)
-        except Exception:
-            pass
-
-        f.seek(0)
-        try:
-            # is it an uncompressed TIM stream?
-            db = cls.read(f, fmt=cls.Format.STREAM)
-            if len(db) == 1:
-                # an uncompressed TIM stream of length 1 is just a TIM
-                return None
-            return db
-        except Exception:
-            return None
+        return None
 
     def unpack_one(self, path: Path, index: int) -> Path:
         item = self.images[index]
@@ -407,7 +398,6 @@ class TimDb(Archive[Tim]):
         fmt = fmt.lower()
         if fmt[0] == '.':
             fmt = fmt[1:]
-        is_stream = False
         match fmt:
             case 'tdb':
                 db_fmt = cls.Format.DEFAULT
@@ -417,17 +407,15 @@ class TimDb(Archive[Tim]):
                 db_fmt = cls.Format.COMPRESSED_DB
             case 'tmc':
                 db_fmt = cls.Format.COMPRESSED_STREAM
-                is_stream = True
             case 'tmm':
                 db_fmt = cls.Format.STREAM
-                is_stream = True
             case _:
                 raise ValueError(f'Unknown TIM DB format {fmt}')
 
         db = cls(db_fmt)
         for path in paths:
             if path.is_dir() or path.suffix.lower() in ['.tmc', '.tmm']:
-                if is_stream:
+                if db_fmt.is_stream:
                     raise ValueError('A TIM stream should not contain another TIM stream')
                 if path.is_dir():
                     db.append(cls.import_(path, path.suffix or 'tmc'))
@@ -456,23 +444,41 @@ class TimDb(Archive[Tim]):
         return path
 
 
-def pack(compressed: bool, files: Iterable[str], db_path: str):
-    db = TimDb()
+def pack(files: Iterable[str], db_path: str, fmt: str):
+    db_fmt = TimDb.Format.from_extension(fmt)
+    db = TimDb(db_fmt)
     for path in files:
         with open(path, 'rb') as f:
-            db.append(Tim.read(f))
+            if db_fmt.is_stream:
+                db.append(Tim.read(f))
+            else:
+                # we may contain nested streams
+                # allow_single_element_stream=True means that this will also work for individual TIMs
+                sub_db = TimDb.sniff(f, formats_to_check=[TimDb.Format.COMPRESSED_STREAM, TimDb.Format.STREAM],
+                                     allow_single_element_stream=True)
+                if sub_db is None:
+                    raise ValueError(f'{path} does not appear to be a TIM or TIM stream')
+                if db_fmt == TimDb.Format.STREAM and len(sub_db) == 1:
+                    db.append(sub_db[0])
+                else:
+                    db.append(sub_db)
     with open(db_path, 'wb') as f:
-        db.write(f, fmt=TimDb.Format.COMPRESSED_DB if compressed else TimDb.Format.DEFAULT)
+        db.write(f)
 
 
-def unpack(db_path: str, target: str, decompress: bool = False, indexes: Container[int] = None):
-    db = TimDb()
+def unpack(db_path: str, target: str, fmt: str, indexes: Container[int] = None):
     with open(db_path, 'rb') as f:
-        db.read(f, fmt=TimDb.Format.COMPRESSED_DB if decompress else TimDb.Format.DEFAULT)
+        if fmt == 'sniff':
+            db = TimDb.sniff(f)
+            if db is None:
+                raise ValueError(f'{db_path} does not appear to be a TIM database')
+        else:
+            db = TimDb(fmt=TimDb.Format.from_extension(fmt))
+            db.read(f)
     for i, tim in enumerate(db):
         if indexes and i not in indexes:
             continue
-        output_path = os.path.join(target, f'{i}.TIM')
+        output_path = os.path.join(target, f'{i}{tim.suggested_extension}')
         with open(output_path, 'wb') as f:
             tim.write(f)
 
@@ -480,24 +486,28 @@ def unpack(db_path: str, target: str, decompress: bool = False, indexes: Contain
 if __name__ == '__main__':
     import argparse
 
+    formats = [fmt.extension.lower()[1:] for fmt in TimDb.Format]
+
     parser = argparse.ArgumentParser(description='Pack or unpack Galerians TIM database files')
     subparsers = parser.add_subparsers()
 
     pack_parser = subparsers.add_parser('pack', help='Create a TIM DB from a list of files')
-    pack_parser.add_argument('-c', '--compress',
-                             help='Compress the files in the database', action='store_true')
+    pack_parser.add_argument('-f', '--format', help='The format of the TIM DB to be created', default='tdb',
+                             choices=formats)
     pack_parser.add_argument('db', help='Path to TIM DB to be created')
     pack_parser.add_argument('files', nargs='+', help='One or more files to include in the database')
-    pack_parser.set_defaults(action=lambda a: pack(a.compress, a.files, a.db))
+    pack_parser.set_defaults(action=lambda a: pack(a.files, a.db, a.format))
 
     unpack_parser = subparsers.add_parser('unpack', help='Unpack files from a TIM DB into a directory')
-    unpack_parser.add_argument('-d', '--decompress',
-                               help='The files in the database are compressed; decompress them', action='store_true')
+    unpack_parser.add_argument('-f', '--format', help='The format of the TIM DB to be created. The unpack command '
+                               'also supports a format value of "sniff" (the default) to attempt to auto-detect the '
+                               'format.',
+                               default='sniff', choices=[*formats, 'sniff'])
     unpack_parser.add_argument('db', help='Path to TIM DB to be unpacked')
     unpack_parser.add_argument('target', help='Path to directory where files will be unpacked')
     unpack_parser.add_argument('indexes', nargs='*', type=int, help='One or more indexes to extract from the database. '
                                'If not provided, all files in the database will be extracted')
-    unpack_parser.set_defaults(action=lambda a: unpack(a.db, a.target, a.decompress, set(a.indexes)))
+    unpack_parser.set_defaults(action=lambda a: unpack(a.db, a.target, a.format, set(a.indexes)))
 
     args = parser.parse_args()
     args.action(args)

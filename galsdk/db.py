@@ -177,9 +177,8 @@ def pack(extended: bool, files: Iterable[str], cdb: str):
 
 
 def unpack(cdb: str, target: str, indexes: Container[int] = None):
-    db = Database()
     with open(cdb, 'rb') as f:
-        db.read(f)
+        db = Database.read(f)
     for i, data in enumerate(db):
         if indexes and i not in indexes:
             continue

@@ -3,18 +3,24 @@ import sys
 
 from galsdk.db import Database
 from galsdk.format import FileFormat
+from galsdk.model import ActorModel, ItemModel
+from galsdk.module import RoomModule
 from galsdk.string import LatinStringDb, JapaneseStringDb
 from galsdk.tim import TimFormat, TimDb
 from galsdk.vab import VabDb
 from galsdk.xa import XaDatabase
 
 
-formats: list[type[FileFormat]] = [LatinStringDb, XaDatabase, TimDb, TimFormat, Database, VabDb, JapaneseStringDb]
+# TimDb needs to come before TimFormat in the list because TimFormat will miss additional images in TIM streams
+formats: list[type[FileFormat]] = [LatinStringDb, XaDatabase, TimDb, TimFormat, Database, VabDb, RoomModule,
+                                   ActorModel, ItemModel, JapaneseStringDb]
 
 
-def sniff_file(path: pathlib.Path) -> FileFormat | None:
+def sniff_file(path: pathlib.Path, formats_to_check: list[type[FileFormat]] = None) -> FileFormat | None:
+    if formats_to_check is None:
+        formats_to_check = formats
     with path.open('rb') as f:
-        for file_format in formats:
+        for file_format in formats_to_check:
             f.seek(0)
             if result := file_format.sniff(f):
                 return result
@@ -22,15 +28,17 @@ def sniff_file(path: pathlib.Path) -> FileFormat | None:
 
 
 def sniff_paths(paths: list[str | pathlib.Path], export_path: str | pathlib.Path = None, rename: bool = False,
-                counter: int = 0) -> int:
+                counter: int = 0, formats_to_check: list[type[FileFormat]] = None) -> int:
+    if formats_to_check is None:
+        formats_to_check = formats
     if export_path is not None and not isinstance(export_path, pathlib.Path):
         export_path = pathlib.Path(export_path)
     for path in paths:
         if not isinstance(path, pathlib.Path):
             path = pathlib.Path(path)
         if path.is_dir():
-            counter = sniff_paths(list(path.iterdir()), export_path, rename, counter)
-        elif result := sniff_file(path):
+            counter = sniff_paths(list(path.iterdir()), export_path, rename, counter, formats_to_check)
+        elif result := sniff_file(path, formats_to_check):
             print(f'{path} was detected to be a {result.suggested_extension} file')
             if rename:
                 path = path.rename(path.with_suffix(result.suggested_extension))

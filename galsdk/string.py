@@ -284,7 +284,7 @@ class JapaneseStringDb(StringDb):
             fmt = '0'
         kanji_index = int(fmt)
         db = cls()
-        strings = path.read_text().split('\n')
+        strings = path.read_text(encoding='utf-8').split('\n')
         if strings[-1] == '':
             del strings[-1]
         for string in strings:
@@ -296,7 +296,7 @@ class JapaneseStringDb(StringDb):
             fmt = str(self.kanji_index) if self.kanji_index is not None else '0'
         kanji_index = int(fmt)
         new_path = path.with_suffix('.txt')
-        with new_path.open('w') as f:
+        with new_path.open('w', encoding='utf-8') as f:
             for string in self.strings:
                 f.write(self.decode(string, kanji_index) + '\n')
         return new_path
@@ -311,6 +311,9 @@ class JapaneseStringDb(StringDb):
         """
         db = cls(kanji_index)
         db.strings = f.read().split(b'\xff\xff')
+        if len(db.strings) == 1:
+            # there wasn't an FF FF delimiter anywhere in the file; this is probably wrong
+            raise ValueError('The provided file does not appear to be a string database')
         if db.strings[-1] == b'':
             del db.strings[-1]
         return db

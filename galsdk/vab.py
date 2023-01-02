@@ -229,10 +229,12 @@ class VabDb(Archive[bytes]):
             data = path.read_bytes()
             match path.suffix.lower():
                 case '.vh':
+                    assert data[:4] == b'pBAV'
                     vhs.append(data)
                 case '.vb':
                     vbs.append(data)
                 case '.seq':
+                    assert data[:4] == b'pQES'
                     seqs.append(data)
                 case _:
                     raise ValueError('Unknown file type encountered while importing VAB DB')
@@ -248,3 +250,34 @@ class VabDb(Archive[bytes]):
         for i, seq in enumerate(self.seqs):
             (path / f'{i:03}').with_suffix('.SEQ').write_bytes(seq)
         return path
+
+
+def pack(db_path: str, files: list[str], use_alternate_format: bool):
+    db = VabDb.import_explicit((Path(filename) for filename in files), 'alt' if use_alternate_format else None)
+    with open(db_path, 'wb') as f:
+        db.write(f)
+
+
+def unpack(db_path: str, out_path: str):
+    with open(db_path, 'rb') as f:
+        db = VabDb.read(f)
+    db.export(Path(out_path))
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Pack or unpack Galerians VAB databases')
+    subparsers = parser.add_subparsers()
+
+    pack_parser = subparsers.add_parser('pack', help='Create a VAB DB from a list of files')
+    pack_parser.add_argument('-a', '--alternate', help='Use the alternate format with no header')
+    pack_parser.add_argument('db', help='Path to VAB DB to be created')
+    pack_parser.add_argument('files', nargs='+', help='One or more files to include in the database. This command uses '
+                             'the file extension to determine the file type; valid extensions are .VH, .VB, and .SEQ.')
+    pack_parser.set_defaults(action=lambda a: pack(a.db, a.files, a.alternate))
+
+    unpack_parser = subparsers.add_parser('unpack', help='Unpack files from a VAB DB into a directory')
+    unpack_parser.add_argument('db', help='Path to VAB DB to be unpacked')
+    unpack_parser.add_argument('target', help='Path to directory where files will be unpacked')
+    unpack_parser.set_defaults(action=lambda a: unpack(a.db, a.target))
