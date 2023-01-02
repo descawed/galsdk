@@ -100,7 +100,7 @@ class LatinStringDb(StringDb):
             s = b''
             while c := f.read(1):
                 if c == b'\n':
-                    db.append_raw(s)
+                    db.append_raw(s.rstrip(b'\r'))
                     s = b''
                 else:
                     s += c
@@ -460,18 +460,61 @@ def unpack(input_path: str, output_path: str, kanji_index: int | None):
     sdb.export(Path(output_path))
 
 
+def draw(font_path: str, kanji_index: int | None, db_path: str, target_path: str, indexes: list[int] | None,
+         combine: bool):
+    from galsdk.font import JapaneseFont, LatinFont
+
+    font_path = Path(font_path)
+    db_path = Path(db_path)
+    target_path = Path(target_path)
+    if kanji_index is not None:
+        stage_index = kanji_index
+        with db_path.open('rb') as f:
+            db = JapaneseStringDb.read(f)
+        font = JapaneseFont.load(font_path)
+    else:
+        stage_index = 0
+        with db_path.open('rb') as f:
+            db = LatinStringDb.read(f)
+        font = LatinFont.load(font_path)
+
+    if not indexes:
+        indexes = list(range(len(db)))
+
+    images = {}
+    for index in indexes:
+        images[index] = font.draw(db.strings[index], stage_index)
+
+    if combine:
+        from PIL import Image
+
+        width = max(image.size[0] for image in images.values())
+        height = sum(image.size[1] for image in images.values())
+        new_image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        y = 0
+        for image in images.values():
+            new_image.paste(image, (0, y))
+            y += image.size[1]
+        new_image.save(target_path)
+    else:
+        for index, image in images.items():
+            path = target_path
+            if len(images) > 1:
+                path = path.with_stem(path.stem + f'_{index}')
+            image.save(path)
+
+
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Pack or unpack Galerians string files')
-    parser.add_argument('-j', '--japanese',
-                        help='Pack or unpack a Japanese string database. The argument to this option should be the '
-                        'index of the kanji set the strings were encoded for.',
-                        type=int)
+    parser.add_argument('-j', '--japanese', type=int,
+                        help='The string database is in Japanese. The argument to this option should be the index of '
+                             'the kanji set to use for the strings.')
     subparsers = parser.add_subparsers()
 
     pack_parser = subparsers.add_parser('pack', help='Create a string database from a text file')
-    pack_parser.add_argument('input', help='Text file to pack (must use LF line endings, not CRLF)')
+    pack_parser.add_argument('input', help='Text file to pack')
     pack_parser.add_argument('output', help='Path to string database to be created')
     pack_parser.set_defaults(action=lambda a: pack(a.input, a.output, a.japanese))
 
@@ -479,6 +522,18 @@ if __name__ == '__main__':
     unpack_parser.add_argument('input', help='Path to string database to be unpacked')
     unpack_parser.add_argument('output', help='Path to string file to be created')
     unpack_parser.set_defaults(action=lambda a: unpack(a.input, a.output, a.japanese))
+
+    draw_parser = subparsers.add_parser('draw', help='Export images of strings rendered in the game font')
+    draw_parser.add_argument('-c', '--combine', help='When exporting multiple strings, combine them into a single '
+                             'image', action='store_true')
+    draw_parser.add_argument('font', help='Path to the project directory whose font info to use')
+    draw_parser.add_argument('db', help='Path to the string database to use')
+    draw_parser.add_argument('target', help='Path to the image file(s) to be created. If exporting multiple images, '
+                             'a numeric counter will be added to the end of the filename. The image format will be '
+                             'detected from the file extension.')
+    draw_parser.add_argument('indexes', type=int, nargs='*', help='If provided, specific indexes to draw from the '
+                             'database. Otherwise, all entries will be drawn.')
+    draw_parser.set_defaults(action=lambda a: draw(a.font, a.japanese, a.db, a.target, a.indexes, a.combine))
 
     args = parser.parse_args()
     args.action(args)
