@@ -162,12 +162,7 @@ class Editor(ShowBase):
         image_path = self.image_path_var.get()
         project_path = self.project_path_var.get()
         try:
-            # import cProfile
-            # profile = cProfile.Profile()
-            # profile.enable()
             self.project = Project.create_from_cd(image_path, project_path)
-            # profile.disable()
-            # profile.dump_stats('stats.dmp')
         except Exception as e:
             tkmsg.showerror('Failed to create project', str(e))
             return
