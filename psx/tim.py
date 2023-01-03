@@ -289,7 +289,8 @@ if __name__ == '__main__':
                         dest='with_transparency')
     parser.add_argument('-c', '--combine', help='Combine all selected palettes into a single image',
                         action='store_true')
-    parser.add_argument('-p', '--palettes', help='Palette indexes to extract; default is all', nargs='+', type=int)
+    parser.add_argument('-p', '--palettes', help='Palette (CLUT) indexes to extract; default is all', nargs='+',
+                        type=int)
     parser.add_argument('input', help='Path to TIM file to convert')
     parser.add_argument('output', help='Path at which to store the converted image(s). If not using the --combine '
                         'option, this may include a Python format specifier to format the palette index.')
