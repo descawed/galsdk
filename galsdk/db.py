@@ -127,8 +127,9 @@ class Database(Archive[bytes]):
         f.write(b'\0' * bytes_remaining)
         for data in self.files:
             f.write(data)
-            bytes_remaining = self.SECTOR_SIZE - (len(data) % self.SECTOR_SIZE)
-            f.write(b'\0' * bytes_remaining)
+            bytes_over = len(data) % self.SECTOR_SIZE
+            if bytes_over > 0:
+                f.write(b'\0' * (self.SECTOR_SIZE - bytes_over))
 
     def __iter__(self) -> Iterable[bytes]:
         """Iterate over the files in the database"""
@@ -168,11 +169,18 @@ class Database(Archive[bytes]):
             self.append(f.read())
 
 
-def pack(extended: bool, files: Iterable[str], cdb: str):
-    db = Database(extended)
+def pack_db(db: Database, files: Iterable[Path]):
     for path in files:
-        db.append_file(Path(path))
-    with open(cdb, 'wb') as f:
+        if path.is_dir():
+            pack_db(db, path.iterdir())
+        else:
+            db.append_file(path)
+
+
+def pack(extended: bool, files: Iterable[Path], cdb: Path):
+    db = Database(extended)
+    pack_db(db, files)
+    with cdb.open('wb') as f:
         db.write(f)
 
 
@@ -198,8 +206,9 @@ if __name__ == '__main__':
                              help='Create an extended database that tracks file size with byte precision rather than '
                                   'sector precision', action='store_true')
     pack_parser.add_argument('cdb', help='Path to CDB to be created')
-    pack_parser.add_argument('files', nargs='+', help='One or more files to include in the database')
-    pack_parser.set_defaults(action=lambda a: pack(a.extended, a.files, a.cdb))
+    pack_parser.add_argument('files', nargs='+', help='One or more files to include in the database. If the path is a '
+                             'directory, it will be packed recursively.')
+    pack_parser.set_defaults(action=lambda a: pack(a.extended, (Path(p) for p in a.files), Path(a.cdb)))
 
     unpack_parser = subparsers.add_parser('unpack', help='Unpack files from a CDB into a directory')
     unpack_parser.add_argument('cdb', help='Path to CDB to be unpacked')
