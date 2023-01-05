@@ -13,9 +13,12 @@ class FileFormat(ABC):
             return cls.sniff(f)
 
     @classmethod
-    @abstractmethod
     def sniff(cls, f: BinaryIO) -> Self | None:
-        pass
+        try:
+            db = cls.read(f)
+            return db
+        except Exception:
+            return None
 
     @property
     @abstractmethod
@@ -90,6 +93,12 @@ class Archive(FileFormat, Generic[T]):
                 yield from item.iter_flat()
             else:
                 yield item
+
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
+        if fmt is None:
+            fmt = path.suffix or None
+        return cls.import_explicit(path.iterdir(), fmt)
 
     @classmethod
     @abstractmethod

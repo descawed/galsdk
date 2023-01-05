@@ -200,13 +200,6 @@ class VabDb(Archive[bytes]):
     def supports_nesting(self) -> bool:
         return False
 
-    @classmethod
-    def sniff(cls, f: BinaryIO) -> Self | None:
-        try:
-            return cls.read(f)
-        except Exception:
-            return None
-
     def unpack_one(self, path: Path, index: int) -> Path:
         a, i, ext = self._resolve_index(index)
         new_path = path.with_suffix(ext)

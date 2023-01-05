@@ -135,13 +135,6 @@ class XaDatabase(Archive[bytes]):
     def supports_nesting(self) -> bool:
         return False
 
-    @classmethod
-    def sniff(cls, f: BinaryIO) -> Self | None:
-        try:
-            return cls.read(f)
-        except Exception:
-            return None
-
     def unpack_one(self, path: Path, index: int) -> Path:
         region = self.regions[index]
         if region.data:

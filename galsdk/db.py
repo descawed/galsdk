@@ -37,19 +37,6 @@ class Database(Archive[bytes]):
         return False
 
     @classmethod
-    def sniff(cls, f: BinaryIO) -> Self | None:
-        db = cls()
-        try:
-            db.read(f)
-            return db
-        except Exception:
-            return None
-
-    @classmethod
-    def import_(cls, path: Path, fmt: str = None) -> Self:
-        return cls.import_explicit(path.iterdir(), fmt)
-
-    @classmethod
     def import_explicit(cls, paths: Iterable[Path], fmt: str = None) -> Self:
         is_extended = fmt == 'extended'
         db = cls(is_extended)
@@ -190,7 +177,7 @@ def unpack(cdb: str, target: str, indexes: Container[int] = None):
     for i, data in enumerate(db):
         if indexes and i not in indexes:
             continue
-        output_path = os.path.join(target, str(i))
+        output_path = os.path.join(target, f'{i:03}')
         with open(output_path, 'wb') as f:
             f.write(data)
 

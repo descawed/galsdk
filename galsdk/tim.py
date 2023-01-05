@@ -389,12 +389,6 @@ class TimDb(Archive[Tim]):
         return new_path
 
     @classmethod
-    def import_(cls, path: Path, fmt: str = None) -> Self:
-        if fmt is None:
-            fmt = path.suffix or None
-        return cls.import_explicit(path.iterdir(), fmt)
-
-    @classmethod
     def import_explicit(cls, paths: Iterable[Path], fmt: str = None) -> Self:
         if fmt is None:
             fmt = 'tdb'

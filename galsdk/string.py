@@ -87,13 +87,6 @@ class LatinStringDb(StringDb):
         return '.SDB'
 
     @classmethod
-    def sniff(cls, f: BinaryIO) -> Self | None:
-        try:
-            return cls.read(f)
-        except Exception:
-            return None
-
-    @classmethod
     def import_(cls, path: Path, fmt: str = None) -> Self:
         db = cls()
         with open(path, 'rb') as f:
