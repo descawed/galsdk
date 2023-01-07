@@ -457,7 +457,7 @@ class RoomModule(FileFormat):
         return cls(room_id, room_layout, backgrounds, actor_layouts, triggers, load_address)
 
 
-def dump_info(module_path: str, language: str | None):
+def dump_info(module_path: str, language: str | None, force: bool):
     with open(module_path, 'rb') as f:
         if language is None:
             module = RoomModule.sniff(f)
@@ -466,7 +466,7 @@ def dump_info(module_path: str, language: str | None):
             module = RoomModule.load(f, RoomModule.LOAD_ADDRESSES[language])
             guessed = ''
 
-    if module is None or not module.is_valid:
+    if module is None or not (force or module.is_valid):
         print(f'{module_path} does not appear to be a Galerians room module')
         return
 
@@ -589,7 +589,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Dump information about Galerians room modules')
     parser.add_argument('-l', '--language', help='The language of the game version this room module is from. If not '
                         'provided, we will attempt to guess.', choices=list(RoomModule.LOAD_ADDRESSES))
+    parser.add_argument('-f', '--force', help="Dump what data we were able to find even if the file doesn't look like "
+                        'a valid room module', action='store_true')
     parser.add_argument('module', help='Path to the room module to examine')
 
     args = parser.parse_args()
-    dump_info(args.module, args.language)
+    dump_info(args.module, args.language, args.force)
