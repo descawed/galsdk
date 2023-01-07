@@ -306,3 +306,27 @@ class PsxCd:
             new_num_sectors = ceil(len(patch.data) / DEFAULT_SECTOR_SIZE)
         region = self.regions[index]
         return new_num_sectors - region.size
+
+
+def patch_cd(image_path: str, cd_path: str, input_path: str, raw: bool):
+    with open(image_path, 'rb') as f:
+        cd = PsxCd(f)
+    with open(input_path, 'rb') as f:
+        data = f.read()
+    patch = Patch(cd_path, raw, data)
+    cd.patch([patch])
+    with open(image_path, 'wb') as f:
+        cd.write(f)
+
+
+def cli_main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Patch CD images')
+    parser.add_argument('-r', '--raw', help='The input file is raw CD sectors', action='store_true')
+    parser.add_argument('cd', help='Path to the CD image to be patched')
+    parser.add_argument('path', help='Path on the CD to be patched')
+    parser.add_argument('input', help='Path to the file that will be patched into the CD')
+
+    args = parser.parse_args()
+    patch_cd(args.cd, args.path, args.input, args.raw)
