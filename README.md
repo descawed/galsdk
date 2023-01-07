@@ -125,6 +125,9 @@ To open an existing project, use File > Open Project (or ctrl-O) and select the 
 galsdk also comes with a number of CLI tools for manipulating the game's files. Since the editor is currently read-only,
 these are what you want if you actually want to make changes to the game. Each tool can be run with
 `python -m <module name>` and has usage help available with the `-h` option. The following modules have CLI interfaces:
+- `galsdk.animation` - Pack and unpack animation databases from MOT.CDB. The animation format is not currently
+  understood, but this can still be used to copy animations from one character to another character who doesn't have
+  them.
 - `galsdk.db` - Pack and unpack .CDB files. Note that MODULE.BIN is also a CDB file, despite the extension.
 - `galsdk.model` - Export the game's 3D models into other formats. To correctly export actor models, you need to know
   the actor ID (shown in the Actor tab of the editor or can be found in the actor list in galsdk/model.py). There is no
