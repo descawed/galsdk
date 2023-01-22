@@ -20,7 +20,7 @@ from galsdk.module import RoomModule
 from galsdk.movie import Movie
 from galsdk.string import StringDb, LatinStringDb, JapaneseStringDb
 from galsdk.tim import TimDb
-from galsdk.xa import XaAudio, XaDatabase
+from galsdk.xa import XaAudio, XaDatabase, XaRegion
 from psx import Region
 from psx.cd import PsxCd
 from psx.config import Config
@@ -162,6 +162,10 @@ ADDRESSES = {
         'MedItemDescriptions': 0x801928F8,
         'ModuleSets': 0x801918D4,
         'RoomLoad': RoomModule.LOAD_ADDRESSES['ja'],
+        'XaDef1': 0x80193870,
+        'XaDef2': 0x80193880,
+        'XaDef3': 0x801938D0,
+        'XaDefEnd': 0x8019392C,
     },
 }
 
@@ -316,10 +320,15 @@ class Project:
             with message_db_path.open('rb') as f:
                 message_db = Database.read(f)
             message_manifest = Manifest.from_archive(message_dir, 'MES', message_db)
+            message_manifest.rename(0, 'Debug')
+            message_manifest.save()
         else:
-            # make an empty manifest for convenience of loading
-            dummy = Manifest(message_dir, 'MES')
-            dummy.save()
+            ge_db_path = game_data / 'GE.CDB'
+            with ge_db_path.open('rb') as f:
+                ge_db = Database.read(f)
+            ge_manifest = Manifest.from_archive(message_dir, 'GE', ge_db)
+            ge_manifest.rename(0, 'GE')
+            ge_manifest.save()
             message_manifest = display_manifest
 
         font_path = project_path / 'font.json'
@@ -479,9 +488,34 @@ class Project:
         voice_dir.mkdir(exist_ok=True)
 
         if version.region == Region.NTSC_J:
-            # I don't know where the XA DB lives in the Japanese version yet, so create a dummy manifest
-            dummy = Manifest(voice_dir, 'XA', 'xdb')
-            dummy.save()
+            xa_def1 = addresses['XaDef1']
+            xa_def2 = addresses['XaDef2']
+            xa_def3 = addresses['XaDef3']
+            xa_def_end = addresses['XaDefEnd']
+            xa_def_offsets = [(xa_def1, xa_def2), (xa_def2, xa_def3), (xa_def3, xa_def_end)]
+            start, end = xa_def_offsets[version.disc - 1]
+            region_sets = []
+            data = exe[start:end]
+            last_channel = 8
+            for i in range(0, len(data), 4):
+                channel = data[i]
+                if channel < last_channel:
+                    region_sets.append([])
+                last_channel = channel
+                minute = data[i + 1]
+                second = data[i + 2]
+                sector = data[i + 3]
+                absolute_sector = minute * 75 * 60 + second * 75 + sector
+                region_sets[-1].append(XaRegion(channel, 0, absolute_sector))
+
+            xa_dir = game_data / 'XA'
+            for xa_bin in xa_dir.iterdir():
+                if xa_bin.suffix == '.BIN':
+                    index = int(xa_bin.stem[-2:])
+                    voice_sub_dir = voice_dir / xa_bin.stem
+                    voice_sub_dir.mkdir(exist_ok=True)
+                    xa_db = XaDatabase(region_sets[index], xa_bin.read_bytes())
+                    Manifest.from_archive(voice_sub_dir, xa_bin.stem, xa_db, '.XA')
         else:
             xa_map = display_db[version.disc]
             mxa_path = game_data / 'XA.MXA'
@@ -541,10 +575,18 @@ class Project:
         for path in (self.project_dir / 'stages' / stage / 'movies').glob('*.STR'):
             yield Movie(path)
 
+    @classmethod
+    def _get_voice_from_dir(cls, voice_dir: Path) -> Iterable[XaAudio]:
+        if manifest := Manifest.try_load_from(voice_dir):
+            for f in manifest:
+                yield XaAudio(f.path)
+        else:
+            for sub_path in voice_dir.iterdir():
+                if sub_path.is_dir():
+                    yield from cls._get_voice_from_dir(sub_path)
+
     def get_voice_audio(self) -> Iterable[XaAudio]:
-        manifest = Manifest.load_from(self.project_dir / 'voice')
-        for f in manifest:
-            yield XaAudio(f.path)
+        return self._get_voice_from_dir(self.project_dir / 'voice')
 
     def get_font(self) -> Font:
         font_type = JapaneseFont if self.version.region == Region.NTSC_J else LatinFont
@@ -562,7 +604,7 @@ class Project:
             else:
                 return LatinStringDb.read(f)
 
-    def get_unmapped_strings(self) -> Iterable[StringDb]:
+    def get_unmapped_strings(self) -> Iterable[tuple[str, StringDb]]:
         mapped_strings = set()
         for stage in Stage:
             path = self.project_dir / 'stages' / stage / 'stage.json'
@@ -574,10 +616,8 @@ class Project:
         for entry in messages:
             if entry.path not in mapped_strings:
                 with entry.path.open('rb') as f:
-                    if self.version.region == Region.NTSC_J:
-                        yield JapaneseStringDb.read(f)
-                    else:
-                        yield LatinStringDb.read(f)
+                    # unmapped strings are always in Japanese
+                    yield entry.name, JapaneseStringDb.read(f)
 
     def get_stage_rooms(self, stage: Stage) -> Iterable[RoomModule]:
         manifest = Manifest.load_from(self.project_dir / 'modules')

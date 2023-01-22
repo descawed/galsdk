@@ -200,6 +200,19 @@ class Manifest:
         return manifest
 
     @classmethod
+    def try_load_from(cls, path: Path) -> Manifest | None:
+        """
+        Try to load a manifest from a given path
+
+        :param path: Path where the manifest is stored
+        :return: The manifest object or None
+        """
+        try:
+            return cls.load_from(path)
+        except (FileNotFoundError, KeyError, json.JSONDecodeError):
+            return None
+
+    @classmethod
     def from_archive(cls, manifest_path: Path, name: str, archive: Archive, extension: str = '',
                      sniff: bool = False, flatten: bool = False, recursive: bool = True) -> Manifest:
         """

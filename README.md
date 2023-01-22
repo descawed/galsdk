@@ -118,8 +118,7 @@ To open an existing project, use File > Open Project (or ctrl-O) and select the 
   FMVs are available to view depends on which disc you created the project from, although you can manually copy the
   FMVs from other discs into the appropriate directory in the project if you want to have them all available.
 - **Voice** - This tab allows you to listen to the game's spoken dialogue. Like the Movie tab, there is no export option
-  in the UI, but playing a voice recording will create a copy in .wav format in \<project dir>/voice. This tab will
-  currently always be empty for the Japanese version.
+  in the UI, but playing a voice recording will create a copy in .wav format in \<project dir>/voice.
 
 ## CLI utilities
 galsdk also comes with a number of CLI tools for manipulating the game's files. Since the editor is currently read-only,
@@ -146,11 +145,11 @@ these are what you want if you actually want to make changes to the game. Each t
 - `galsdk.vab` - Pack and unpack VAB databases that are found in SOUND.CDB. There are two different VAB database
   formats. When unpacking, the tool will auto-detect the format. When packing, if you don't know the format you want,
   run the sniff tool on the original file. If it suggests the .VDA extension, use the `--alternate` flag when packing.
-- `galsdk.xa` - Unpack XA databases. The game's dialogue is stored in the disc's XA file (XA.MXA in the US version,
-  XA/AXAPAC00.BIN in the Japanese version) with no indication where particular recordings begin or end. In the US
-  version, DISPLAY.CDB entries 0, 1, and 2 are a kind of header-only database defining where in the XA file to find the
-  various dialogue recordings for  discs 1, 2, and 3 respectively. Run this tool with the path to the file from
+- `galsdk.xa` - Unpack XA databases. The game's dialogue is stored in the disc's XA file(s) (XA.MXA in the US version,
+  files in the XA directory in the Japanese version) with no indication where particular recordings begin or end. In the
+  US version, DISPLAY.CDB entries 0, 1, and 2 are a kind of header-only database defining where in the XA file to find
+  the various dialogue recordings for  discs 1, 2, and 3 respectively. Run this tool with the path to the file from
   DISPLAY.CDB for the disc you want, followed by the path to the XA file, and finally the path to a directory to extract
-  the recordings to. This tool does not currently work with the Japanese version because I haven't yet found the
-  equivalent of these XA databases in that version.
+  the recordings to. This tool doesn't currently work with the Japanese version because the XA layouts are hard-coded
+  in the exe.
 - `psx.tim` - Convert TIM images to other formats.

@@ -10,10 +10,10 @@ class Viewport(ttk.Frame):
     ROTATE_SCALE_Y = 10000
     PAN_SCALE_X = 1000
     PAN_SCALE_Y = 1000
-    DEFAULT_MIN_ZOOM = 5
+    DEFAULT_MIN_ZOOM = 3
     DEFAULT_MAX_ZOOM = 50
     DEFAULT_ZOOM = 25
-    DEFAULT_HEIGHT = 2
+    DEFAULT_HEIGHT = 0
 
     def __init__(self, name: str, base: ShowBase, width: int, height: int, *args, **kwargs):
         if 'width' not in kwargs:

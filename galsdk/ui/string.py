@@ -34,9 +34,9 @@ class StringTab(Tab):
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
 
-        for i, string_db in enumerate(project.get_unmapped_strings()):
+        for i, (name, string_db) in enumerate(project.get_unmapped_strings()):
             iid = f'unmapped_{i}'
-            self.tree.insert('', tk.END, text='Unmapped', iid=iid, open=False)
+            self.tree.insert('', tk.END, text=name, iid=iid, open=False)
             for j, (raw, string) in enumerate(string_db.iter_both()):
                 string_id = len(self.strings)
                 self.strings.append(GameString(raw, string, 0, string_db))
@@ -75,7 +75,7 @@ class StringTab(Tab):
         string = self.strings[self.current_index]
         try:
             pil_image = self.font.draw(string.raw, string.stage_index)
-        except ValueError:
+        except (ValueError, KeyError):
             return  # if the text is invalid, just ignore it; the user might be in the middle of changing it
         tk_image = ImageTk.PhotoImage(pil_image)
         self.image_label.configure(image=tk_image)
