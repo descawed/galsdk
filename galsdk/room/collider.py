@@ -1,6 +1,4 @@
-import io
-
-from panda3d.core import Geom, NodePath, PNMImage, SamplerState, StringStream, Texture
+from panda3d.core import Geom, NodePath, SamplerState, Texture
 from PIL import Image, ImageDraw
 
 from galsdk.coords import Dimension, Point, Triangle2d

@@ -2,7 +2,7 @@ from tkinter import ttk
 
 from direct.showbase.ShowBase import DirectObject, ShowBase
 from direct.task import Task
-from panda3d.core import MouseButton, NodePath, TransparencyAttrib, WindowProperties, Vec3
+from panda3d.core import MouseButton, NodePath, TransparencyAttrib, WindowProperties
 
 
 class Viewport(ttk.Frame):
