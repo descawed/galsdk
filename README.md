@@ -1,5 +1,5 @@
 # galsdk
-Editor and utilities for the PSX game Galerians (1999). Requires Python 3.10 or 3.11.
+Editor and utilities for the PSX game Galerians (1999). Requires Python 3.11.
 
 ## Editor
 The editor is a GUI application for exploring the game's files. Run it from the repo's root directory with
