@@ -113,6 +113,11 @@ To open an existing project, use File > Open Project (or ctrl-O) and select the 
 - **Art** - This tab allows viewing and exporting of all known images in the game except for backgrounds and model
   textures (which are available on other tabs). The exact organization of images on this tab varies depending on your
   game version. You can right-click on an image in the list to export.
+- **Menu** - This tab displays images defined in menu files. These files don't exist in the Japanese version, so this
+  tab won't appear for Japan-version projects. The other versions have two menu files, one for the option menu and
+  one for the inventory. In addition to displaying the icons within each menu, the top-level entry for the option menu
+  can also display a preview of the full menu rendered together. This is not currently supported for the inventory menu.
+  You can right-click on an image in the list to export.
 - **Movie** - On this tab you can view the game's FMVs. There's no export option in the UI, but if you watch a video
   in the editor, you can find a copy of it in .avi format in \<project dir>/stages/\<stage letter>/movies. Which stage's
   FMVs are available to view depends on which disc you created the project from, although you can manually copy the
