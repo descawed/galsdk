@@ -13,3 +13,7 @@ class Tab(ttk.Frame):
 
     def set_active(self, is_active: bool):
         pass
+
+    @property
+    def should_appear(self) -> bool:
+        return True

@@ -1,4 +1,3 @@
-import os.path
 import re
 
 from dataclasses import dataclass
@@ -265,7 +264,7 @@ class PsxCd:
         if not isinstance(directory, Directory):
             raise NotADirectoryError(f'{path} is not a directory')
         for entry in directory.contents:
-            yield DirectoryEntry(os.path.basename(entry.name), entry.name, isinstance(entry, Directory))
+            yield DirectoryEntry(entry.name.rsplit('\\', 1)[1], entry.name, isinstance(entry, Directory))
 
     def extract(self, path: str, destination: BinaryIO, raw: bool = False):
         """

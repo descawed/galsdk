@@ -6,6 +6,7 @@ from tkinter import ttk
 from typing import Literal, Optional
 
 from PIL import ImageTk
+from PIL.Image import Image
 
 from galsdk.ui.tab import Tab
 from galsdk.project import Project
@@ -16,7 +17,7 @@ from psx.tim import Tim, Transparency
 class ImageViewerTab(Tab, metaclass=ABCMeta):
     """Editor tab for viewing a series of images"""
 
-    current_image: Optional[Tim]
+    current_image: Optional[Tim | Image]
 
     def __init__(self, name: str, project: Project, selectmode: Literal['extended', 'browse', 'none'] = 'browse',
                  show: Literal['tree', 'headings', 'tree headings', ''] = 'tree'):
@@ -38,7 +39,7 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
         self.clut_select = ttk.Combobox(image_options, textvariable=self.clut_var, state='disabled')
         transparency_toggle = ttk.Checkbutton(image_options, text='Transparency', variable=self.transparency_var,
                                               command=self.update_image)
-        self.zoom = ttk.Scale(image_options, from_=0.5, to=2.0, command=self.update_image, value=1.0)
+        self.zoom = ttk.Scale(image_options, from_=0.5, to=3.0, command=self.update_image, value=1.0)
         clut_label.grid(row=0, column=0, sticky=tk.W)
         self.clut_select.grid(row=0, column=1, sticky=tk.E)
         transparency_toggle.grid(row=0, column=2, sticky=tk.E)
@@ -63,7 +64,7 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
         image = self.get_image()
         if image is not None:
             self.current_image = image
-            if self.current_image.num_palettes == 0:
+            if not isinstance(self.current_image, Tim) or self.current_image.num_palettes == 0:
                 self.clut_select['state'] = 'disabled'
             else:
                 self.clut_select['state'] = 'readonly'
@@ -84,18 +85,23 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
         if not (image := self.get_image_from_iid(self.export_iid)):
             return
 
-        if filename := tkfile.asksaveasfilename(filetypes=[('Images', '*.png *.jpg *.bmp *.tga *.webp *.tim'),
-                                                           ('All Files', '*.*')]):
+        extensions = '*.png *.jpg *.bmp *.tga *.webp'
+        if is_tim := isinstance(image, Tim):
+            extensions += ' *.tim'
+        if filename := tkfile.asksaveasfilename(filetypes=[('Images', extensions), ('All Files', '*.*')]):
             path = Path(filename)
-            tim = TimFormat.from_tim(image)
-            tim.export(path, path.suffix)
+            if is_tim:
+                tim = TimFormat.from_tim(image)
+                tim.export(path, path.suffix)
+            else:
+                image.save(path)
 
-    def get_image(self) -> Optional[Tim]:
+    def get_image(self) -> Optional[Tim | Image]:
         """Get the currently selected TIM image"""
         return self.get_image_from_iid(self.tree.selection()[0])
 
     @abstractmethod
-    def get_image_from_iid(self, iid: str) -> Optional[Tim]:
+    def get_image_from_iid(self, iid: str) -> Optional[Tim | Image]:
         """Get the image for the given IID, if any"""
 
     @property
@@ -116,11 +122,14 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
     def update_image(self, *_):
         tim = self.get_image()
         if tim is not None:
-            transparency = Transparency.FULL if self.with_transparency else Transparency.NONE
-            image = tim.to_image(self.clut_index, transparency)
+            if isinstance(tim, Tim):
+                transparency = Transparency.FULL if self.with_transparency else Transparency.NONE
+                image = tim.to_image(self.clut_index, transparency)
+            else:
+                image = tim
             zoom = self.zoom.get()
             if abs(zoom - 1) > 0.01:
-                image = image.resize((int(tim.width * zoom), int(tim.height * zoom)))
+                image = image.resize((int(image.size[0] * zoom), int(image.size[1] * zoom)))
             tk_image = ImageTk.PhotoImage(image)
             self.image_label.configure(image=tk_image)
             self.image_label.image = tk_image

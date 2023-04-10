@@ -13,6 +13,7 @@ class Region(str, Enum):
         return self.value
 
 
+# TODO: use bytearray and memoryview
 class Exe:
     """A PSX executable"""
 

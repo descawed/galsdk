@@ -6,7 +6,7 @@ from galsdk import util
 from galsdk.format import Archive
 
 
-class AnimationDb(Archive):
+class AnimationDb(Archive[bytes]):
     SECTOR_SIZE = 0x800
     DEFAULT_HEADER = b'\0' * 0x48
 

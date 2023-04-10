@@ -3,6 +3,7 @@ import sys
 
 from galsdk.db import Database
 from galsdk.format import FileFormat
+from galsdk.menu import Menu
 from galsdk.model import ActorModel, ItemModel
 from galsdk.module import RoomModule
 from galsdk.string import LatinStringDb, JapaneseStringDb
@@ -12,7 +13,7 @@ from galsdk.xa import XaDatabase
 
 
 # TimDb needs to come before TimFormat in the list because TimFormat will miss additional images in TIM streams
-formats: list[type[FileFormat]] = [LatinStringDb, XaDatabase, TimDb, TimFormat, Database, VabDb, RoomModule,
+formats: list[type[FileFormat]] = [LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Database, VabDb, RoomModule,
                                    ActorModel, ItemModel, JapaneseStringDb]
 
 

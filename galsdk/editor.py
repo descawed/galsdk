@@ -9,7 +9,8 @@ from direct.showbase.ShowBase import ShowBase
 from panda3d.core import getModelPath
 
 from galsdk.project import GameVersion, Project
-from galsdk.ui import ActorTab, ArtTab, BackgroundTab, ItemTab, ModelTab, MovieTab, RoomTab, StringTab, VoiceTab
+from galsdk.ui import ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab, StringTab,\
+    VoiceTab
 
 
 class Editor(ShowBase):
@@ -177,9 +178,11 @@ class Editor(ShowBase):
 
         self.tabs = [RoomTab(self.project, self), StringTab(self.project), ActorTab(self.project, self),
                      BackgroundTab(self.project), ItemTab(self.project, self), ModelTab(self.project, self),
-                     ArtTab(self.project), MovieTab(self.project, self), VoiceTab(self.project, self)]
+                     ArtTab(self.project), MenuTab(self.project), MovieTab(self.project, self),
+                     VoiceTab(self.project, self)]
         for tab in self.tabs:
-            self.notebook.add(tab, text=tab.name)
+            if tab.should_appear:
+                self.notebook.add(tab, text=tab.name)
 
         self.notebook.pack(expand=1, fill=tk.BOTH)
         self.set_active_tab()

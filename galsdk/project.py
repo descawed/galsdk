@@ -15,6 +15,7 @@ from typing import Iterable
 from galsdk.db import Database
 from galsdk.font import Font, LatinFont, JapaneseFont
 from galsdk.manifest import Manifest
+from galsdk.menu import ComponentInstance, Menu
 from galsdk.model import ACTORS, ActorModel, ItemModel
 from galsdk.module import RoomModule
 from galsdk.movie import Movie
@@ -152,6 +153,10 @@ ADDRESSES = {
         'MedItemDescriptions': 0x80192ACC,
         'ModuleSets': 0x80191BE0,
         'RoomLoad': RoomModule.LOAD_ADDRESSES['en-US'],
+        'OptionMenuStart': 0x8019148C,
+        'OptionMenuStop': 0x80191714,
+        'MenuXScaleStart': 0x801917A4,
+        'MenuXScaleStop': 0x801917B0,
     },
     'SLPS-02192': {
         'FontPages': 0x8019144C,
@@ -188,12 +193,15 @@ class Project:
     VERSION_MAP = {version.id: version for version in VERSIONS}
 
     def __init__(self, project_dir: Path, version: GameVersion, actor_models: list[int] = None,
-                 module_sets: list[list[dict[str, int]]] = None, last_export_date: datetime.datetime = None):
+                 module_sets: list[list[dict[str, int]]] = None, x_scales: list[int] = None,
+                 option_menu: list[ComponentInstance] = None, last_export_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
         self.last_export_date = last_export_date or datetime.datetime.utcnow()
         self.actor_models = actor_models or []
         self.module_sets = module_sets or []
+        self.x_scales = x_scales
+        self.option_menu = option_menu
         self.addresses = ADDRESSES[self.version.id]
 
     @classmethod
@@ -430,10 +438,27 @@ class Project:
                 for j in range(0, len(raw_entries), 2)
             ])
 
+        x_scales = []
+        option_menu = []
+        if version.region != Region.NTSC_J:
+            # read menu data
+            x_scales = list(struct.unpack('<3I', exe[addresses['MenuXScaleStart']:addresses['MenuXScaleStop']]))
+            raw_instances = exe[addresses['OptionMenuStart']:addresses['OptionMenuStop']]
+            for i in range(0, len(raw_instances), 12):
+                x, y, component_index, r, g, b, draw = struct.unpack('<2H4BI', raw_instances[i:i + 12])
+                option_menu.append(ComponentInstance(x, y, component_index, (r, g, b), draw))
+
+            display_manifest.rename(3, 'Option')
+            display_manifest.save()
+
         menu_manifest = Manifest.load_from(art_dir / 'MENU')
         with menu_manifest:
             # sub-databases
-            item_art_id = 8 if version.region == Region.NTSC_J else 53
+            if version.region == Region.NTSC_J:
+                item_art_id = 8
+            else:
+                item_art_id = 53
+                menu_manifest.rename(55, 'Inventory')
             menu_manifest.rename(item_art_id, 'item_art')
             item_art_dir = menu_manifest[item_art_id].path
             item_art_manifest = Manifest.load_from(item_art_dir)
@@ -523,7 +548,7 @@ class Project:
             xa_db.set_data(mxa_path.read_bytes())
             Manifest.from_archive(voice_dir, 'XA', xa_db, '.XA')
 
-        project = cls(project_path, version, actor_models, module_sets)
+        project = cls(project_path, version, actor_models, module_sets, x_scales, option_menu)
         project.save()
         return project
 
@@ -542,7 +567,9 @@ class Project:
         last_export_date = datetime.datetime.fromisoformat(project_info['last_export_date'])
         actor_models = project_info['actor_models']
         module_sets = project_info.get('module_sets', [])
-        return cls(project_path, version, actor_models, module_sets, last_export_date)
+        x_scales = project_info.get('x_scales', [])
+        option_menu = [ComponentInstance(**instance) for instance in project_info.get('option_menu', [])]
+        return cls(project_path, version, actor_models, module_sets, x_scales, option_menu, last_export_date)
 
     @property
     def all_actor_models(self) -> set[int]:
@@ -560,6 +587,8 @@ class Project:
                 'last_export_date': self.last_export_date.isoformat(),
                 'actor_models': self.actor_models,
                 'module_sets': self.module_sets,
+                'x_scales': self.x_scales,
+                'option_menu': [asdict(instance) for instance in self.option_menu],
             }, f)
 
     def get_stage_backgrounds(self, stage: Stage) -> Manifest:
@@ -699,3 +728,19 @@ class Project:
                     other[i] = ItemModel.read(f, name=str(i))
 
         return actors, items, other
+
+    def get_menus(self) -> Iterable[tuple[str, Menu]]:
+        if self.version.region == Region.NTSC_J:
+            return
+
+        display_manifest = Manifest.load_from(self.project_dir / 'art' / 'DISPLAY')
+        option_menu_file = display_manifest['Option']
+        with option_menu_file.path.open('rb') as f:
+            option_menu = Menu.read(f)
+        option_menu.instantiate(self.option_menu, self.x_scales)
+        yield 'Option', option_menu
+
+        menu_manifest = Manifest.load_from(self.project_dir / 'art' / 'MENU')
+        inventory_menu_file = menu_manifest['Inventory']
+        with inventory_menu_file.path.open('rb') as f:
+            yield 'Inventory', Menu.read(f)
