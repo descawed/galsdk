@@ -4,10 +4,10 @@ import functools
 import io
 import struct
 from abc import abstractmethod
-from dataclasses import dataclass
-from enum import Enum, auto
+from dataclasses import dataclass, field
+from enum import Enum, IntEnum, auto
 from pathlib import Path
-from typing import BinaryIO, Self
+from typing import Any, BinaryIO, Iterable, Self
 
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
     PNMImage, StringStream, Texture
@@ -25,10 +25,66 @@ class Origin(Enum):
     BOTTOM = auto()
 
 
+class Gltf(IntEnum):
+    POINTS = 0
+    LINES = 1
+    LINE_LOOP = 2
+    LINE_STRIP = 3
+    TRIANGLES = 4
+    TRIANGLE_STRIP = 5
+    TRIANGLE_FAN = 6
+    BYTE = 5120
+    UNSIGNED_BYTE = 5121
+    SHORT = 5122
+    UNSIGNED_SHORT = 5123
+    UNSIGNED_INT = 5125
+    FLOAT = 5126
+    NEAREST = 9728
+    LINEAR = 9729
+    NEAREST_MIPMAP_NEAREST = 9984
+    LINEAR_MIPMAP_NEAREST = 9985
+    NEAREST_MIPMAP_LINEAR = 9986
+    LINEAR_MIPMAP_LINEAR = 9987
+    REPEAT = 10497
+    CLAMP_TO_EDGE = 33071
+    MIRRORED_REPEAT = 33648
+    ARRAY_BUFFER = 34962
+    ELEMENT_ARRAY_BUFFER = 34963
+
+
 @dataclass
-class Vertex:
-    vertex_index: int
-    uv_index: int
+class Segment:
+    clut_index: int
+    triangles: list[tuple[int, int, int]]
+    quads: list[tuple[int, int, int, int]]
+    offset: tuple[int, int, int] = (0, 0, 0)
+    total_offset: tuple[int, int, int] = (0, 0, 0)
+    children: list[Segment] = field(default_factory=lambda: [])
+
+    def __len__(self) -> int:
+        return 1 + sum(len(child) for child in self.children)
+
+    @property
+    def all_triangles(self) -> Iterable[tuple[int, int, int]]:
+        yield from self.triangles
+        for q in self.quads:
+            yield q[0], q[1], q[3]
+            yield q[3], q[2], q[0]
+
+    def flatten(self, new_attributes: dict[tuple[int, int, int, int, int], int],
+                original_attributes: list[tuple[int, int, int, int, int]]) -> list[tuple[int, int, int]]:
+        new_tris = []
+        for tri in self.all_triangles:
+            new_tri = []
+            for index in tri:
+                x, y, z, u, v = original_attributes[index]
+                new_vert = (x + self.total_offset[0], y + self.total_offset[1], z + self.total_offset[2], u, v)
+                new_tri.append(new_attributes.setdefault(new_vert, len(new_attributes)))
+            new_tris.append(tuple(new_tri))
+        for child in self.children:
+            child_tris = child.flatten(new_attributes, original_attributes)
+            new_tris.extend(child_tris)
+        return new_tris
 
 
 @dataclass
@@ -42,7 +98,7 @@ class Actor:
 RION = Actor('Rion', 0, {
     0: 0,  # waist
     1: [0, 1],  # torso
-    2: [0, 1, 2],  # hair
+    2: [0, 1, 2],  # head/hair
     3: [0, 1, 3],  # right shoulder
     4: [0, 1, 3, 4],  # right forearm
     5: [0, 1, 6],  # left shoulder
@@ -174,18 +230,17 @@ CLUT_WIDTH = 16
 BLOCK_WIDTH = 64
 TEXTURE_WIDTH = 0x100
 TEXTURE_HEIGHT = 0x100
+VERT_SIZE = 3 * 4
+UV_SIZE = 2 * 4
 
 
 class Model(FileFormat):
     """A 3D model of a game object"""
 
-    def __init__(self, vertices: list[tuple[int, int, int]],
-                 uvs: list[tuple[int, int]], triangles: list[tuple[Vertex, Vertex, Vertex]],
-                 quads: list[tuple[Vertex, Vertex, Vertex, Vertex]], texture: Tim, use_transparency: bool = False):
-        self.vertices = vertices
-        self.uvs = uvs
-        self.triangles = triangles
-        self.quads = quads
+    def __init__(self, attributes: list[tuple[int, int, int, int, int]], root_segments: list[Segment],
+                 texture: Tim, use_transparency: bool = False):
+        self.attributes = attributes
+        self.root_segments = root_segments
         self.texture = texture
         self.use_transparency = use_transparency
 
@@ -196,11 +251,7 @@ class Model(FileFormat):
 
     @functools.cache
     def get_panda3d_model(self, origin: Origin = Origin.DEFAULT) -> Geom:
-        # convert quads to triangles
-        triangles = [*self.triangles]
-        for q in self.quads:
-            triangles.append((q[0], q[1], q[3]))
-            triangles.append((q[3], q[2], q[0]))
+        triangles = self._all_tris
 
         # associate all the UVs with the correct vertices
         vertices: list[tuple[int, int, int, int | None, int | None]] = [
@@ -266,47 +317,227 @@ class Model(FileFormat):
     def texture_height(self) -> int:
         return TEXTURE_HEIGHT * self.texture.num_palettes
 
+    def _flatten(self) -> tuple[list[tuple[int, int, int]], list[tuple[int, int, int, int, int]]]:
+        new_tris = []
+        new_attributes = {}
+        for segment in self.root_segments:
+            new_tris.extend(segment.flatten(new_attributes, self.attributes))
+        return new_tris, list(new_attributes)
+
+    @classmethod
+    def _gltf_add_segment(cls, gltf: dict[str, Any], root_node: dict[str, str | list[int]],
+                          buffer: bytearray, segment: Segment):
+        buf_offset = len(buffer)
+        index_count = 0
+        max_index = 0
+        for tri in segment.all_triangles:
+            buffer += struct.pack('<3H', tri[0], tri[1], tri[2])
+            new_max = max(tri)
+            if new_max > max_index:
+                max_index = new_max
+            index_count += 3
+        root_node['children'].append(len(gltf['nodes']))
+        node = {
+            'mesh': len(gltf['meshes']),
+            'children': [],
+            'translation': (segment.offset[0] / Dimension.SCALE_FACTOR, segment.offset[1] / Dimension.SCALE_FACTOR,
+                            segment.offset[2] / Dimension.SCALE_FACTOR),
+        }
+        gltf['nodes'].append(node)
+        index_accessor = len(gltf['accessors'])
+        gltf['accessors'].append({
+            'bufferView': 1,
+            'byteOffset': buf_offset,
+            'componentType': Gltf.UNSIGNED_SHORT,
+            'count': index_count,
+            'type': 'SCALAR',
+            'max': [max_index],
+            'min': [0],
+        })
+        gltf['meshes'].append({
+            'primitives': [
+                {
+                    'attributes': {
+                        'POSITION': 0,
+                        'TEXCOORD_0': 1,
+                    },
+                    'indices': index_accessor,
+                    'material': 0,
+                },
+            ],
+        })
+
+        for child in segment.children:
+            cls._gltf_add_segment(gltf, node, buffer, child)
+
+    def as_gltf(self) -> tuple[dict[str, Any], bytes, Image.Image]:
+        stride = VERT_SIZE + UV_SIZE
+        num_attrs = len(self.attributes)
+        buffer = bytearray(num_attrs * stride)
+        buf_len = 0
+        tex_height = self.texture_height
+        max_x = min_x = max_y = min_y = max_z = min_z = 0.
+        for vert in self.attributes:
+            x = vert[0] / Dimension.SCALE_FACTOR
+            if x > max_x:
+                max_x = x
+            elif x < min_x:
+                min_x = x
+
+            y = vert[1] / Dimension.SCALE_FACTOR
+            if y > max_y:
+                max_y = y
+            elif y < min_y:
+                min_y = y
+
+            z = vert[2] / Dimension.SCALE_FACTOR
+            if z > max_z:
+                max_z = z
+            elif z < min_z:
+                min_z = z
+
+            u = vert[3] / TEXTURE_WIDTH
+            v = (tex_height - vert[4]) / tex_height
+            struct.pack_into('<5f', buffer, buf_len, x, y, z, u, v)
+            buf_len += stride
+
+        gltf: dict[str, Any] = {
+            'asset': {
+                'version': '2.0',
+                'generator': 'galsdk',
+            },
+            'scene': 0,
+            'scenes': [
+                {
+                    'nodes': [0],
+                }
+            ],
+            'nodes': [
+                {
+                    'name': 'model',
+                    'children': [],
+                },
+            ],
+            'meshes': [],
+            'images': [
+                {
+                    'uri': 'texture.png',
+                },
+            ],
+            'samplers': [
+                {
+                    'magFilter': Gltf.NEAREST,
+                    'minFilter': Gltf.NEAREST,
+                },
+            ],
+            'textures': [
+                {
+                    'source': 0,
+                    'sampler': 0,
+                },
+            ],
+            'materials': [
+                {
+                    'pbrMetallicRoughness': {
+                        'baseColorTexture': {
+                            'index': 0,
+                        },
+                        'metallicFactor': 0.,
+                        'roughnessFactor': 1.,
+                    },
+                },
+            ],
+            'buffers': [
+                {
+                    'uri': 'data.bin',
+                    'byteLength': 0,
+                },
+            ],
+            'bufferViews': [
+                {
+                    'buffer': 0,
+                    'byteOffset': 0,
+                    'byteLength': buf_len,
+                    'byteStride': stride,
+                    'target': Gltf.ARRAY_BUFFER,
+                },
+                {
+                    'buffer': 0,
+                    'byteOffset': buf_len,
+                    'byteLength': 0,
+                    'target': Gltf.ELEMENT_ARRAY_BUFFER,
+                },
+            ],
+            'accessors': [
+                {
+                    'name': 'vertices',
+                    'bufferView': 0,
+                    'byteOffset': 0,
+                    'componentType': Gltf.FLOAT,
+                    'count': num_attrs,
+                    'type': 'VEC3',
+                    'min': [min_x, min_y, min_z],
+                    'max': [max_x, max_y, max_z],
+                },
+                {
+                    'name': 'texcoords',
+                    'bufferView': 2,
+                    'byteOffset': VERT_SIZE,
+                    'componentType': Gltf.FLOAT,
+                    'count': num_attrs,
+                    'type': 'VEC2',
+                    'min': [0., 0.],
+                    'max': [1., 1.],
+                },
+            ],
+        }
+
+        root_node = gltf['nodes'][0]
+        for root_segment in self.root_segments:
+            self._gltf_add_segment(gltf, root_node, buffer, root_segment)
+
+        final_buf = bytes(buffer)
+        final_len = len(final_buf)
+        gltf['buffers'][0]['byteLength'] = final_len
+        gltf['bufferViews'][1]['byteLength'] = final_len - buf_len
+        return gltf, final_buf, self.get_texture_image()
+
     def as_ply(self) -> str:
+        tris, attributes = self._flatten()
         ply = f"""ply
 format ascii 1.0
-element vertex {len(self.vertices)}
+element vertex {len(attributes)}
 property float x
 property float y
 property float z
-element face {len(self.quads) + len(self.triangles)}
+element face {len(tris)}
 property list uchar uint vertex_indices
 end_header
 """
-        for v in self.vertices:
+        for v in attributes:
             point = Point(v[0], v[1], v[2])
             ply += f'{point.panda_x} {point.panda_y} {point.panda_z}\n'
-        for t in self.triangles:
-            ply += f'3 {t[0].vertex_index} {t[1].vertex_index} {t[2].vertex_index}\n'
-        for q in self.quads:
-            ply += f'4 {q[0].vertex_index} {q[1].vertex_index} {q[3].vertex_index} {q[2].vertex_index}\n'
+        for t in tris:
+            ply += f'3 {t[0]} {t[1]} {t[2]}\n'
 
         return ply
 
     def as_obj(self, material_path: str = None, material_name: str = None,
                texture_path: str = None) -> tuple[str, str | None]:
+        tris, attributes = self._flatten()
         obj = ''
         mtl = None
         if material_path is not None:
             obj += f'mtllib {material_path}\n'
-        for v in self.vertices:
-            obj +=\
-                f'v {v[0] / Dimension.SCALE_FACTOR} {v[1] / Dimension.SCALE_FACTOR} {v[2] / Dimension.SCALE_FACTOR}\n'
         tex_height = self.texture_height
-        for u in self.uvs:
-            obj += f'vt {u[0] / TEXTURE_WIDTH} {(tex_height - u[1]) / tex_height}\n'
+        for v in attributes:
+            obj +=\
+                f'v {v[0] / Dimension.SCALE_FACTOR} {v[1] / Dimension.SCALE_FACTOR} {v[2] / Dimension.SCALE_FACTOR}\n'\
+                f'vt {v[3] / TEXTURE_WIDTH} {(tex_height - v[4]) / tex_height}\n'
         if material_name is not None:
             obj += f'usemtl {material_name}\n'
-        for t in self.triangles:
-            obj += f'f {t[0].vertex_index + 1}/{t[0].uv_index + 1} {t[1].vertex_index + 1}/{t[1].uv_index + 1} ' +\
-                   f'{t[2].vertex_index + 1}/{t[2].uv_index + 1}\n'
-        for q in self.quads:
-            obj += f'f {q[0].vertex_index + 1}/{q[0].uv_index + 1} {q[1].vertex_index + 1}/{q[1].uv_index + 1} ' +\
-                   f'{q[3].vertex_index + 1}/{q[3].uv_index + 1} {q[2].vertex_index + 1}/{q[2].uv_index + 1}\n'
+        for t in tris:
+            obj += f'f {t[0] + 1}/{t[0] + 1} {t[1] + 1}/{t[1] + 1} {t[2] + 1}/{t[2] + 1}\n'
 
         if material_name is not None:
             mtl = f"""newmtl {material_name}
@@ -361,13 +592,6 @@ illum 0
 
         return new_path
 
-    @classmethod
-    def sniff(cls, f: BinaryIO) -> Self | None:
-        try:
-            return cls.read(f)
-        except Exception:
-            return None
-
     def write(self, f: BinaryIO, **kwargs):
         raise NotImplementedError
 
@@ -381,26 +605,27 @@ illum 0
         return image
 
     @staticmethod
-    def _read_chunk(f: BinaryIO, num_vertices: int, extra_len: int = 0) -> tuple[
-        list[tuple[int, int, int]], list[tuple[int, int]]
-    ]:
+    def _read_chunk(f: BinaryIO, num_vertices: int, extra_len: int = 0) -> list[tuple[int, int, int, int, int]]:
         num_shorts = num_vertices * 3
         num_bytes = num_vertices * 2
         data_size = num_shorts * 2 + num_bytes
         count = util.int_from_bytes(f.read(2))
-        verts = []
-        tex = []
+        attributes = []
         for k in range(count):
             data = f.read(data_size)
             raw_face = struct.unpack(f'{num_shorts}h{num_bytes}B', data)
             f.seek(extra_len, 1)
             for m in range(num_vertices):
                 x, y, z = raw_face[m * 3:(m + 1) * 3]
-                verts.append((x, y, z))
+                attributes.append((x, y, z, 0, 0))
             rest = raw_face[num_shorts:]
             for m in range(num_vertices):
-                tex.append((rest[m * 2], rest[m * 2 + 1]))
-        return verts, tex
+                u = rest[m * 2]
+                v = rest[m * 2 + 1]
+                attr_index = m + k * num_vertices
+                attrs = attributes[attr_index]
+                attributes[attr_index] = (attrs[0], attrs[1], attrs[2], u, v)
+        return attributes
 
     @staticmethod
     def _read_tim(f: BinaryIO) -> Tim:
@@ -415,62 +640,32 @@ illum 0
         return tim
 
     @classmethod
-    def _read_segment(cls, f: BinaryIO, vertices: dict[tuple[int, int, int], int],
-                      uvs: dict[tuple[int, int], int],
-                      triangles: list[tuple[Vertex, Vertex, Vertex]],
-                      quads: list[tuple[Vertex, Vertex, Vertex, Vertex]],
-                      offset: tuple[int, int, int] = (0, 0, 0)):
+    def _read_segment(cls, f: BinaryIO, attributes: dict[tuple[int, int, int, int, int], int],
+                      offset: tuple[int, int, int] = (0, 0, 0),
+                      total_offset: tuple[int, int, int] = (0, 0, 0)) -> Segment:
         clut_index = int.from_bytes(f.read(2), 'little')
-        tri_verts = []
-        tri_uvs = []
-        quad_verts = []
-        quad_uvs = []
-        v, u = cls._read_chunk(f, 4)
-        quad_verts.extend(v)
-        quad_uvs.extend(u)
-        v, u = cls._read_chunk(f, 3)
-        tri_verts.extend(v)
-        tri_uvs.extend(u)
-        # TODO: the "extra" data is probably normals
-        v, u = cls._read_chunk(f, 4, 0x18)
-        quad_verts.extend(v)
-        quad_uvs.extend(u)
-        v, u = cls._read_chunk(f, 3, 0x12)
-        tri_verts.extend(v)
-        tri_uvs.extend(u)
+        tri_attrs = []
+        quad_attrs = []
+        quad_attrs.extend(cls._read_chunk(f, 4))
+        tri_attrs.extend(cls._read_chunk(f, 3))
+        # the "extra" data is skipped by the game as well
+        quad_attrs.extend(cls._read_chunk(f, 4, 0x18))
+        tri_attrs.extend(cls._read_chunk(f, 3, 0x12))
 
-        tri_verts = [(tv[0] + offset[0], tv[1] + offset[1], tv[2] + offset[2]) for tv in tri_verts]
-        quad_verts = [(qv[0] + offset[0], qv[1] + offset[1], qv[2] + offset[2]) for qv in quad_verts]
+        tri_attrs_final, quad_attrs_final = ([
+            attributes.setdefault((x, y, z, u, v + TEXTURE_HEIGHT * clut_index), len(attributes))
+            for x, y, z, u, v in attrs
+        ] for attrs in [tri_attrs, quad_attrs])
 
-        # we'll stack each palette into one image
-        tri_uvs = [(tu[0], tu[1] + TEXTURE_HEIGHT * clut_index) for tu in tri_uvs]
-        quad_uvs = [(qu[0], qu[1] + TEXTURE_HEIGHT * clut_index) for qu in quad_uvs]
+        triangles = [
+            (tri_attrs_final[i], tri_attrs_final[i + 1], tri_attrs_final[i + 2]) for i in range(0, len(tri_attrs), 3)
+        ]
+        quads = [
+            (quad_attrs_final[i], quad_attrs_final[i + 1], quad_attrs_final[i + 2], quad_attrs_final[i + 3])
+            for i in range(0, len(quad_attrs), 4)
+        ]
 
-        for j in range(len(tri_verts)):
-            if tri_verts[j] not in vertices:
-                vertices[tri_verts[j]] = len(vertices)
-            vert_index = vertices[tri_verts[j]]
-
-            if tri_uvs[j] not in uvs:
-                uvs[tri_uvs[j]] = len(uvs)
-            uv_index = uvs[tri_uvs[j]]
-            tri_verts[j] = Vertex(vert_index, uv_index)
-
-        for j in range(len(quad_verts)):
-            if quad_verts[j] not in vertices:
-                vertices[quad_verts[j]] = len(vertices)
-            vert_index = vertices[quad_verts[j]]
-
-            if quad_uvs[j] not in uvs:
-                uvs[quad_uvs[j]] = len(uvs)
-            uv_index = uvs[quad_uvs[j]]
-            quad_verts[j] = Vertex(vert_index, uv_index)
-
-        for j in range(0, len(tri_verts), 3):
-            triangles.append((tri_verts[j], tri_verts[j + 1], tri_verts[j + 2]))
-
-        for j in range(0, len(quad_verts), 4):
-            quads.append((quad_verts[j], quad_verts[j + 1], quad_verts[j + 2], quad_verts[j + 3]))
+        return Segment(clut_index, triangles, quads, offset, total_offset)
 
 
 class ActorModel(Model):
@@ -478,10 +673,9 @@ class ActorModel(Model):
 
     NUM_SEGMENTS = 19
 
-    def __init__(self, name: str, actor_id: int, vertices: list[tuple[int, int, int]],
-                 uvs: list[tuple[int, int]], triangles: list[tuple[Vertex, Vertex, Vertex]],
-                 quads: list[tuple[Vertex, Vertex, Vertex, Vertex]], texture: Tim):
-        super().__init__(vertices, uvs, triangles, quads, texture)
+    def __init__(self, name: str, actor_id: int, attributes: list[tuple[int, int, int, int, int]],
+                 root: Segment, texture: Tim):
+        super().__init__(attributes, [root], texture)
         self.name = name
         self.id = actor_id
 
@@ -498,31 +692,38 @@ class ActorModel(Model):
         # a list of the x/y/z positions of each segment relative to its parent
         # the size of this list is not a multiple of 3, so the last number goes unused, and it also isn't long enough
         # to have entries for every segment, so the last 4 segments can't be the parent of another segment
-        offsets = struct.unpack('46h', f.read(0x5c))
+        offsets = struct.unpack('<46h', f.read(0x5c))
         tim = cls._read_tim(f)
 
-        vertices = {}
-        uvs = {}
-        triangles: list[tuple[Vertex, Vertex, Vertex]] = []
-        quads: list[tuple[Vertex, Vertex, Vertex, Vertex]] = []
+        attributes = {}
+        segments = []
+        parents = []
         for i in range(cls.NUM_SEGMENTS):
+            parent = None
             match actor.skeleton.get(i):
                 case [*indexes]:
-                    offset = (0, 0, 0)
+                    parent = indexes[-2]
+                    total_offset = offset = (0, 0, 0)
                     for index in indexes:
-                        offset = (
-                            offset[0] + offsets[index * 3],
-                            offset[1] + offsets[index * 3 + 1],
-                            offset[2] + offsets[index * 3 + 2],
+                        offset = (offsets[index * 3], offsets[index * 3 + 1], offsets[index * 3 + 2])
+                        total_offset = (
+                            total_offset[0] + offset[0],
+                            total_offset[1] + offset[1],
+                            total_offset[2] + offset[2],
                         )
                 case None:
                     # debug code to shift any unknown parts off to the side where we can get a better look at them
-                    offset = (i * 0x80, -0x40 if (i & 1) == 1 else 0x40, 0)
+                    total_offset = offset = (i * 0x80, -0x40 if (i & 1) == 1 else 0x40, 0)
                 case index:
-                    offset = (offsets[index * 3], offsets[index * 3 + 1], offsets[index * 3 + 2])
-            cls._read_segment(f, vertices, uvs, triangles, quads, offset)
+                    total_offset = offset = (offsets[index * 3], offsets[index * 3 + 1], offsets[index * 3 + 2])
+            segments.append(cls._read_segment(f, attributes, offset, total_offset))
+            parents.append(parent)
 
-        return cls(actor.name, actor.id, list(vertices), list(uvs), triangles, quads, tim)
+        for parent, segment in zip(parents, segments, strict=True):
+            if parent is not None:
+                segments[parent].children.append(segment)
+
+        return cls(actor.name, actor.id, list(attributes), segments[0], tim)
 
 
 class ItemModel(Model):
@@ -530,10 +731,9 @@ class ItemModel(Model):
 
     MAX_SEGMENTS = 19
 
-    def __init__(self, name: str, vertices: list[tuple[int, int, int]],
-                 uvs: list[tuple[int, int]], triangles: list[tuple[Vertex, Vertex, Vertex]],
-                 quads: list[tuple[Vertex, Vertex, Vertex, Vertex]], texture: Tim, use_transparency: bool = False):
-        super().__init__(vertices, uvs, triangles, quads, texture, use_transparency)
+    def __init__(self, name: str, attributes: list[tuple[int, int, int, int, int]],
+                 segments: list[Segment], texture: Tim, use_transparency: bool = False):
+        super().__init__(attributes, segments, texture, use_transparency)
         self.name = name
 
     @property
@@ -544,7 +744,7 @@ class ItemModel(Model):
     def sniff(cls, f: BinaryIO) -> Self | None:
         try:
             model = cls.read(f, strict_mode=True)
-            if len(model.vertices) > 0:
+            if len(model.attributes) > 0:
                 return model
             return None
         except Exception:
@@ -555,13 +755,11 @@ class ItemModel(Model):
              **kwargs) -> ItemModel:
         tim = cls._read_tim(f)
 
-        vertices = {}
-        uvs = {}
-        triangles = []
-        quads = []
+        attributes = {}
+        segments = []
         for _ in range(cls.MAX_SEGMENTS):
             try:
-                cls._read_segment(f, vertices, uvs, triangles, quads)
+                segments.append(cls._read_segment(f, attributes))
             except ValueError:
                 # MODEL.CDB 92 and 93 fail to load with this enabled, but it's appropriate for sniffing
                 if strict_mode:
@@ -569,7 +767,7 @@ class ItemModel(Model):
                 break
             except struct.error:
                 break
-        return cls(name, list(vertices), list(uvs), triangles, quads, tim, use_transparency)
+        return cls(name, list(attributes), segments, tim, use_transparency)
 
 
 def export(model_path: str, target_path: str, actor_id: int | None):

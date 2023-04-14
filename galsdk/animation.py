@@ -64,7 +64,7 @@ class AnimationDb(Archive[bytes]):
         header = data[:directory[1]]
         animations = []
         for i in range(0, directory_len, 2):
-            size = directory[0]
+            size = directory[i]
             offset = directory[i + 1]
             if size == 0 and offset == 0:
                 animations.append(b'')
