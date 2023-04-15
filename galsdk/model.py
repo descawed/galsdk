@@ -4,7 +4,7 @@ import functools
 import io
 import struct
 from abc import abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, IntEnum, auto
 from pathlib import Path
 from typing import Any, BinaryIO, Iterable, Self
@@ -52,14 +52,16 @@ class Gltf(IntEnum):
     ELEMENT_ARRAY_BUFFER = 34963
 
 
-@dataclass
 class Segment:
-    clut_index: int
-    triangles: list[tuple[int, int, int]]
-    quads: list[tuple[int, int, int, int]]
-    offset: tuple[int, int, int] = (0, 0, 0)
-    total_offset: tuple[int, int, int] = (0, 0, 0)
-    children: list[Segment] = field(default_factory=lambda: [])
+    def __init__(self, clut_index: int, triangles: list[tuple[int, int, int]],
+                 quads: list[tuple[int, int, int, int]], offset: tuple[int, int, int] = (0, 0, 0),
+                 total_offset: tuple[int, int, int] = None, children: list[Segment] = None):
+        self.clut_index = clut_index
+        self.triangles = triangles
+        self.quads = quads
+        self.offset = offset
+        self.total_offset = total_offset or offset
+        self.children = children or []
 
     def __len__(self) -> int:
         return 1 + sum(len(child) for child in self.children)
@@ -86,136 +88,70 @@ class Segment:
             new_tris.extend(child_tris)
         return new_tris
 
+    def add_offset(self, offset: tuple[int, int, int]):
+        self.total_offset = (self.total_offset[0] + offset[0], self.total_offset[1] + offset[1],
+                             self.total_offset[2] + offset[2])
+        for child in self.children:
+            child.add_offset(offset)
+
+    def add_child(self, child: Segment) -> Segment:
+        self.children.append(child)
+        child.add_offset(self.total_offset)
+        return child
+
 
 @dataclass
 class Actor:
     name: str
     id: int
-    skeleton: dict[int, list[int]]
     model_index: int = None
 
 
-RION = Actor('Rion', 0, {
-    0: 0,  # waist
-    1: [0, 1],  # torso
-    2: [0, 1, 2],  # head/hair
-    3: [0, 1, 3],  # right shoulder
-    4: [0, 1, 3, 4],  # right forearm
-    5: [0, 1, 6],  # left shoulder
-    6: [0, 1, 6, 7],  # left forearm
-    7: [0, 9],  # right thigh
-    8: [0, 9, 10],  # right shin
-    9: [0, 9, 10, 11],  # right foot
-    10: [0, 12],  # left thigh
-    11: [0, 12, 13],  # left shin
-    12: [0, 12, 13, 14],  # left foot
-    13: [0, 1, 3, 4, 5],  # right hand
-    # 14:
-    # Rion (0), Cain (6), Crovic (7), hotel girl (23), hotel terrorist (26), face/head = [0, 1, 2]
-    # Joule (8), hotel knock guy (22), hotel front desk guy (24), upper torso = [0, 1]
-    # Rabbit (19), hotel gun guy (25), knife/bottle = [0, 1, 3, 4, 5]
-    # everyone else, skirt = 0
-    14: [0, 1, 2],
-    # 15:
-    # Rion (0), Beeject = [0, 1, 3, 4, 5]
-    # Crovic (7), hotel knock guy (22/32), face = [0, 1, 2]
-    # robot Lem (9), right bicep = [0, 1, 3]
-    # Rion with phone (36), phone = not sure; doesn't seem to be rotated correctly. Beeject pos might be best
-    15: [0, 1, 3, 4, 5],
-    16: [0, 1, 6, 7, 8],  # left hand
-    # 17:
-    # Joule (8), robot Lem (9), head = [0, 1, 2]
-    # Crovic holding(?) sheet, sheet = [0, 1, 3, 4, 5] (this is a guess)
-    17: [0, 1, 3, 4, 5],
-    # 18:
-    # robot Lem (9), left bicep = [0, 1, 6]
-    18: [0, 1, 6],
-})
-LILIA = Actor('Lilia', 1, {
-    **RION.skeleton,
-    14: [0],
-})
-LEM = Actor('Lem', 2, LILIA.skeleton)
-BIRDMAN = Actor('Birdman', 3, LILIA.skeleton)
-RAINHEART = Actor('Rainheart', 4, LILIA.skeleton)
-RITA = Actor('Rita', 5, LILIA.skeleton)
-CAIN = Actor('Cain', 6, RION.skeleton)
-CROVIC = Actor('Crovic', 7, {
-    **RION.skeleton,
-    15: [0, 1, 2],
-})
-JOULE = Actor('Joule', 8, {
-    **RION.skeleton,
-    14: [0, 1],
-    15: [0, 1, 2],
-    17: [0, 1, 2],
-})
-LEM_ROBOT = Actor('Robot Lem', 9, {
-    **LILIA.skeleton,
-    15: [0, 1, 3],
-    17: [0, 1, 2],
-})
-GUARD_HOSPITAL_SKINNY = Actor('Hospital Guard (skinny)', 10, LILIA.skeleton)
-GUARD_HOSPITAL_BURLY = Actor('Hospital Guard (burly)', 11, LILIA.skeleton)
-GUARD_HOSPITAL_GLASSES = Actor('Hospital Guard (sunglasses)', 12, LILIA.skeleton)
-GUARD_MECH_SUIT = Actor('Mech Suit Guard', 13, LILIA.skeleton)
-GUARD_HAZARD_SUIT = Actor('Hazard Suit Guard', 14, {
-    **RION.skeleton,
-    14: [0, 1, 3, 4, 5],
-    17: [0, 1, 6, 7, 8],
-})
-SNIPER = Actor('Sniper', 15, LILIA.skeleton)
-DOCTOR_BROWN_HAIR = Actor('Doctor (brown hair)', 16, LILIA.skeleton)
-DOCTOR_BLONDE = Actor('Doctor (blonde)', 17, LILIA.skeleton)
-DOCTOR_BALD = Actor('Doctor (bald)', 18, LILIA.skeleton)
-RABBIT_KNIFE = Actor('Rabbit (knife)', 19, {
-    **RION.skeleton,
-    14: [0, 1, 3, 4, 5],
-})
-RABBIT_TRENCH_COAT = Actor('Rabbit (trench coat)', 20, LILIA.skeleton)
-ARABESQUE_BIPED = Actor('Arabesque (biped)', 21, LILIA.skeleton)
-HOTEL_KNOCK_GUY = Actor('Hotel knock guy', 22, {
-    **RION.skeleton,
-    14: [0, 1],
-    15: [0, 1, 2],
-    17: [0, 1, 2],
-})
-DANCER = Actor('Dancer', 23, RION.skeleton)
-HOTEL_RECEPTIONIST = Actor('Hotel Receptionist', 24, JOULE.skeleton)
-HOTEL_GUN_GUY = Actor('Hotel gun guy', 25, {
-    **RION.skeleton,
-    14: [0, 1, 3, 4, 5]
-})
-TERRORIST = Actor('Terrorist', 26, {
-    **RION.skeleton,
-    15: [0, 1, 2],
-})
-PRIEST = Actor('Priest', 27, TERRORIST.skeleton)
-RAINHEART_HAT = Actor('Rainheart (bellhop hat)', 28, RION.skeleton)
-MECH_SUIT_ALT = Actor('Mech Suit (unused?)', 29, LILIA.skeleton)
-RABBIT_UNARMED = Actor('Rabbit (unarmed)', 30, LILIA.skeleton)
-ARABESQUE_QUADRUPED = Actor('Arabesque (quadruped)', 31, LILIA.skeleton)
-HOTEL_KNOCK_GUY_2 = Actor('Hotel knock guy 2', 32, HOTEL_KNOCK_GUY.skeleton)
-RAINHEART_SUMMON_ACTOR = Actor('Rainheart summon', 33, LILIA.skeleton)
-CROVIC_ALT = Actor('Crovic (holding something)', 34, CROVIC.skeleton)
-DOROTHY_EYE = Actor("Dorothy's eye", 35, {
-    0: 0,  # eye
-    1: [0, 1],  # tail segments
-    2: [0, 1, 2],
-    3: [0, 1, 2, 3],
-    4: [0, 1, 2, 3, 4],
-    5: [0, 1, 2, 3, 4, 5],
-    6: [0, 1, 2, 3, 4, 5, 6],
-})
-RION_PHONE = Actor('Rion (with phone)', 36, RION.skeleton)
-RION_ALT_1 = Actor('Rion (alternate #1)', 37, RION.skeleton)
-RION_ALT_2 = Actor('Rion (alternate #2)', 38, RION.skeleton)
+RION = Actor('Rion', 0)
+LILIA = Actor('Lilia', 1)
+LEM = Actor('Lem', 2)
+BIRDMAN = Actor('Birdman', 3)
+RAINHEART = Actor('Rainheart', 4)
+RITA = Actor('Rita', 5)
+CAIN = Actor('Cain', 6)
+CROVIC = Actor('Crovic', 7)
+JOULE = Actor('Joule', 8)
+LEM_ROBOT = Actor('Robot Lem', 9)
+GUARD_HOSPITAL_SKINNY = Actor('Hospital Guard (skinny)', 10)
+GUARD_HOSPITAL_BURLY = Actor('Hospital Guard (burly)', 11)
+GUARD_HOSPITAL_GLASSES = Actor('Hospital Guard (sunglasses)', 12)
+GUARD_MECH_SUIT = Actor('Mech Suit Guard', 13)
+GUARD_HAZARD_SUIT = Actor('Hazard Suit Guard', 14)
+SNIPER = Actor('Sniper', 15)
+DOCTOR_BROWN_HAIR = Actor('Doctor (brown hair)', 16)
+DOCTOR_BLONDE = Actor('Doctor (blonde)', 17)
+DOCTOR_BALD = Actor('Doctor (bald)', 18)
+RABBIT_KNIFE = Actor('Rabbit (knife)', 19)
+RABBIT_TRENCH_COAT = Actor('Rabbit (trench coat)', 20)
+ARABESQUE_BIPED = Actor('Arabesque (biped)', 21)
+HOTEL_KNOCK_GUY = Actor('Hotel knock guy', 22)
+DANCER = Actor('Dancer', 23)
+HOTEL_RECEPTIONIST = Actor('Hotel Receptionist', 24)
+HOTEL_GUN_GUY = Actor('Hotel gun guy', 25)
+TERRORIST = Actor('Terrorist', 26)
+PRIEST = Actor('Priest', 27)
+RAINHEART_HAT = Actor('Rainheart (bellhop hat)', 28)
+MECH_SUIT_ALT = Actor('Mech Suit (unused?)', 29)
+RABBIT_UNARMED = Actor('Rabbit (unarmed)', 30)
+ARABESQUE_QUADRUPED = Actor('Arabesque (quadruped)', 31)
+HOTEL_KNOCK_GUY_2 = Actor('Hotel knock guy 2', 32)
+RAINHEART_SUMMON_ACTOR = Actor('Rainheart summon', 33)
+CROVIC_ALT = Actor('Crovic (holding something)', 34)
+DOROTHY_EYE = Actor("Dorothy's eye", 35)
+RION_PHONE = Actor('Rion (with phone)', 36)
+RION_ALT_1 = Actor('Rion (alternate #1)', 37)
+RION_ALT_2 = Actor('Rion (alternate #2)', 38)
 
-UNKNOWN_UNUSED = Actor('Unknown (unused)', 39, RION.skeleton, 20)
-DOCTOR_UNUSED_1 = Actor('Doctor (unused #1)', 40, RION.skeleton, 38)
-DOCTOR_UNUSED_2 = Actor('Doctor (unused #2)', 41, RION.skeleton, 40)
-DOCTOR_UNUSED_3 = Actor('Doctor (unused #3)', 42, RION.skeleton, 42)
-RION_UNUSED = Actor('Rion (unused)', 43, RION.skeleton, 77)
+UNKNOWN_UNUSED = Actor('Unknown (unused)', 39, 20)
+DOCTOR_UNUSED_1 = Actor('Doctor (unused #1)', 40, 38)
+DOCTOR_UNUSED_2 = Actor('Doctor (unused #2)', 41, 40)
+DOCTOR_UNUSED_3 = Actor('Doctor (unused #3)', 42, 42)
+RION_UNUSED = Actor('Rion (unused)', 43, 77)
 
 ACTORS = [
     RION, LILIA, LEM, BIRDMAN, RAINHEART, RITA, CAIN, CROVIC, JOULE, LEM_ROBOT, GUARD_HOSPITAL_SKINNY,
@@ -641,8 +577,7 @@ illum 0
 
     @classmethod
     def _read_segment(cls, f: BinaryIO, attributes: dict[tuple[int, int, int, int, int], int],
-                      offset: tuple[int, int, int] = (0, 0, 0),
-                      total_offset: tuple[int, int, int] = (0, 0, 0)) -> Segment:
+                      offset: tuple[int, int, int] = (0, 0, 0)) -> Segment:
         clut_index = int.from_bytes(f.read(2), 'little')
         tri_attrs = []
         quad_attrs = []
@@ -665,13 +600,14 @@ illum 0
             for i in range(0, len(quad_attrs), 4)
         ]
 
-        return Segment(clut_index, triangles, quads, offset, total_offset)
+        return Segment(clut_index, triangles, quads, offset)
 
 
 class ActorModel(Model):
     """A 3D model of an actor (character)"""
 
     NUM_SEGMENTS = 19
+    SEGMENT_ORDER = [0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 5, 15, 16, 8, 17, 18]
 
     def __init__(self, name: str, actor_id: int, attributes: list[tuple[int, int, int, int, int]],
                  root: Segment, texture: Tim):
@@ -691,37 +627,66 @@ class ActorModel(Model):
 
         # a list of the x/y/z positions of each segment relative to its parent
         # the size of this list is not a multiple of 3, so the last number goes unused, and it also isn't long enough
-        # to have entries for every segment, so the last 4 segments can't be the parent of another segment
+        # to have entries for every segment, so the last 4 segments can't have their own translation
         offsets = struct.unpack('<46h', f.read(0x5c))
         tim = cls._read_tim(f)
 
         attributes = {}
-        segments = []
-        parents = []
-        for i in range(cls.NUM_SEGMENTS):
-            parent = None
-            match actor.skeleton.get(i):
-                case [*indexes]:
-                    parent = indexes[-2]
-                    total_offset = offset = (0, 0, 0)
-                    for index in indexes:
-                        offset = (offsets[index * 3], offsets[index * 3 + 1], offsets[index * 3 + 2])
-                        total_offset = (
-                            total_offset[0] + offset[0],
-                            total_offset[1] + offset[1],
-                            total_offset[2] + offset[2],
-                        )
-                case None:
-                    # debug code to shift any unknown parts off to the side where we can get a better look at them
-                    total_offset = offset = (i * 0x80, -0x40 if (i & 1) == 1 else 0x40, 0)
-                case index:
-                    total_offset = offset = (offsets[index * 3], offsets[index * 3 + 1], offsets[index * 3 + 2])
-            segments.append(cls._read_segment(f, attributes, offset, total_offset))
-            parents.append(parent)
+        segments: list[Segment | None] = [None] * cls.NUM_SEGMENTS
+        for i in cls.SEGMENT_ORDER:
+            try:
+                offset = (offsets[i * 3], offsets[i * 3 + 1], offsets[i * 3 + 2])
+            except IndexError:
+                offset = (0, 0, 0)
+            segments[i] = cls._read_segment(f, attributes, offset)
 
-        for parent, segment in zip(parents, segments, strict=True):
-            if parent is not None:
-                segments[parent].children.append(segment)
+        # this is the exact game logic
+        root = segments[0]
+        if actor.id in [LILIA.id, LEM.id]:
+            root = root.add_child(segments[15])
+        next_seg = root.add_child(segments[1])
+        if actor.id == DOROTHY_EYE.id:
+            next_seg.add_child(segments[2]).add_child(segments[3]).add_child(segments[4]).add_child(segments[5])\
+                .add_child(segments[6])
+        else:
+            if actor.id in [HOTEL_KNOCK_GUY.id, HOTEL_RECEPTIONIST.id, LEM_ROBOT.id, JOULE.id]:
+                next_seg = next_seg.add_child(segments[15])
+            root2 = next_seg
+            next_seg = next_seg.add_child(segments[2])
+            if actor.id in [TERRORIST.id, PRIEST.id, CROVIC.id, CROVIC_ALT.id]:
+                next_seg.add_child(segments[15]).add_child(segments[16])
+            elif actor.id in [HOTEL_KNOCK_GUY.id, HOTEL_RECEPTIONIST.id, JOULE.id]:
+                next_seg.add_child(segments[16]).add_child(segments[17])
+            elif actor.id in [RION.id, RION_ALT_2.id, RION_PHONE.id, DANCER.id, CAIN.id, RION_ALT_1.id,
+                              RAINHEART_HAT.id]:
+                next_seg.add_child(segments[15])
+            elif actor.id != LEM_ROBOT.id:
+                next_seg.add_child(segments[17])
+
+            next_seg = root2.add_child(segments[3])
+            if actor.id == LEM_ROBOT.id:
+                next_seg = next_seg.add_child(segments[16])
+            next_seg = next_seg.add_child(segments[4]).add_child(segments[5])
+            if actor.id in [RABBIT_KNIFE.id, HOTEL_GUN_GUY.id, GUARD_HAZARD_SUIT.id]:
+                next_seg.add_child(segments[15])
+            elif actor.id == CROVIC_ALT.id:
+                next_seg.add_child(segments[17])
+            elif actor.id in [RION.id, RION_PHONE.id]:
+                next_seg.add_child(segments[16])
+
+            next_seg = root2.add_child(segments[6])
+            if actor.id == HOTEL_GUN_GUY.id:
+                next_seg = next_seg.add_child(segments[18])
+            next_seg = next_seg.add_child(segments[7]).add_child(segments[8])
+            if actor.id == GUARD_HAZARD_SUIT.id:
+                next_seg.add_child(segments[16]).add_child(segments[17])
+            elif actor.id == LEM.id:
+                next_seg.add_child(segments[16])
+            elif actor.id == RION_ALT_2.id:
+                next_seg.add_child(segments[16])
+
+            root.add_child(segments[9]).add_child(segments[10]).add_child(segments[11])
+            root.add_child(segments[12]).add_child(segments[13]).add_child(segments[14])
 
         return cls(actor.name, actor.id, list(attributes), segments[0], tim)
 
