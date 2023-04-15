@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import io
+import json
 import struct
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -262,12 +263,13 @@ class Model(FileFormat):
 
     @classmethod
     def _gltf_add_segment(cls, gltf: dict[str, Any], root_node: dict[str, str | list[int]],
-                          buffer: bytearray, segment: Segment):
-        buf_offset = len(buffer)
+                          buffer: bytearray, segment: Segment, view_start: int = 0):
+        byte_offset = len(buffer)
         index_count = 0
         max_index = 0
         for tri in segment.all_triangles:
-            buffer += struct.pack('<3H', tri[0], tri[1], tri[2])
+            # glTF uses counter-clockwise winding order
+            buffer += struct.pack('<3H', tri[0], tri[2], tri[1])
             new_max = max(tri)
             if new_max > max_index:
                 max_index = new_max
@@ -283,7 +285,7 @@ class Model(FileFormat):
         index_accessor = len(gltf['accessors'])
         gltf['accessors'].append({
             'bufferView': 1,
-            'byteOffset': buf_offset,
+            'byteOffset': byte_offset - view_start,
             'componentType': Gltf.UNSIGNED_SHORT,
             'count': index_count,
             'type': 'SCALAR',
@@ -304,7 +306,7 @@ class Model(FileFormat):
         })
 
         for child in segment.children:
-            cls._gltf_add_segment(gltf, node, buffer, child)
+            cls._gltf_add_segment(gltf, node, buffer, child, view_start)
 
     def as_gltf(self) -> tuple[dict[str, Any], bytes, Image.Image]:
         stride = VERT_SIZE + UV_SIZE
@@ -333,7 +335,7 @@ class Model(FileFormat):
                 min_z = z
 
             u = vert[3] / TEXTURE_WIDTH
-            v = (tex_height - vert[4]) / tex_height
+            v = vert[4] / tex_height
             struct.pack_into('<5f', buffer, buf_len, x, y, z, u, v)
             buf_len += stride
 
@@ -417,7 +419,7 @@ class Model(FileFormat):
                 },
                 {
                     'name': 'texcoords',
-                    'bufferView': 2,
+                    'bufferView': 0,
                     'byteOffset': VERT_SIZE,
                     'componentType': Gltf.FLOAT,
                     'count': num_attrs,
@@ -429,8 +431,9 @@ class Model(FileFormat):
         }
 
         root_node = gltf['nodes'][0]
+        view_start = len(buffer)
         for root_segment in self.root_segments:
-            self._gltf_add_segment(gltf, root_node, buffer, root_segment)
+            self._gltf_add_segment(gltf, root_node, buffer, root_segment, view_start)
 
         final_buf = bytes(buffer)
         final_len = len(final_buf)
@@ -519,6 +522,17 @@ illum 0
                 node_path = NodePath(node)
                 node_path.setTexture(texture)
                 node_path.writeBamFile(util.panda_path(new_path))
+            case 'gltf':
+                new_path = path.with_suffix('.gltf')
+                texture_path = path.with_suffix('.png')
+                bin_path = path.with_suffix('.bin')
+                gltf, buffer, texture = self.as_gltf()
+                gltf['images'][0]['uri'] = texture_path.name
+                gltf['buffers'][0]['uri'] = bin_path.name
+                with new_path.open('w') as f:
+                    json.dump(gltf, f, indent=4)
+                texture.save(texture_path)
+                bin_path.write_bytes(buffer)
             case 'tim':
                 new_path = path.with_suffix('.tim')
                 with new_path.open('wb') as f:
