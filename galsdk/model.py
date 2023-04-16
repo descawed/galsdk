@@ -277,12 +277,16 @@ class Model(FileFormat):
         byte_offset = len(buffer)
         index_count = 0
         max_index = 0
+        min_index = None
         for tri in segment.all_triangles:
             # glTF uses counter-clockwise winding order
             buffer += struct.pack('<3H', tri[0], tri[2], tri[1])
             new_max = max(tri)
             if new_max > max_index:
                 max_index = new_max
+            new_min = min(tri)
+            if min_index is None or new_min < min_index:
+                min_index = new_min
             index_count += 3
         node_index = len(gltf['nodes'])
         root_node['children'].append(node_index)
@@ -302,7 +306,7 @@ class Model(FileFormat):
             'count': index_count,
             'type': 'SCALAR',
             'max': [max_index],
-            'min': [0],
+            'min': [min_index or 0],
         })
         gltf['meshes'].append({
             'primitives': [
@@ -326,28 +330,31 @@ class Model(FileFormat):
         buffer = bytearray(num_attrs * stride)
         buf_len = 0
         tex_height = self.texture_height
-        max_x = min_x = max_y = min_y = max_z = min_z = 0.
+        inf = float('inf')
+        minf = float('-inf')
+        max_x = max_y = max_z = max_u = max_v = minf
+        min_x = min_y = min_z = min_u = min_v = inf
         for vert in self.attributes:
             x = vert[0] / Dimension.SCALE_FACTOR
-            if x > max_x:
-                max_x = x
-            elif x < min_x:
-                min_x = x
+            min_x = min(x, min_x)
+            max_x = max(x, max_x)
 
             y = vert[1] / Dimension.SCALE_FACTOR
-            if y > max_y:
-                max_y = y
-            elif y < min_y:
-                min_y = y
+            min_y = min(y, min_y)
+            max_y = max(y, max_y)
 
             z = vert[2] / Dimension.SCALE_FACTOR
-            if z > max_z:
-                max_z = z
-            elif z < min_z:
-                min_z = z
+            min_z = min(z, min_z)
+            max_z = max(z, max_z)
 
             u = vert[3] / TEXTURE_WIDTH
+            min_u = min(u, min_u)
+            max_u = max(u, max_u)
+
             v = vert[4] / tex_height
+            min_v = min(v, min_v)
+            max_v = max(v, max_v)
+
             struct.pack_into('<5f', buffer, buf_len, x, y, z, u, v)
             buf_len += stride
 
@@ -439,8 +446,8 @@ class Model(FileFormat):
                     'componentType': Gltf.FLOAT,
                     'count': num_attrs,
                     'type': 'VEC2',
-                    'min': [0., 0.],
-                    'max': [1., 1.],
+                    'min': [min_u, min_v],
+                    'max': [max_u, max_v],
                 },
             ],
         }
