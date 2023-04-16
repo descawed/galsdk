@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import io
 import json
+import math
 import struct
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVert
 from PIL import Image
 
 from galsdk import util
+from galsdk.animation import AnimationDb
 from galsdk.coords import Dimension, Point
 from galsdk.format import FileFormat
 from psx.tim import BitsPerPixel, Tim, Transparency
@@ -54,9 +56,10 @@ class Gltf(IntEnum):
 
 
 class Segment:
-    def __init__(self, clut_index: int, triangles: list[tuple[int, int, int]],
+    def __init__(self, index: int, clut_index: int, triangles: list[tuple[int, int, int]],
                  quads: list[tuple[int, int, int, int]], offset: tuple[int, int, int] = (0, 0, 0),
                  total_offset: tuple[int, int, int] = None, children: list[Segment] = None):
+        self.index = index
         self.clut_index = clut_index
         self.triangles = triangles
         self.quads = quads
@@ -174,12 +177,19 @@ UV_SIZE = 2 * 4
 class Model(FileFormat):
     """A 3D model of a game object"""
 
+    FRAME_TIME = 1/30
+
     def __init__(self, attributes: list[tuple[int, int, int, int, int]], root_segments: list[Segment],
-                 texture: Tim, use_transparency: bool = False):
+                 all_segments: list[Segment], texture: Tim, use_transparency: bool = False):
         self.attributes = attributes
         self.root_segments = root_segments
+        self.all_segments = all_segments
         self.texture = texture
         self.use_transparency = use_transparency
+        self.animations = None
+
+    def set_animations(self, animations: AnimationDb):
+        self.animations = animations
 
     @property
     @abstractmethod
@@ -263,7 +273,7 @@ class Model(FileFormat):
 
     @classmethod
     def _gltf_add_segment(cls, gltf: dict[str, Any], root_node: dict[str, str | list[int]],
-                          buffer: bytearray, segment: Segment, view_start: int = 0):
+                          buffer: bytearray, segment: Segment, node_map: dict[int, int], view_start: int = 0):
         byte_offset = len(buffer)
         index_count = 0
         max_index = 0
@@ -274,7 +284,9 @@ class Model(FileFormat):
             if new_max > max_index:
                 max_index = new_max
             index_count += 3
-        root_node['children'].append(len(gltf['nodes']))
+        node_index = len(gltf['nodes'])
+        root_node['children'].append(node_index)
+        node_map[segment.index] = node_index
         node = {
             'mesh': len(gltf['meshes']),
             'children': [],
@@ -306,7 +318,7 @@ class Model(FileFormat):
         })
 
         for child in segment.children:
-            cls._gltf_add_segment(gltf, node, buffer, child, view_start)
+            cls._gltf_add_segment(gltf, node, buffer, child, node_map, view_start)
 
     def as_gltf(self) -> tuple[dict[str, Any], bytes, Image.Image]:
         stride = VERT_SIZE + UV_SIZE
@@ -357,6 +369,7 @@ class Model(FileFormat):
                 },
             ],
             'meshes': [],
+            'animations': [],
             'images': [
                 {
                     'uri': 'texture.png',
@@ -393,6 +406,7 @@ class Model(FileFormat):
             ],
             'bufferViews': [
                 {
+                    'name': 'attributes',
                     'buffer': 0,
                     'byteOffset': 0,
                     'byteLength': buf_len,
@@ -400,6 +414,7 @@ class Model(FileFormat):
                     'target': Gltf.ARRAY_BUFFER,
                 },
                 {
+                    'name': 'indices',
                     'buffer': 0,
                     'byteOffset': buf_len,
                     'byteLength': 0,
@@ -432,13 +447,196 @@ class Model(FileFormat):
 
         root_node = gltf['nodes'][0]
         view_start = len(buffer)
+        node_map = {}
         for root_segment in self.root_segments:
-            self._gltf_add_segment(gltf, root_node, buffer, root_segment, view_start)
+            self._gltf_add_segment(gltf, root_node, buffer, root_segment, node_map, view_start)
+
+        # accessor byte offsets must be a multiple of the data type size
+        if bytes_over := len(buffer) % 4:
+            buffer += b'\0' * (4 - bytes_over)
+        len_after_index = len(buffer)
+        gltf['bufferViews'][1]['byteLength'] = len_after_index - buf_len
+
+        if self.animations:
+            # animation samplers can't use buffer views with a byte stride, so we need each segment's rotations to
+            # go into their own section of the buffer
+            num_segs = 15
+            rot_bufs = [bytearray() for _ in range(num_segs)]
+
+            # generate timestamps
+            max_frames = max(len(animation.frames) for animation in self.animations if animation)
+            timestamps = [self.FRAME_TIME * i for i in range(max_frames)]
+            buffer += struct.pack(f'<{max_frames}f', *timestamps)
+            len_after_timestamps = len(buffer)
+            # buffer views for animation data do not have a target property
+            gltf['bufferViews'].extend([
+                {
+                    'name': 'timestamps',
+                    'buffer': 0,
+                    'byteOffset': len_after_index,
+                    'byteLength': len_after_timestamps - len_after_index,
+                },
+                {
+                    'name': 'translations',
+                    'buffer': 0,
+                    'byteOffset': len_after_timestamps,
+                    'byteLength': 0,
+                },
+            ])
+            prev_len = len_after_timestamps
+            first_rot_view = len(gltf['bufferViews'])
+            for i in range(len(rot_bufs)):
+                gltf['bufferViews'].append({
+                    'name': f'rotations_{i}',
+                    'buffer': 0,
+                    'byteOffset': 0,
+                    'byteLength': 0,
+                })
+
+            for i, animation in enumerate(self.animations):
+                if animation:
+                    start_len = len(buffer)
+                    rot_starts = [len(rot_buf) for rot_buf in rot_bufs]
+                    inf = float('inf')
+                    minf = float('-inf')
+                    trans_min_x = trans_min_y = trans_min_z = inf
+                    trans_max_x = trans_max_y = trans_max_z = minf
+                    rotation_extrema = [[[inf, inf, inf, inf], [minf, minf, minf, minf]] for _ in range(num_segs)]
+                    for j, frame in enumerate(animation.frames):
+                        x, y, z = (frame.translation[0] / Dimension.SCALE_FACTOR,
+                                   frame.translation[1] / Dimension.SCALE_FACTOR,
+                                   frame.translation[2] / Dimension.SCALE_FACTOR)
+                        trans_min_x = min(x, trans_min_x)
+                        trans_min_y = min(y, trans_min_y)
+                        trans_min_z = min(z, trans_min_z)
+                        trans_max_x = max(x, trans_max_x)
+                        trans_max_y = max(y, trans_max_y)
+                        trans_max_z = max(z, trans_max_z)
+                        buffer += struct.pack('<3f', x, y, z)
+                        for k, rotation in enumerate(frame.rotations[:num_segs]):
+                            x, y, z = (180 * rotation[0] / 4096,
+                                       180 * rotation[1] / 4096,
+                                       180 * rotation[2] / 4096)
+
+                            # special logic for lower body and shoulders
+                            # if j > 0 and k in [0, 3, 6]:
+                            #     last_rotation = animation.frames[j - 1].rotations[k]
+                            #     last_x, last_y, last_z = (360 * last_rotation[0] / 4096,
+                            #                               360 * last_rotation[1] / 4096,
+                            #                               360 * last_rotation[2] / 4096)
+                            #     x_diff, y_diff, z_diff = (x - last_x, y - last_y, z - last_z)
+
+                            # convert to quaternion
+                            half_yaw = math.radians(z) / 2
+                            half_pitch = math.radians(y) / 2
+                            half_roll = math.radians(x) / 2
+
+                            cr = math.cos(half_roll)
+                            sr = math.sin(half_roll)
+                            cp = math.cos(half_pitch)
+                            sp = math.sin(half_pitch)
+                            cy = math.cos(half_yaw)
+                            sy = math.sin(half_yaw)
+
+                            qw = cy * cp * cr + sy * sp * sr
+                            qz = cy * cp * sr - sy * sp * cr
+                            qy = cy * sp * cr + sy * cp * sr
+                            qx = sy * cp * cr - cy * sp * sr
+
+                            mins, maxes = rotation_extrema[k]
+                            mins[0] = min(qz, mins[0])
+                            mins[1] = min(qy, mins[1])
+                            mins[2] = min(qx, mins[2])
+                            mins[3] = min(qw, mins[3])
+                            maxes[0] = max(qz, maxes[0])
+                            maxes[1] = max(qy, maxes[1])
+                            maxes[2] = max(qx, maxes[2])
+                            maxes[3] = max(qw, maxes[3])
+                            rot_bufs[k] += struct.pack('<4f', qz, qy, qx, qw)
+
+                    num_frames = len(animation.frames)
+                    timestamp_accessor = len(gltf['accessors'])
+                    gltf['accessors'].append({
+                        'name': f'timestamps_{i}',
+                        'bufferView': 2,
+                        'byteOffset': 0,
+                        'componentType': Gltf.FLOAT,
+                        'count': num_frames,
+                        'type': 'SCALAR',
+                        'min': [0.],
+                        'max': [timestamps[num_frames - 1]],
+                    })
+                    translation_accessor = len(gltf['accessors'])
+                    gltf['accessors'].append({
+                        'name': f'translation_{i}',
+                        'bufferView': 3,
+                        'byteOffset': start_len - prev_len,
+                        'componentType': Gltf.FLOAT,
+                        'count': num_frames,
+                        'type': 'VEC3',
+                        'min': [trans_min_x, trans_min_y, trans_min_z],
+                        'max': [trans_max_x, trans_max_y, trans_max_z],
+                    })
+
+                    channels = [
+                        {
+                            'sampler': 0,
+                            'target': {
+                                'node': 0,
+                                'path': 'translation',
+                            },
+                        },
+                    ]
+                    samplers = [{'input': timestamp_accessor, 'output': translation_accessor}]
+                    for k in range(num_segs):
+                        rotation_accessor = len(gltf['accessors'])
+                        gltf['accessors'].append({
+                            'name': f'rotation_{i}_{k}',
+                            'bufferView': first_rot_view + k,
+                            'byteOffset': rot_starts[k],
+                            'componentType': Gltf.FLOAT,
+                            'count': num_frames,
+                            'type': 'VEC4',
+                            'min': rotation_extrema[k][0],
+                            'max': rotation_extrema[k][1],
+                        })
+
+                        sampler = len(samplers)
+                        samplers.append({'input': timestamp_accessor, 'output': rotation_accessor})
+                        channels.append({
+                            'sampler': sampler,
+                            'target': {
+                                'node': node_map[k],
+                                'path': 'rotation',
+                            },
+                        })
+
+                    gltf['animations'].append({
+                        'name': f'{i}',
+                        'channels': channels,
+                        'samplers': samplers,
+                    })
+
+            # append rotation buffers and update views
+            len_after_translations = len(buffer)
+            gltf['bufferViews'][3]['byteLength'] = len_after_translations - prev_len
+            prev_len = len_after_translations
+            for i, rot_buf in enumerate(rot_bufs):
+                index = first_rot_view + i
+                gltf['bufferViews'][index]['byteOffset'] = prev_len
+                gltf['bufferViews'][index]['byteLength'] = len(rot_buf)
+                buffer += rot_buf
+                prev_len = len(buffer)
 
         final_buf = bytes(buffer)
         final_len = len(final_buf)
         gltf['buffers'][0]['byteLength'] = final_len
-        gltf['bufferViews'][1]['byteLength'] = final_len - buf_len
+
+        # empty children arrays not allowed per spec
+        for node in gltf['nodes']:
+            if not node['children']:
+                del node['children']
+
         return gltf, final_buf, self.get_texture_image()
 
     def as_ply(self) -> str:
@@ -590,7 +788,7 @@ illum 0
         return tim
 
     @classmethod
-    def _read_segment(cls, f: BinaryIO, attributes: dict[tuple[int, int, int, int, int], int],
+    def _read_segment(cls, f: BinaryIO, index: int, attributes: dict[tuple[int, int, int, int, int], int],
                       offset: tuple[int, int, int] = (0, 0, 0)) -> Segment:
         clut_index = int.from_bytes(f.read(2), 'little')
         tri_attrs = []
@@ -614,7 +812,7 @@ illum 0
             for i in range(0, len(quad_attrs), 4)
         ]
 
-        return Segment(clut_index, triangles, quads, offset)
+        return Segment(index, clut_index, triangles, quads, offset)
 
 
 class ActorModel(Model):
@@ -624,8 +822,8 @@ class ActorModel(Model):
     SEGMENT_ORDER = [0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 5, 15, 16, 8, 17, 18]
 
     def __init__(self, name: str, actor_id: int, attributes: list[tuple[int, int, int, int, int]],
-                 root: Segment, texture: Tim):
-        super().__init__(attributes, [root], texture)
+                 root: Segment, all_segments: list[Segment], texture: Tim):
+        super().__init__(attributes, [root], all_segments, texture)
         self.name = name
         self.id = actor_id
 
@@ -652,7 +850,7 @@ class ActorModel(Model):
                 offset = (offsets[i * 3], offsets[i * 3 + 1], offsets[i * 3 + 2])
             except IndexError:
                 offset = (0, 0, 0)
-            segments[i] = cls._read_segment(f, attributes, offset)
+            segments[i] = cls._read_segment(f, i, attributes, offset)
 
         # this is the exact game logic
         root = segments[0]
@@ -702,7 +900,7 @@ class ActorModel(Model):
             root.add_child(segments[9]).add_child(segments[10]).add_child(segments[11])
             root.add_child(segments[12]).add_child(segments[13]).add_child(segments[14])
 
-        return cls(actor.name, actor.id, list(attributes), segments[0], tim)
+        return cls(actor.name, actor.id, list(attributes), segments[0], segments, tim)
 
 
 class ItemModel(Model):
@@ -712,7 +910,7 @@ class ItemModel(Model):
 
     def __init__(self, name: str, attributes: list[tuple[int, int, int, int, int]],
                  segments: list[Segment], texture: Tim, use_transparency: bool = False):
-        super().__init__(attributes, segments, texture, use_transparency)
+        super().__init__(attributes, segments, segments, texture, use_transparency)
         self.name = name
 
     @property
@@ -736,9 +934,9 @@ class ItemModel(Model):
 
         attributes = {}
         segments = []
-        for _ in range(cls.MAX_SEGMENTS):
+        for i in range(cls.MAX_SEGMENTS):
             try:
-                segments.append(cls._read_segment(f, attributes))
+                segments.append(cls._read_segment(f, i, attributes))
             except ValueError:
                 # MODEL.CDB 92 and 93 fail to load with this enabled, but it's appropriate for sniffing
                 if strict_mode:
@@ -749,7 +947,7 @@ class ItemModel(Model):
         return cls(name, list(attributes), segments, tim, use_transparency)
 
 
-def export(model_path: str, target_path: str, actor_id: int | None):
+def export(model_path: str, target_path: str, animation_path: str | None, actor_id: int | None):
     model_path = Path(model_path)
     target_path = Path(target_path)
     with model_path.open('rb') as f:
@@ -757,6 +955,10 @@ def export(model_path: str, target_path: str, actor_id: int | None):
             model = ItemModel.read(f)
         else:
             model = ActorModel.read(f, actor=ACTORS[actor_id])
+    if animation_path:
+        with open(animation_path, 'rb') as f:
+            db = AnimationDb.read(f)
+        model.set_animations(db)
     model.export(target_path, target_path.suffix)
 
 
@@ -766,10 +968,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Export Galerians 3D models and textures')
     parser.add_argument('-a', '--actor', type=int, help='The given model file is an actor model. The argument should '
                         'be the ID of the actor the model belongs to.')
+    parser.add_argument('-m', '--animation', help='Path to an animation database to include in the export. Ignored '
+                        'when exporting to ply or obj.')
     parser.add_argument('model', help='The model file to be exported')
     parser.add_argument('target', help='The path to export the model to. The format will be detected from the file '
-                        'extension. Supported extensions are ply, obj, bam, and tim (in which case only the texture '
-                        'will be exported).')
+                        'extension. Supported extensions are ply, obj, gltf, bam, and tim (in which case only the '
+                        'texture will be exported).')
 
     args = parser.parse_args()
-    export(args.model, args.target, args.actor)
+    export(args.model, args.target, args.animation, args.actor)

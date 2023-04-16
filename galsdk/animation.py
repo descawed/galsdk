@@ -1,16 +1,130 @@
+from __future__ import annotations
+
 import struct
+from dataclasses import dataclass
+from enum import IntFlag
+from io import BytesIO
 from pathlib import Path
-from typing import BinaryIO, Iterable, Self
+from typing import BinaryIO, Iterable, Self, Sequence
 
 from galsdk import util
-from galsdk.format import Archive
+from galsdk.format import Archive, FileFormat
 
 
-class AnimationDb(Archive[bytes]):
+class AnimationFlag(IntFlag):
+    UNKNOWN_0 = 1
+    UNKNOWN_1 = 2
+    UNKNOWN_2 = 4
+    UNKNOWN_3 = 8
+    UNKNOWN_4 = 0x10
+    UNKNOWN_5 = 0x20
+    UNKNOWN_6 = 0x40
+    UNKNOWN_7 = 0x80
+    UNKNOWN_8 = 0x100
+    UNKNOWN_9 = 0x200
+    UNKNOWN_10 = 0x400
+    UNKNOWN_11 = 0x800
+    UNKNOWN_12 = 0x1000
+    UNKNOWN_13 = 0x2000
+    UNKNOWN_14 = 0x4000
+    UNKNOWN_15 = 0x8000
+    UNKNOWN_16 = 0x10000
+    UNKNOWN_17 = 0x20000
+    UNKNOWN_18 = 0x40000
+    UNKNOWN_19 = 0x80000
+    UNKNOWN_20 = 0x100000
+    UNKNOWN_21 = 0x200000
+    UNKNOWN_22 = 0x400000
+    UNKNOWN_23 = 0x800000
+    UNKNOWN_24 = 0x1000000
+    UNKNOWN_25 = 0x2000000
+    UNKNOWN_26 = 0x4000000
+    UNKNOWN_27 = 0x8000000
+    UNKNOWN_28 = 0x10000000
+    FORWARD = 0x20000000
+    TOGGLE_DIRECTION = 0x40000000
+    END = 0x80000000
+
+
+@dataclass
+class Frame:
+    translation: tuple[int, int, int]
+    rotations: list[tuple[int, int, int]]
+    flags: AnimationFlag
+    
+    @classmethod
+    def from_raw(cls, values: Sequence[int]) -> Frame:
+        translation = (values[0], values[1], values[2])
+        rotations = []
+        for i in range(3, len(values) - 1, 3):
+            rotations.append((values[i], values[i + 1], values[i + 2]))
+        return cls(translation, rotations, AnimationFlag(values[-1]))
+
+    def to_raw(self) -> list[int]:
+        raw = [*self.translation]
+        for rotation in self.rotations:
+            raw.extend(rotation)
+        raw.append(self.flags)
+        return raw
+
+
+class Animation(FileFormat):
+    def __init__(self, frames: list[Frame]):
+        self.frames = frames
+
+    @property
+    def suggested_extension(self) -> str:
+        return '.ANI'
+
+    @classmethod
+    def read(cls, f: BinaryIO, **kwargs) -> Self:
+        prev_values = struct.unpack('<48hI', f.read(100))
+        frames = [Frame.from_raw(prev_values)]
+
+        # remaining frames are differential
+        while not frames[-1].flags & AnimationFlag.END:
+            values = []
+            for i in range(48):
+                byte = int.from_bytes(f.read(1), 'little', signed=True)
+                if byte & 1:
+                    second = f.read(1)[0]
+                    values.append(second | ((byte >> 1) << 8))
+                else:
+                    values.append(prev_values[i] - (byte >> 1))
+            values.append(int.from_bytes(f.read(4), 'little'))
+            frames.append(Frame.from_raw(values))
+            prev_values = values
+
+        return cls(frames)
+
+    def write(self, f: BinaryIO, **kwargs):
+        prev_values = self.frames[0].to_raw()
+        f.write(struct.pack('<48hI', prev_values))
+
+        for frame in self.frames[1:]:
+            values = frame.to_raw()
+            for i, value in enumerate(values[:-1]):
+                diff = prev_values[i] - value
+                if -64 <= diff <= 63:
+                    f.write((diff << 1).to_bytes(1, 'little', signed=True))
+                else:
+                    f.write(((value << 1) | 0x100).to_bytes(2, 'big', signed=True))
+            f.write(values[-1].to_bytes(4, 'little'))
+            prev_values = values
+
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
+        raise NotImplementedError
+
+    def export(self, path: Path, fmt: str = None) -> Path:
+        raise NotImplementedError
+
+
+class AnimationDb(Archive[Animation | None]):
     SECTOR_SIZE = 0x800
     DEFAULT_HEADER = b'\0' * 0x48
 
-    def __init__(self, animations: list[bytes] = None, header: bytes = DEFAULT_HEADER):
+    def __init__(self, animations: list[Animation | None] = None, header: bytes = DEFAULT_HEADER):
         self.header = header
         self.animations = animations or []
 
@@ -22,10 +136,10 @@ class AnimationDb(Archive[bytes]):
     def suggested_extension(self) -> str:
         return '.ADB'
 
-    def __getitem__(self, item: int) -> bytes:
+    def __getitem__(self, item: int) -> Animation | None:
         return self.animations[item]
 
-    def __setitem__(self, key: int, value: bytes):
+    def __setitem__(self, key: int, value: Animation | None):
         self.animations[key] = value
 
     def __delitem__(self, key: int):
@@ -34,25 +148,37 @@ class AnimationDb(Archive[bytes]):
     def __len__(self) -> int:
         return len(self.animations)
 
-    def __iter__(self) -> Iterable[bytes]:
+    def __iter__(self) -> Iterable[Animation | None]:
         yield from self.animations
 
-    def append(self, item: bytes):
+    def append(self, item: Animation | None):
         self.animations.append(item)
 
     def unpack_one(self, path: Path, index: int) -> Path:
-        path.write_bytes(self.animations[index])
+        if animation := self.animations[index]:
+            with path.open('wb') as f:
+                animation.write(f)
+        else:
+            path.write_bytes(b'')
         return path
 
     @classmethod
     def import_explicit(cls, paths: Iterable[Path], fmt: str = None) -> Self:
-        return cls([path.read_bytes() for path in paths])
+        animations = []
+        for path in paths:
+            with path.open('rb') as f:
+                animations.append(Animation.read(f))
+        return cls(animations)
 
     def export(self, path: Path, fmt: str = None) -> Path:
         path.mkdir(exist_ok=True)
         for i, animation in enumerate(self.animations):
-            if animation or fmt == 'all':
-                (path / f'{i:03}').write_bytes(animation)
+            sub_path = (path / f'{i:03}')
+            if animation:
+                with sub_path.open('wb') as f:
+                    animation.write(f)
+            elif fmt == 'all':
+                sub_path.write_bytes(b'')
         return path
 
     @classmethod
@@ -67,15 +193,17 @@ class AnimationDb(Archive[bytes]):
             size = directory[i]
             offset = directory[i + 1]
             if size == 0 and offset == 0:
-                animations.append(b'')
+                animations.append(None)
             else:
                 for j in range(i + 2, directory_len, 2):
                     next_offset = directory[j + 1]
                     if next_offset > 0:
-                        animations.append(data[offset:next_offset])
+                        with BytesIO(data[offset:next_offset]) as buf:
+                            animations.append(Animation.read(buf))
                         break
                 else:
-                    animations.append(data[offset:])
+                    with BytesIO(data[offset:]) as buf:
+                        animations.append(Animation.read(buf))
         # we read the whole first sector as the directory, but there aren't that many entries, so delete all the dummy
         # empty entries we added at the end
         while not animations[-1]:
@@ -102,7 +230,8 @@ class AnimationDb(Archive[bytes]):
         f.write(total_size.to_bytes(4, 'little'))
         f.write(self.header)
         for animation in self.animations:
-            f.write(animation)
+            if animation:
+                animation.write(f)
 
 
 def pack_db(db: AnimationDb, files: Iterable[Path]):
@@ -110,7 +239,8 @@ def pack_db(db: AnimationDb, files: Iterable[Path]):
         if path.is_dir():
             pack_db(db, path.iterdir())
         else:
-            db.append(path.read_bytes())
+            with path.open('rb') as f:
+                db.append(Animation.read(f))
 
 
 def unpack(db_path: Path, out_path: Path, unpack_all: bool):
