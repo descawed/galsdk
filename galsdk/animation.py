@@ -99,7 +99,7 @@ class Animation(FileFormat):
 
     def write(self, f: BinaryIO, **kwargs):
         prev_values = self.frames[0].to_raw()
-        f.write(struct.pack('<48hI', prev_values))
+        f.write(struct.pack('<48hI', *prev_values))
 
         for frame in self.frames[1:]:
             values = frame.to_raw()
