@@ -521,17 +521,22 @@ class Model(FileFormat):
                         trans_max_z = max(z, trans_max_z)
                         buffer += struct.pack('<3f', x, y, z)
                         for k, rotation in enumerate(frame.rotations[:num_segs]):
-                            x, y, z = (180 * rotation[0] / 4096,
-                                       180 * rotation[1] / 4096,
-                                       180 * rotation[2] / 4096)
+                            x, y, z = (360 * rotation[0] / 4096,
+                                       360 * rotation[1] / 4096,
+                                       360 * rotation[2] / 4096)
 
                             # special logic for lower body and shoulders
-                            # if j > 0 and k in [0, 3, 6]:
-                            #     last_rotation = animation.frames[j - 1].rotations[k]
-                            #     last_x, last_y, last_z = (360 * last_rotation[0] / 4096,
-                            #                               360 * last_rotation[1] / 4096,
-                            #                               360 * last_rotation[2] / 4096)
-                            #     x_diff, y_diff, z_diff = (x - last_x, y - last_y, z - last_z)
+                            # FIXME: in at least one case, the game applies this logic only for k == 0
+                            if j > 0 and k in [0, 3, 6]:
+                                last_rotation = animation.frames[j - 1].rotations[k]
+                                last_x, last_z = (360 * last_rotation[0] / 4096,
+                                                  360 * last_rotation[2] / 4096)
+                                x_diff, z_diff = (x - last_x, z - last_z)
+                                adj_x = x + 180
+                                adj_y = 180 - y
+                                adj_z = z + 180
+                                if abs(adj_x - last_x) + abs(adj_z - last_z) < abs(x_diff) + abs(z_diff):
+                                    x, y, z = adj_x, adj_y, adj_z
 
                             # convert to quaternion
                             half_yaw = math.radians(z) / 2
