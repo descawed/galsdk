@@ -11,6 +11,7 @@ from enum import Enum, IntEnum, auto
 from pathlib import Path
 from typing import Any, BinaryIO, Iterable, Self
 
+import numpy as np
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
     PNMImage, StringStream, Texture
 from PIL import Image
@@ -78,17 +79,45 @@ class Segment:
             yield q[3], q[2], q[0]
 
     def flatten(self, new_attributes: dict[tuple[int, int, int, int, int], int],
-                original_attributes: list[tuple[int, int, int, int, int]]) -> list[tuple[int, int, int]]:
+                original_attributes: list[tuple[int, int, int, int, int]],
+                rotations: list[np.ndarray] = None,
+                parent_transform: np.ndarray = None) -> list[tuple[int, int, int]]:
+        if rotations and self.index < len(rotations):
+            rotation = rotations[self.index]
+        else:
+            rotation = np.array([0, 0, 0])
+
+        if parent_transform is None:
+            parent_transform = np.identity(4)
+
+        sines = np.sin(rotation)
+        cosines = np.cos(rotation)
+        x_rot = np.array([[1., 0., 0.],
+                          [0., cosines[0], -sines[0]],
+                          [0., sines[0], cosines[0]]])
+        y_rot = np.array([[cosines[1], 0., sines[1]],
+                          [0., 1., 0.],
+                          [-sines[1], 0., cosines[1]]])
+        z_rot = np.array([[cosines[2], -sines[2], 0.],
+                          [sines[2], cosines[2], 0.],
+                          [0., 0., 1.]])
+        local_transform = np.identity(4)
+        local_transform[:3, :3] = x_rot @ y_rot @ z_rot
+        local_transform[:3, 3] = np.array(self.offset) / 4096
+        transform = parent_transform @ local_transform
         new_tris = []
         for tri in self.all_triangles:
             new_tri = []
             for index in tri:
                 x, y, z, u, v = original_attributes[index]
-                new_vert = (x + self.total_offset[0], y + self.total_offset[1], z + self.total_offset[2], u, v)
+                vert = np.array([x / 4096, y / 4096, z / 4096, 1.])
+                transformed = transform @ vert
+                cartesian = transformed[:3] / transformed[3]
+                new_vert = (int(cartesian[0] * 4096), int(cartesian[1] * 4096), int(cartesian[2] * 4096), u, v)
                 new_tri.append(new_attributes.setdefault(new_vert, len(new_attributes)))
             new_tris.append(tuple(new_tri))
         for child in self.children:
-            child_tris = child.flatten(new_attributes, original_attributes)
+            child_tris = child.flatten(new_attributes, original_attributes, rotations, transform)
             new_tris.extend(child_tris)
         return new_tris
 
@@ -265,10 +294,13 @@ class Model(FileFormat):
         return TEXTURE_HEIGHT * self.texture.num_palettes
 
     def _flatten(self) -> tuple[list[tuple[int, int, int]], list[tuple[int, int, int, int, int]]]:
+        # rotations = [np.deg2rad(360 * np.array(rotation) / 4096)
+        #              for rotation in self.animations[21].frames[70].rotations]
+        rotations = None
         new_tris = []
         new_attributes = {}
         for segment in self.root_segments:
-            new_tris.extend(segment.flatten(new_attributes, self.attributes))
+            new_tris.extend(segment.flatten(new_attributes, self.attributes, rotations))
         return new_tris, list(new_attributes)
 
     @classmethod
@@ -504,67 +536,74 @@ class Model(FileFormat):
                 if animation:
                     start_len = len(buffer)
                     rot_starts = [len(rot_buf) for rot_buf in rot_bufs]
-                    inf = float('inf')
-                    minf = float('-inf')
-                    trans_min_x = trans_min_y = trans_min_z = inf
-                    trans_max_x = trans_max_y = trans_max_z = minf
-                    rotation_extrema = [[[inf, inf, inf, inf], [minf, minf, minf, minf]] for _ in range(num_segs)]
+                    trans_min = np.array([inf, inf, inf], np.float32)
+                    trans_max = np.array([minf, minf, minf], np.float32)
+                    rotation_extrema = [(np.array([inf, inf, inf, inf], np.float32),
+                                         np.array([minf, minf, minf, minf], np.float32))
+                                        for _ in range(num_segs)]
                     for j, frame in enumerate(animation.frames):
-                        x, y, z = (frame.translation[0] / Dimension.SCALE_FACTOR,
-                                   frame.translation[1] / Dimension.SCALE_FACTOR,
-                                   frame.translation[2] / Dimension.SCALE_FACTOR)
-                        trans_min_x = min(x, trans_min_x)
-                        trans_min_y = min(y, trans_min_y)
-                        trans_min_z = min(z, trans_min_z)
-                        trans_max_x = max(x, trans_max_x)
-                        trans_max_y = max(y, trans_max_y)
-                        trans_max_z = max(z, trans_max_z)
-                        buffer += struct.pack('<3f', x, y, z)
-                        for k, rotation in enumerate(frame.rotations[:num_segs]):
-                            x, y, z = (360 * rotation[0] / 4096,
-                                       360 * rotation[1] / 4096,
-                                       360 * rotation[2] / 4096)
+                        translation = np.array(frame.translation, np.float32) / Dimension.SCALE_FACTOR
+                        trans_min = np.minimum(translation, trans_min)
+                        trans_max = np.maximum(translation, trans_max)
+                        buffer += translation.tobytes()
+                        for k, raw_rotation in enumerate(frame.rotations[:num_segs]):
+                            rotation = 360 * np.array(raw_rotation, np.float32) / 4096
 
                             # special logic for lower body and shoulders
                             # FIXME: in at least one case, the game applies this logic only for k == 0
                             if j > 0 and k in [0, 3, 6]:
-                                last_rotation = animation.frames[j - 1].rotations[k]
-                                last_x, last_z = (360 * last_rotation[0] / 4096,
-                                                  360 * last_rotation[2] / 4096)
-                                x_diff, z_diff = (x - last_x, z - last_z)
-                                adj_x = x + 180
-                                adj_y = 180 - y
-                                adj_z = z + 180
-                                if abs(adj_x - last_x) + abs(adj_z - last_z) < abs(x_diff) + abs(z_diff):
-                                    x, y, z = adj_x, adj_y, adj_z
+                                last_rot = 360 * np.array(animation.frames[j - 1].rotations[k], np.float32) / 4096
+                                diff = rotation - last_rot
+                                adj_x = rotation[0] + 180
+                                adj_y = 180 - rotation[1]
+                                adj_z = rotation[2] + 180
+                                if abs(adj_x - last_rot[0]) + abs(adj_z - last_rot[2]) < abs(diff[0]) + abs(diff[2]):
+                                    rotation = np.array([adj_x, adj_y, adj_z], np.float32)
 
                             # convert to quaternion
-                            half_yaw = math.radians(z) / 2
-                            half_pitch = math.radians(y) / 2
-                            half_roll = math.radians(x) / 2
-
-                            cr = math.cos(half_roll)
-                            sr = math.sin(half_roll)
-                            cp = math.cos(half_pitch)
-                            sp = math.sin(half_pitch)
-                            cy = math.cos(half_yaw)
-                            sy = math.sin(half_yaw)
-
-                            qw = cy * cp * cr + sy * sp * sr
-                            qz = cy * cp * sr - sy * sp * cr
-                            qy = cy * sp * cr + sy * cp * sr
-                            qx = sy * cp * cr - cy * sp * sr
-
+                            half_rads = np.deg2rad(rotation) / 2
+                            cosines = np.cos(half_rads)
+                            sines = np.sin(half_rads)
+                            quaternion = np.array([
+                                cosines[2] * cosines[1] * sines[0] - sines[2] * sines[1] * cosines[0],
+                                cosines[2] * sines[1] * cosines[0] + sines[2] * cosines[1] * sines[0],
+                                sines[2] * cosines[1] * cosines[0] - cosines[2] * sines[1] * sines[0],
+                                cosines[2] * cosines[1] * cosines[0] + sines[2] * sines[1] * sines[0],
+                            ], np.float32)
+                            norm = np.linalg.norm(quaternion)
+                            if norm != 0:
+                                quaternion /= norm
                             mins, maxes = rotation_extrema[k]
-                            mins[0] = min(qz, mins[0])
-                            mins[1] = min(qy, mins[1])
-                            mins[2] = min(qx, mins[2])
-                            mins[3] = min(qw, mins[3])
-                            maxes[0] = max(qz, maxes[0])
-                            maxes[1] = max(qy, maxes[1])
-                            maxes[2] = max(qx, maxes[2])
-                            maxes[3] = max(qw, maxes[3])
-                            rot_bufs[k] += struct.pack('<4f', qz, qy, qx, qw)
+                            mins = np.minimum(quaternion, mins)
+                            maxes = np.maximum(quaternion, maxes)
+                            rotation_extrema[k] = (mins, maxes)
+                            rot_bufs[k] += quaternion.tobytes()
+                            #half_yaw = math.radians(z) / 2
+                            #half_pitch = math.radians(y) / 2
+                            #half_roll = math.radians(x) / 2
+
+                            #cr = math.cos(half_roll)
+                            #sr = math.sin(half_roll)
+                            #cp = math.cos(half_pitch)
+                            #sp = math.sin(half_pitch)
+                            #cy = math.cos(half_yaw)
+                            #sy = math.sin(half_yaw)
+
+                            #qw = cy * cp * cr + sy * sp * sr
+                            #qz = cy * cp * sr - sy * sp * cr
+                            #qy = cy * sp * cr + sy * cp * sr
+                            #qx = sy * cp * cr - cy * sp * sr
+
+                            #mins, maxes = rotation_extrema[k]
+                            #mins[0] = min(qz, mins[0])
+                            #mins[1] = min(qy, mins[1])
+                            #mins[2] = min(qx, mins[2])
+                            #mins[3] = min(qw, mins[3])
+                            #maxes[0] = max(qz, maxes[0])
+                            #maxes[1] = max(qy, maxes[1])
+                            #maxes[2] = max(qx, maxes[2])
+                            #maxes[3] = max(qw, maxes[3])
+                            #rot_bufs[k] += struct.pack('<4f', qz, qy, qx, qw)
 
                     num_frames = len(animation.frames)
                     timestamp_accessor = len(gltf['accessors'])
@@ -586,8 +625,8 @@ class Model(FileFormat):
                         'componentType': Gltf.FLOAT,
                         'count': num_frames,
                         'type': 'VEC3',
-                        'min': [trans_min_x, trans_min_y, trans_min_z],
-                        'max': [trans_max_x, trans_max_y, trans_max_z],
+                        'min': trans_min.tolist(),
+                        'max': trans_max.tolist(),
                     })
 
                     channels = [
@@ -609,8 +648,8 @@ class Model(FileFormat):
                             'componentType': Gltf.FLOAT,
                             'count': num_frames,
                             'type': 'VEC4',
-                            'min': rotation_extrema[k][0],
-                            'max': rotation_extrema[k][1],
+                            'min': rotation_extrema[k][0].tolist(),
+                            'max': rotation_extrema[k][1].tolist(),
                         })
 
                         sampler = len(samplers)

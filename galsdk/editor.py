@@ -6,7 +6,7 @@ from tkinter import ttk
 from typing import Optional
 
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import getModelPath
+from panda3d.core import getModelPath, loadPrcFileData
 
 from galsdk.project import GameVersion, Project
 from galsdk.ui import ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab, StringTab,\
@@ -21,6 +21,11 @@ class Editor(ShowBase):
     def __init__(self):
         super().__init__(windowType='none')
         self.project = None
+
+        loadPrcFileData('', """
+        notify-level-glxdisplay spam
+        notify-level-x11display spam
+        """)
 
         getModelPath().appendDirectory(pathlib.Path.cwd() / 'models')
 

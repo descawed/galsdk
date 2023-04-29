@@ -34,7 +34,7 @@ class Viewport(ttk.Frame):
         self.max_zoom = self.DEFAULT_MAX_ZOOM
 
         props = WindowProperties()
-        props.setParentWindow(self.winfo_id())
+        props.setParentWindow(base.tkRoot.winfo_id())
         props.setOrigin(0, 0)
         props.setSize(width, height)
         self.window = self.base.open_window(props)
