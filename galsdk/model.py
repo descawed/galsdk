@@ -294,13 +294,10 @@ class Model(FileFormat):
         return TEXTURE_HEIGHT * self.texture.num_palettes
 
     def _flatten(self) -> tuple[list[tuple[int, int, int]], list[tuple[int, int, int, int, int]]]:
-        # rotations = [np.deg2rad(360 * np.array(rotation) / 4096)
-        #              for rotation in self.animations[21].frames[70].rotations]
-        rotations = None
         new_tris = []
         new_attributes = {}
         for segment in self.root_segments:
-            new_tris.extend(segment.flatten(new_attributes, self.attributes, rotations))
+            new_tris.extend(segment.flatten(new_attributes, self.attributes))
         return new_tris, list(new_attributes)
 
     @classmethod
@@ -355,6 +352,19 @@ class Model(FileFormat):
 
         for child in segment.children:
             cls._gltf_add_segment(gltf, node, buffer, child, node_map, view_start)
+
+    @staticmethod
+    def _quat_mul(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+        """Multiply two quaternions which are in XYZW order"""
+        x1, y1, z1, w1 = q1
+        x2, y2, z2, w2 = q2
+
+        return np.array([
+            w1*x2 + x1*w2 + y1*z2 - z1*y2,
+            w1*y2 - x1*z2 + y1*w2 + z1*x2,
+            w1*z2 + x1*y2 - y1*x2 + z1*w2,
+            w1*w2 - x1*x2 - y1*y2 - z1*z2,
+        ], np.float32)
 
     def as_gltf(self) -> tuple[dict[str, Any], bytes, Image.Image]:
         stride = VERT_SIZE + UV_SIZE
@@ -492,7 +502,7 @@ class Model(FileFormat):
 
         # accessor byte offsets must be a multiple of the data type size
         if bytes_over := len(buffer) % 4:
-            buffer += b'\0' * (4 - bytes_over)
+            buffer += bytes(4 - bytes_over)
         len_after_index = len(buffer)
         gltf['bufferViews'][1]['byteLength'] = len_after_index - buf_len
 
@@ -562,14 +572,12 @@ class Model(FileFormat):
 
                             # convert to quaternion
                             half_rads = np.deg2rad(rotation) / 2
-                            cosines = np.cos(half_rads)
-                            sines = np.sin(half_rads)
-                            quaternion = np.array([
-                                cosines[2] * cosines[1] * sines[0] - sines[2] * sines[1] * cosines[0],
-                                cosines[2] * sines[1] * cosines[0] + sines[2] * cosines[1] * sines[0],
-                                sines[2] * cosines[1] * cosines[0] - cosines[2] * sines[1] * sines[0],
-                                cosines[2] * cosines[1] * cosines[0] + sines[2] * sines[1] * sines[0],
-                            ], np.float32)
+                            cx, cy, cz = np.cos(half_rads)
+                            sx, sy, sz = np.sin(half_rads)
+                            qx = np.array([sx, 0., 0., cx], np.float32)
+                            qy = np.array([0., sy, 0., cy], np.float32)
+                            qz = np.array([0., 0., sz, cz], np.float32)
+                            quaternion = self._quat_mul(qx, self._quat_mul(qy, qz))
                             norm = np.linalg.norm(quaternion)
                             if norm != 0:
                                 quaternion /= norm
@@ -578,32 +586,6 @@ class Model(FileFormat):
                             maxes = np.maximum(quaternion, maxes)
                             rotation_extrema[k] = (mins, maxes)
                             rot_bufs[k] += quaternion.tobytes()
-                            #half_yaw = math.radians(z) / 2
-                            #half_pitch = math.radians(y) / 2
-                            #half_roll = math.radians(x) / 2
-
-                            #cr = math.cos(half_roll)
-                            #sr = math.sin(half_roll)
-                            #cp = math.cos(half_pitch)
-                            #sp = math.sin(half_pitch)
-                            #cy = math.cos(half_yaw)
-                            #sy = math.sin(half_yaw)
-
-                            #qw = cy * cp * cr + sy * sp * sr
-                            #qz = cy * cp * sr - sy * sp * cr
-                            #qy = cy * sp * cr + sy * cp * sr
-                            #qx = sy * cp * cr - cy * sp * sr
-
-                            #mins, maxes = rotation_extrema[k]
-                            #mins[0] = min(qz, mins[0])
-                            #mins[1] = min(qy, mins[1])
-                            #mins[2] = min(qx, mins[2])
-                            #mins[3] = min(qw, mins[3])
-                            #maxes[0] = max(qz, maxes[0])
-                            #maxes[1] = max(qy, maxes[1])
-                            #maxes[2] = max(qx, maxes[2])
-                            #maxes[3] = max(qw, maxes[3])
-                            #rot_bufs[k] += struct.pack('<4f', qz, qy, qx, qw)
 
                     num_frames = len(animation.frames)
                     timestamp_accessor = len(gltf['accessors'])
