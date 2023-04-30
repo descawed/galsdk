@@ -6,9 +6,10 @@ from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
 
-from galsdk.animation import AnimationDb
+from galsdk.animation import Animation, AnimationDb
 from galsdk.model import Model
 from galsdk.project import Project
+from galsdk.ui.animation import ActiveAnimation
 from galsdk.ui.tab import Tab
 from galsdk.ui.viewport import Viewport
 
@@ -17,7 +18,19 @@ class ModelViewer(Viewport):
     def __init__(self, name: str, base: ShowBase, width: int, height: int, *args, **kwargs):
         super().__init__(name, base, width, height, *args, **kwargs)
 
+        self.camera_target = self.render_target.attachNewNode(f'{name}_camera_target')
         self.node_path = None
+        self.active_animation = None
+
+    def start_animation(self, animation: Animation):
+        self.stop_animation()
+        self.active_animation = ActiveAnimation(self.base, f'{self.name}_animation', self.node_path, animation)
+        self.active_animation.play()
+
+    def stop_animation(self):
+        if self.active_animation:
+            self.active_animation.remove()
+            self.active_animation = None
 
     def set_model(self, model: Model | None):
         if self.node_path is not None:
@@ -28,8 +41,8 @@ class ModelViewer(Viewport):
             panda_texture = model.get_panda3d_texture()
             self.node_path.setTexture(panda_texture, 1)
             self.node_path.setHpr(0, 0, 0)
-            self.node_path.reparentTo(self.render_target)
-            self.set_target(self.node_path)
+            self.node_path.reparentTo(self.camera_target)
+            self.set_target(self.camera_target)
         else:
             self.clear_target()
 
@@ -57,6 +70,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
 
         self.animations = self.project.get_animations()
         self.animation_set = None
+        self.active_animation = None
 
         anim_frame = ttk.Frame(self)
         self.anim_set_var = tk.StringVar(self, 'None')
@@ -68,6 +82,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
                                             state=tk.DISABLED)
 
         self.anim_var = tk.StringVar(self, 'None')
+        self.anim_var.trace_add('write', self.on_change_anim)
         anim_label = ttk.Label(anim_frame, text='Animation')
         self.anim_select = ttk.Combobox(anim_frame, textvariable=self.anim_var, values=['None'], state=tk.DISABLED)
 
@@ -89,8 +104,13 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
     def fill_tree(self):
         pass
 
+    def set_anim_set_index(self, index: int):
+        mf = self.animations[index]
+        self.anim_set_var.set(mf.name)
+
     def on_change_anim_set(self, *_):
         anim_set = self.anim_set_var.get()
+        self.anim_var.set('None')
         if anim_set != 'None':
             mf = self.animations[anim_set]
             with mf.path.open('rb') as f:
@@ -101,6 +121,14 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         else:
             self.animation_set = None
             self.anim_select.configure(state=tk.DISABLED)
+
+    def on_change_anim(self, *_):
+        anim = self.anim_var.get()
+        if anim != 'None':
+            index = int(anim)
+            self.model_frame.start_animation(self.animation_set[index])
+        else:
+            self.model_frame.stop_animation()
 
     def handle_right_click(self, event: tk.Event):
         try:

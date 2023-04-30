@@ -34,6 +34,7 @@ class ActiveAnimation:
     def remove(self):
         self.base.taskMgr.remove(self.task)
         self.task = None
+        self.model.setPos(0, 0, 0)
         for node in self.nodes.values():
             node.setHpr(0, 0, 0)
 
