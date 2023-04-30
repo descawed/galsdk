@@ -159,8 +159,13 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
 
         if index != self.current_index:
             self.current_index = index
-            self.model_frame.set_model(self.models[index])
+            model = self.models[index]
+            self.model_frame.set_model(model)
             self.anim_set_select.configure(state=tk.NORMAL)
+            if model.anim_index is not None:
+                self.set_anim_set_index(model.anim_index)
+            else:
+                self.anim_set_var.set('None')
 
     def set_active(self, is_active: bool):
         self.model_frame.set_active(is_active)

@@ -79,7 +79,8 @@ class ActiveAnimation:
                     if norm != 0:
                         quaternion /= norm
                     panda_quat = LQuaternionf(quaternion[3], quaternion[0], quaternion[1], quaternion[2])
-                    self.nodes[i].setQuat(panda_quat)
+                    if i in self.nodes:
+                        self.nodes[i].setQuat(panda_quat)
 
         self.last_time = task.time
         return Task.cont

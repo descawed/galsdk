@@ -236,7 +236,7 @@ class AnimationDb(Archive[Animation | None]):
                         animations.append(Animation.read(buf))
         # we read the whole first sector as the directory, but there aren't that many entries, so delete all the dummy
         # empty entries we added at the end
-        while not animations[-1]:
+        while animations and not animations[-1]:
             del animations[-1]
         return cls(animations, header)
 
