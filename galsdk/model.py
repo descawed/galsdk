@@ -16,7 +16,7 @@ from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVert
 from PIL import Image
 
 from galsdk import util
-from galsdk.animation import AnimationDb
+from galsdk.animation import Animation, AnimationDb
 from galsdk.coords import Dimension, Point
 from galsdk.format import FileFormat
 from psx.tim import BitsPerPixel, Tim, Transparency
@@ -229,15 +229,14 @@ UV_SIZE = 2 * 4
 class Model(FileFormat):
     """A 3D model of a game object"""
 
-    FRAME_TIME = 1/30
-
     def __init__(self, attributes: list[tuple[int, int, int, int, int]], root_segments: list[Segment],
-                 all_segments: list[Segment], texture: Tim, use_transparency: bool = False):
+                 all_segments: list[Segment], texture: Tim, use_transparency: bool = False, anim_index: int = None):
         self.attributes = attributes
         self.root_segments = root_segments
         self.all_segments = all_segments
         self.texture = texture
         self.use_transparency = use_transparency
+        self.anim_index = anim_index
         self.animations = None
 
     def set_animations(self, animations: AnimationDb):
@@ -344,19 +343,6 @@ class Model(FileFormat):
 
         for child in segment.children:
             cls._gltf_add_segment(gltf, node, buffer, child, node_map, view_start)
-
-    @staticmethod
-    def _quat_mul(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
-        """Multiply two quaternions which are in XYZW order"""
-        x1, y1, z1, w1 = q1
-        x2, y2, z2, w2 = q2
-
-        return np.array([
-            w1*x2 + x1*w2 + y1*z2 - z1*y2,
-            w1*y2 - x1*z2 + y1*w2 + z1*x2,
-            w1*z2 + x1*y2 - y1*x2 + z1*w2,
-            w1*w2 - x1*x2 - y1*y2 - z1*z2,
-        ], np.float32)
 
     def as_gltf(self) -> tuple[dict[str, Any], bytes, Image.Image]:
         stride = VERT_SIZE + UV_SIZE
@@ -506,7 +492,7 @@ class Model(FileFormat):
 
             # generate timestamps
             max_frames = max(len(animation.frames) for animation in self.animations if animation)
-            timestamps = [self.FRAME_TIME * i for i in range(max_frames)]
+            timestamps = [Animation.FRAME_TIME * i for i in range(max_frames)]
             buffer += struct.pack(f'<{max_frames}f', *timestamps)
             len_after_timestamps = len(buffer)
             # buffer views for animation data do not have a target property
@@ -543,33 +529,20 @@ class Model(FileFormat):
                     rotation_extrema = [(np.array([inf, inf, inf, inf], np.float32),
                                          np.array([minf, minf, minf, minf], np.float32))
                                         for _ in range(num_segs)]
-                    for j, frame in enumerate(animation.frames):
-                        translation = np.array(frame.translation, np.float32) / Dimension.SCALE_FACTOR
+                    for j in range(len(animation.frames)):
+                        translation, rotations = animation.convert_frame(j)
                         trans_min = np.minimum(translation, trans_min)
                         trans_max = np.maximum(translation, trans_max)
                         buffer += translation.tobytes()
-                        for k, raw_rotation in enumerate(frame.rotations[:num_segs]):
-                            rotation = 360 * np.array(raw_rotation, np.float32) / 4096
-
-                            # special logic for lower body and shoulders
-                            # FIXME: in at least one case, the game applies this logic only for k == 0
-                            if j > 0 and k in [0, 3, 6]:
-                                last_rot = 360 * np.array(animation.frames[j - 1].rotations[k], np.float32) / 4096
-                                diff = rotation - last_rot
-                                adj_x = rotation[0] + 180
-                                adj_y = 180 - rotation[1]
-                                adj_z = rotation[2] + 180
-                                if abs(adj_x - last_rot[0]) + abs(adj_z - last_rot[2]) < abs(diff[0]) + abs(diff[2]):
-                                    rotation = np.array([adj_x, adj_y, adj_z], np.float32)
-
+                        for k, rotation in enumerate(rotations[:num_segs]):
                             # convert to quaternion
-                            half_rads = np.deg2rad(rotation) / 2
+                            half_rads = rotation / 2
                             cx, cy, cz = np.cos(half_rads)
                             sx, sy, sz = np.sin(half_rads)
                             qx = np.array([sx, 0., 0., cx], np.float32)
                             qy = np.array([0., sy, 0., cy], np.float32)
                             qz = np.array([0., 0., sz, cz], np.float32)
-                            quaternion = self._quat_mul(qx, self._quat_mul(qy, qz))
+                            quaternion = util.quat_mul(qx, util.quat_mul(qy, qz))
                             norm = np.linalg.norm(quaternion)
                             if norm != 0:
                                 quaternion /= norm
@@ -844,8 +817,8 @@ class ActorModel(Model):
     SEGMENT_ORDER = [0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 5, 15, 16, 8, 17, 18]
 
     def __init__(self, name: str, actor_id: int, attributes: list[tuple[int, int, int, int, int]],
-                 root: Segment, all_segments: list[Segment], texture: Tim):
-        super().__init__(attributes, [root], all_segments, texture)
+                 root: Segment, all_segments: list[Segment], texture: Tim, anim_index: int = None):
+        super().__init__(attributes, [root], all_segments, texture, anim_index=anim_index)
         self.name = name
         self.id = actor_id
 
@@ -854,7 +827,7 @@ class ActorModel(Model):
         return '.G3A'
 
     @classmethod
-    def read(cls, f: BinaryIO, *, actor: Actor = None, **kwargs) -> ActorModel:
+    def read(cls, f: BinaryIO, *, actor: Actor = None, anim_index: int = None, **kwargs) -> ActorModel:
         if actor is None:
             # this is probably wrong, but FileFormat needs some refactoring if we want to make it mandatory
             actor = ACTORS[0]
@@ -922,7 +895,7 @@ class ActorModel(Model):
             root.add_child(segments[9]).add_child(segments[10]).add_child(segments[11])
             root.add_child(segments[12]).add_child(segments[13]).add_child(segments[14])
 
-        return cls(actor.name, actor.id, list(attributes), segments[0], segments, tim)
+        return cls(actor.name, actor.id, list(attributes), segments[0], segments, tim, anim_index)
 
 
 class ItemModel(Model):

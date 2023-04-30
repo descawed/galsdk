@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import struct
 from dataclasses import dataclass
 from enum import IntFlag
@@ -7,7 +8,10 @@ from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, Iterable, Self, Sequence
 
+import numpy as np
+
 from galsdk import util
+from galsdk.coords import Dimension
 from galsdk.format import Archive, FileFormat
 
 
@@ -69,8 +73,34 @@ class Frame:
 
 
 class Animation(FileFormat):
-    def __init__(self, frames: list[Frame]):
+    FRAME_TIME = 1 / 30
+
+    def __init__(self, frames: list[Frame], name: str = None):
         self.frames = frames
+        self.name = name
+
+    @functools.cache
+    def convert_frame(self, i: int) -> tuple[np.ndarray, list[np.ndarray]]:
+        frame = self.frames[i]
+        translation = np.array(frame.translation, np.float32) / Dimension.SCALE_FACTOR
+        rotations = []
+        for j, raw_rotation in enumerate(frame.rotations):
+            rotation = 360 * np.array(raw_rotation, np.float32) / 4096
+
+            # special logic for lower body and shoulders
+            # FIXME: in at least one case, the game applies this logic only for j == 0
+            if i > 0 and j in [0, 3, 6]:
+                last_rot = 360 * np.array(self.frames[i - 1].rotations[j], np.float32) / 4096
+                diff = rotation - last_rot
+                adj_x = rotation[0] + 180
+                adj_y = 180 - rotation[1]
+                adj_z = rotation[2] + 180
+                if abs(adj_x - last_rot[0]) + abs(adj_z - last_rot[2]) < abs(diff[0]) + abs(diff[2]):
+                    rotation = np.array([adj_x, adj_y, adj_z], np.float32)
+
+            rotations.append(np.deg2rad(rotation))
+
+        return translation, rotations
 
     @property
     def suggested_extension(self) -> str:

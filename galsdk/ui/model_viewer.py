@@ -55,9 +55,28 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         self.model_frame = ModelViewer(name.lower(), self.base, 1280, 720, self)
         self.fill_tree()
 
-        self.tree.grid(row=0, column=0, sticky=tk.NS + tk.W)
-        scroll.grid(row=0, column=1, sticky=tk.NS)
-        self.model_frame.grid(row=0, column=2, sticky=tk.NS + tk.E)
+        self.animations = self.project.get_animations()
+
+        anim_frame = ttk.Frame(self)
+        self.anim_set_var = tk.StringVar(self, 'None')
+        anim_set_label = ttk.Label(anim_frame, text='Animation set')
+        options = ['None']
+        options.extend(mf.name for mf in self.animations)
+        self.anim_set_select = ttk.Combobox(anim_frame, textvariable=self.anim_set_var, values=options,
+                                            state=tk.DISABLED)
+
+        self.anim_var = tk.StringVar(self, 'None')
+        anim_label = ttk.Label(anim_frame, text='Animation')
+        self.anim_select = ttk.Combobox(anim_frame, textvariable=self.anim_var, values=['None'], state=tk.DISABLED)
+
+        self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NS + tk.W)
+        scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
+        self.model_frame.grid(row=0, column=2, sticky=tk.NE)
+        anim_frame.grid(row=1, column=2, sticky=tk.S + tk.EW)
+        anim_set_label.pack(padx=10, side=tk.LEFT)
+        self.anim_set_select.pack(padx=10, side=tk.LEFT)
+        anim_label.pack(padx=10, side=tk.LEFT)
+        self.anim_select.pack(padx=10, side=tk.LEFT)
 
         self.grid_columnconfigure(2, weight=1)
 
@@ -82,7 +101,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
             return
 
         model = self.models[self.export_index]
-        if filename := tkfile.asksaveasfilename(filetypes=[('3D models', '*.ply *.obj *.bam'),
+        if filename := tkfile.asksaveasfilename(filetypes=[('3D models', '*.ply *.obj *.bam *.gltf'),
                                                            ('Images', '*.png *.jpg *.bmp *.tga *.webp *.tim'),
                                                            ('All Files', '*.*')]):
             path = Path(filename)

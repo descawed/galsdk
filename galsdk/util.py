@@ -2,11 +2,30 @@ import shutil
 from pathlib import Path
 from typing import BinaryIO, Literal, TextIO, overload
 
+import numpy as np
+
 
 def int_from_bytes(b: bytes, endianness: Literal['little', 'big'] = 'little', *, signed: bool = False):
     if b == b'':
         raise ValueError('Attempted to read int from empty bytes')
     return int.from_bytes(b, endianness, signed=signed)
+
+
+def interpolate(amount: float, p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
+    return p1 + (p2 - p1) * amount
+
+
+def quat_mul(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+        """Multiply two quaternions which are in XYZW order"""
+        x1, y1, z1, w1 = q1
+        x2, y2, z2, w2 = q2
+
+        return np.array([
+            w1*x2 + x1*w2 + y1*z2 - z1*y2,
+            w1*y2 - x1*z2 + y1*w2 + z1*x2,
+            w1*z2 + x1*y2 - y1*x2 + z1*w2,
+            w1*w2 - x1*x2 - y1*y2 - z1*z2,
+        ], np.float32)
 
 
 @overload
