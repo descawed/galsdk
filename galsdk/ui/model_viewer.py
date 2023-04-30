@@ -5,8 +5,8 @@ from pathlib import Path
 from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import GeomNode
 
+from galsdk.animation import AnimationDb
 from galsdk.model import Model
 from galsdk.project import Project
 from galsdk.ui.tab import Tab
@@ -56,9 +56,11 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         self.fill_tree()
 
         self.animations = self.project.get_animations()
+        self.animation_set = None
 
         anim_frame = ttk.Frame(self)
         self.anim_set_var = tk.StringVar(self, 'None')
+        self.anim_set_var.trace_add('write', self.on_change_anim_set)
         anim_set_label = ttk.Label(anim_frame, text='Animation set')
         options = ['None']
         options.extend(mf.name for mf in self.animations)
@@ -86,6 +88,19 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
     @abstractmethod
     def fill_tree(self):
         pass
+
+    def on_change_anim_set(self, *_):
+        anim_set = self.anim_set_var.get()
+        if anim_set != 'None':
+            mf = self.animations[anim_set]
+            with mf.path.open('rb') as f:
+                self.animation_set = AnimationDb.read(f)
+            values = ['None']
+            values.extend(str(i) for i, animation in enumerate(self.animation_set) if animation)
+            self.anim_select.configure(values=values, state=tk.NORMAL)
+        else:
+            self.animation_set = None
+            self.anim_select.configure(state=tk.DISABLED)
 
     def handle_right_click(self, event: tk.Event):
         try:
@@ -117,6 +132,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         if index != self.current_index:
             self.current_index = index
             self.model_frame.set_model(self.models[index])
+            self.anim_set_select.configure(state=tk.NORMAL)
 
     def set_active(self, is_active: bool):
         self.model_frame.set_active(is_active)
