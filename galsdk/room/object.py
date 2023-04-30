@@ -16,6 +16,7 @@ class RoomObject(ABC):
         self.position = position
         self.angle = angle
         self.node_path = None
+        self.scene = None
         self.color = (0., 0., 0., 0.)
 
     @staticmethod
@@ -78,17 +79,21 @@ class RoomObject(ABC):
         return texture
 
     def add_to_scene(self, scene: NodePath):
+        self.scene = scene
         self.update()
-        self.node_path.reparentTo(scene)
 
     def remove_from_scene(self):
         if self.node_path:
             self.node_path.detachNode()
             self.node_path = None
+            self.scene = None
 
     def update_model(self):
         if model := self.get_model():
-            self.node_path = model
+            if self.node_path is not model:
+                self.node_path = model
+                if self.scene:
+                    self.node_path.reparentTo(self.scene)
 
     def update_texture(self):
         if self.node_path:

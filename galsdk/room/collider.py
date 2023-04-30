@@ -22,7 +22,7 @@ class RectangleColliderObject(RoomObject):
         half_x = (self.width / 2).panda_units
         half_z = (self.height / 2).panda_units
         geom = self._make_quad((-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
-        node = GeomNode()
+        node = GeomNode('rectangle_collider_quad')
         node.addGeom(geom)
         return NodePath(node)
 
@@ -104,7 +104,7 @@ class TriangleColliderObject(RoomObject):
             (self.p3.panda_x - self.position.panda_x, self.p3.panda_y - self.position.panda_y),
         )
 
-        node = GeomNode()
+        node = GeomNode('triangle_collider_triangle')
         node.addGeom(geom)
         return NodePath(node)
 
@@ -150,7 +150,7 @@ class CircleColliderObject(RoomObject):
     def get_model(self) -> NodePath:
         radius = self.radius.panda_units
         geom = self._make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
-        node = GeomNode()
+        node = GeomNode('circle_collider_quad')
         node.addGeom(geom)
         return NodePath(node)
 

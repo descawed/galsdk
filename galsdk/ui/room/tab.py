@@ -36,7 +36,7 @@ class RoomViewport(Viewport):
         self.camera_node = self.render_target.attachNewNode('room_viewport_cameras')
         self.actors = []
         self.actor_node = self.render_target.attachNewNode('room_viewport_actors')
-        self.default_fov = self.camera.node().getLens().getMinFov()
+        self.default_fov = None
         self.project = project
         self.stage_backgrounds = {}
         for stage in Stage:
@@ -110,11 +110,16 @@ class RoomViewport(Viewport):
         return self.calculate_screen_fill_distance(self.wall.width.panda_units, self.wall.height.panda_units)
 
     def set_camera_view(self, camera: CameraObject | None):
+        if self.default_fov is None and self.camera is not None:
+            self.default_fov = self.camera.node().getLens().getMinFov()
+
         if self.background:
             self.background.remove_from_scene()
+
         if self.camera_target:
             self.camera_target.removeNode()
             self.camera_target = None
+
         if camera:
             # TODO: this should track changes to the camera in real-time
             # TODO: implement camera orientation and scale

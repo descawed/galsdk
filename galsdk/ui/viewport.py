@@ -2,7 +2,7 @@ from tkinter import ttk
 
 from direct.showbase.ShowBase import DirectObject, ShowBase
 from direct.task import Task
-from panda3d.core import MouseButton, NodePath, TransparencyAttrib, WindowProperties
+from panda3d.core import GraphicsWindow, MouseButton, NativeWindowHandle, NodePath, TransparencyAttrib, WindowProperties
 
 
 class Viewport(ttk.Frame):
@@ -32,32 +32,43 @@ class Viewport(ttk.Frame):
         self.target_orbit = None
         self.min_zoom = self.DEFAULT_MIN_ZOOM
         self.max_zoom = self.DEFAULT_MAX_ZOOM
-
-        window_x = self.winfo_rootx() - base.tkRoot.winfo_rootx()
-        window_y = self.winfo_rooty() - base.tkRoot.winfo_rooty()
-
-        props = WindowProperties()
-        props.setParentWindow(base.tkRoot.winfo_id())
-        props.setOrigin(window_x, window_y)
-        props.setSize(width, height)
-        self.window = self.base.open_window(props)
+        self._window = None
+        self.camera = None
+        self.region = None
+        self.wheel_listener = None
 
         self.render_target = NodePath(f'viewport_render_{name}')
         self.render_target.setTransparency(TransparencyAttrib.M_alpha)
-        self.camera = self.base.makeCamera(self.window)
-        self.camera.reparentTo(self.render_target)
-        self.camera.setPos(0, self.DEFAULT_ZOOM, 2)
 
-        # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality
-        self.region = self.window.makeDisplayRegion(0, 1, 0, 1)
-        self.base.setupMouse(self.window)
-        self.base.mouseWatcherNode.setDisplayRegion(self.region)
+    @property
+    def window(self) -> GraphicsWindow:
+        if self._window is None:
+            self.update()
+            width = self.winfo_width()
+            height = self.winfo_height()
 
-        self.wheel_listener = DirectObject.DirectObject()
-        self.wheel_listener.accept('wheel_up', self.zoom, extraArgs=[1])
-        self.wheel_listener.accept('wheel_down', self.zoom, extraArgs=[-1])
+            props = WindowProperties()
+            props.setParentWindow(NativeWindowHandle.makeInt(self.winfo_id()))
+            props.setOrigin(0, 0)
+            props.setSize(width, height)
+            self._window = self.base.open_window(props)
 
-        self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{name}')
+            self.camera = self.base.makeCamera(self._window)
+            self.camera.reparentTo(self.render_target)
+            self.camera.setPos(0, self.DEFAULT_ZOOM, 2)
+
+            # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality
+            self.region = self.window.makeDisplayRegion(0, 1, 0, 1)
+            self.base.setupMouse(self._window)
+            self.base.mouseWatcherNode.setDisplayRegion(self.region)
+
+            self.wheel_listener = DirectObject.DirectObject()
+            self.wheel_listener.accept('wheel_up', self.zoom, extraArgs=[1])
+            self.wheel_listener.accept('wheel_down', self.zoom, extraArgs=[-1])
+
+            self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{self.name}')
+
+        return self._window
 
     def zoom(self, direction: int):
         if not self.base.mouseWatcherNode.hasMouse() or not self.window.is_active():
@@ -129,7 +140,10 @@ class Viewport(ttk.Frame):
         return Task.cont
 
     def set_active(self, is_active: bool):
-        self.window.set_active(is_active)
-        if is_active:
-            self.base.setupMouse(self.window)
-            self.base.mouseWatcherNode.setDisplayRegion(self.region)
+        # we need to defer creation of the window until we're visible because on Linux with X, the parent window
+        # (i.e. the X window corresponding to this widget) isn't ready until then
+        if self._window is not None or is_active:
+            self.window.set_active(is_active)
+            if is_active:
+                self.base.setupMouse(self.window)
+                self.base.mouseWatcherNode.setDisplayRegion(self.region)

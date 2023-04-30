@@ -28,6 +28,7 @@ class ModelViewer(Viewport):
             panda_texture = model.get_panda3d_texture()
             self.node_path.setTexture(panda_texture, 1)
             self.node_path.setHpr(0, 0, 0)
+            self.node_path.reparentTo(self.render_target)
             self.set_target(self.node_path)
         else:
             self.clear_target()

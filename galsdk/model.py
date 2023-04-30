@@ -3,7 +3,6 @@ from __future__ import annotations
 import functools
 import io
 import json
-import math
 import struct
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -13,7 +12,7 @@ from typing import Any, BinaryIO, Iterable, Self
 
 import numpy as np
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
-    PNMImage, StringStream, Texture
+    PandaNode, PNMImage, StringStream, Texture
 from PIL import Image
 
 from galsdk import util
@@ -78,21 +77,10 @@ class Segment:
             yield q[0], q[1], q[3]
             yield q[3], q[2], q[0]
 
-    def as_node_path(self, attributes: list[tuple[int, int, int, int, int]], tex_height: int) -> NodePath:
-        vdata = GeomVertexData('', GeomVertexFormat.getV3t2(), Geom.UHStatic)
-        vdata.setNumRows(len(self.triangles) + 2 * len(self.quads))
-
-        vertex = GeomVertexWriter(vdata, 'vertex')
-        texcoord = GeomVertexWriter(vdata, 'texcoord')
-
+    def as_node_path(self, vdata: GeomVertexData) -> NodePath:
         primitive = GeomTriangles(Geom.UHStatic)
 
         for tri in self.all_triangles:
-            for vert in tri:
-                x, y, z, u, v = attributes[vert]
-                point = Point(x, y, z)
-                vertex.addData3(point.panda_x, point.panda_y, point.panda_z)
-                texcoord.addData2(u / TEXTURE_WIDTH, (tex_height - v) / tex_height)
             # the -x when adding the vertex data means we have to reverse the vertices for proper winding order
             primitive.addVertices(tri[2], tri[1], tri[0])
 
@@ -100,7 +88,7 @@ class Segment:
 
         geom = Geom(vdata)
         geom.addPrimitive(primitive)
-        node = GeomNode()
+        node = GeomNode(f'segment{self.index}')
         node.addGeom(geom)
         node_path = NodePath(node)
         translation = Point(*self.offset)
@@ -108,7 +96,7 @@ class Segment:
         node_path.setTag('index', str(self.index))
 
         for child in self.children:
-            child_path = child.as_node_path(attributes, tex_height)
+            child_path = child.as_node_path(vdata)
             child_path.reparentTo(node_path)
 
         return node_path
@@ -262,9 +250,21 @@ class Model(FileFormat):
 
     @functools.cache
     def get_panda3d_model(self, origin: Origin = Origin.DEFAULT) -> NodePath:
-        node_path = NodePath()
+        vdata = GeomVertexData('', GeomVertexFormat.getV3t2(), Geom.UHStatic)
+        vdata.setNumRows(len(self.attributes))
+
+        vertex = GeomVertexWriter(vdata, 'vertex')
+        texcoord = GeomVertexWriter(vdata, 'texcoord')
+
+        tex_height = self.texture_height
+        for x, y, z, u, v in self.attributes:
+            point = Point(x, y, z)
+            vertex.addData3(point.panda_x, point.panda_y, point.panda_z)
+            texcoord.addData2(u / TEXTURE_WIDTH, (tex_height - v) / tex_height)
+
+        node_path = NodePath(PandaNode('model_root'))
         for segment in self.root_segments:
-            child_path = segment.as_node_path(self.attributes, self.texture_height)
+            child_path = segment.as_node_path(vdata)
             child_path.reparentTo(node_path)
         return node_path
 
@@ -874,7 +874,7 @@ class ActorModel(Model):
                 offset = (0, 0, 0)
             segments[i] = cls._read_segment(f, i, attributes, offset)
 
-        # this is the exact game logic
+        # this is the exact game logic with some additions for unused models
         root = segments[0]
         if actor.id in [LILIA.id, LEM.id]:
             root = root.add_child(segments[15])
@@ -883,18 +883,18 @@ class ActorModel(Model):
             next_seg.add_child(segments[2]).add_child(segments[3]).add_child(segments[4]).add_child(segments[5])\
                 .add_child(segments[6])
         else:
-            if actor.id in [HOTEL_KNOCK_GUY.id, HOTEL_RECEPTIONIST.id, LEM_ROBOT.id, JOULE.id]:
+            if actor.id in [HOTEL_KNOCK_GUY.id, HOTEL_KNOCK_GUY_2.id, HOTEL_RECEPTIONIST.id, LEM_ROBOT.id, JOULE.id]:
                 next_seg = next_seg.add_child(segments[15])
             root2 = next_seg
             next_seg = next_seg.add_child(segments[2])
             if actor.id in [TERRORIST.id, PRIEST.id, CROVIC.id, CROVIC_ALT.id]:
                 next_seg.add_child(segments[15]).add_child(segments[16])
-            elif actor.id in [HOTEL_KNOCK_GUY.id, HOTEL_RECEPTIONIST.id, JOULE.id]:
+            elif actor.id in [HOTEL_KNOCK_GUY.id, HOTEL_KNOCK_GUY_2.id, HOTEL_RECEPTIONIST.id, JOULE.id]:
                 next_seg.add_child(segments[16]).add_child(segments[17])
             elif actor.id in [RION.id, RION_ALT_2.id, RION_PHONE.id, DANCER.id, CAIN.id, RION_ALT_1.id,
-                              RAINHEART_HAT.id]:
+                              RAINHEART_HAT.id, RION_UNUSED.id]:
                 next_seg.add_child(segments[15])
-            elif actor.id != LEM_ROBOT.id:
+            elif actor.id == LEM_ROBOT.id:
                 next_seg.add_child(segments[17])
 
             next_seg = root2.add_child(segments[3])
@@ -905,7 +905,7 @@ class ActorModel(Model):
                 next_seg.add_child(segments[15])
             elif actor.id == CROVIC_ALT.id:
                 next_seg.add_child(segments[17])
-            elif actor.id in [RION.id, RION_PHONE.id]:
+            elif actor.id in [RION.id, RION_PHONE.id, RION_UNUSED.id]:
                 next_seg.add_child(segments[16])
 
             next_seg = root2.add_child(segments[6])
