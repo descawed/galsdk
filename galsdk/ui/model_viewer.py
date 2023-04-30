@@ -17,16 +17,15 @@ class ModelViewer(Viewport):
     def __init__(self, name: str, base: ShowBase, width: int, height: int, *args, **kwargs):
         super().__init__(name, base, width, height, *args, **kwargs)
 
-        self.node = GeomNode(f'model_viewer_{name}')
-        self.node_path = self.render_target.attachNewNode(self.node)
-        self.camera.lookAt(self.node_path)
+        self.node_path = None
 
     def set_model(self, model: Model | None):
-        self.node.removeAllGeoms()
+        if self.node_path is not None:
+            self.node_path.detachNode()
+            self.node_path = None
         if model is not None:
-            panda_model = model.get_panda3d_model()
+            self.node_path = model.get_panda3d_model()
             panda_texture = model.get_panda3d_texture()
-            self.node.addGeom(panda_model)
             self.node_path.setTexture(panda_texture, 1)
             self.node_path.setHpr(0, 0, 0)
             self.set_target(self.node_path)

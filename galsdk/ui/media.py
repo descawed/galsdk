@@ -29,9 +29,12 @@ class MediaPlayer(ttk.Frame):
         if use_video:
             self.movie_frame = ttk.Frame(self, width=width, height=height)
 
+            window_x = self.winfo_rootx() - base.tkRoot.winfo_rootx()
+            window_y = self.winfo_rooty() - base.tkRoot.winfo_rooty()
+
             props = WindowProperties()
-            props.setParentWindow(self.movie_frame.winfo_id())
-            props.setOrigin(0, 0)
+            props.setParentWindow(base.tkRoot.winfo_id())
+            props.setOrigin(window_x, window_y)
             props.setSize(width, height)
             self.window = self.base.open_window(props)
 

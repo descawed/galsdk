@@ -22,6 +22,7 @@ class Editor(ShowBase):
         super().__init__(windowType='none')
         self.project = None
 
+        # TODO: remove when X issues are fixed
         loadPrcFileData('', """
         notify-level-glxdisplay spam
         notify-level-x11display spam

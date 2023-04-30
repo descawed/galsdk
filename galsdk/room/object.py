@@ -1,7 +1,7 @@
 import io
 from abc import ABC, abstractmethod
 
-from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
+from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
     Texture, StringStream, PNMImage
 from PIL import Image
 
@@ -15,7 +15,6 @@ class RoomObject(ABC):
         self.name = name
         self.position = position
         self.angle = angle
-        self.node = None
         self.node_path = None
         self.color = (0., 0., 0., 0.)
 
@@ -79,22 +78,17 @@ class RoomObject(ABC):
         return texture
 
     def add_to_scene(self, scene: NodePath):
-        self.node = GeomNode(self.name)
-        self.node_path = scene.attachNewNode(self.node)
-        self.node_path.reparentTo(scene)
         self.update()
+        self.node_path.reparentTo(scene)
 
     def remove_from_scene(self):
         if self.node_path:
-            self.node_path.removeNode()
+            self.node_path.detachNode()
             self.node_path = None
-            self.node = None
 
     def update_model(self):
-        if self.node:
-            self.node.removeAllGeoms()
-            if model := self.get_model():
-                self.node.addGeom(model)
+        if model := self.get_model():
+            self.node_path = model
 
     def update_texture(self):
         if self.node_path:
@@ -117,7 +111,7 @@ class RoomObject(ABC):
         self.update_position()
 
     @abstractmethod
-    def get_model(self) -> Geom | None:
+    def get_model(self) -> NodePath | None:
         pass
 
     def get_texture(self) -> Texture | None:

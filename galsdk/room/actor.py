@@ -1,4 +1,4 @@
-from panda3d.core import Geom, Texture
+from panda3d.core import NodePath, Texture
 
 from galsdk.coords import Point
 from galsdk.model import ActorModel, Origin
@@ -19,7 +19,7 @@ class ActorObject(RoomObject):
     def actor_name(self) -> str:
         return self.model.name if self.model else 'None'
 
-    def get_model(self) -> Geom | None:
+    def get_model(self) -> NodePath | None:
         return self.model.get_panda3d_model(Origin.BOTTOM) if self.model else None
 
     def get_texture(self) -> Texture | None:

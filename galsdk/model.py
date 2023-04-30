@@ -78,6 +78,41 @@ class Segment:
             yield q[0], q[1], q[3]
             yield q[3], q[2], q[0]
 
+    def as_node_path(self, attributes: list[tuple[int, int, int, int, int]], tex_height: int) -> NodePath:
+        vdata = GeomVertexData('', GeomVertexFormat.getV3t2(), Geom.UHStatic)
+        vdata.setNumRows(len(self.triangles) + 2 * len(self.quads))
+
+        vertex = GeomVertexWriter(vdata, 'vertex')
+        texcoord = GeomVertexWriter(vdata, 'texcoord')
+
+        primitive = GeomTriangles(Geom.UHStatic)
+
+        for tri in self.all_triangles:
+            for vert in tri:
+                x, y, z, u, v = attributes[vert]
+                point = Point(x, y, z)
+                vertex.addData3(point.panda_x, point.panda_y, point.panda_z)
+                texcoord.addData2(u / TEXTURE_WIDTH, (tex_height - v) / tex_height)
+            # the -x when adding the vertex data means we have to reverse the vertices for proper winding order
+            primitive.addVertices(tri[2], tri[1], tri[0])
+
+        primitive.closePrimitive()
+
+        geom = Geom(vdata)
+        geom.addPrimitive(primitive)
+        node = GeomNode()
+        node.addGeom(geom)
+        node_path = NodePath(node)
+        translation = Point(*self.offset)
+        node_path.setPos(translation.panda_x, translation.panda_y, translation.panda_z)
+        node_path.setTag('index', str(self.index))
+
+        for child in self.children:
+            child_path = child.as_node_path(attributes, tex_height)
+            child_path.reparentTo(node_path)
+
+        return node_path
+
     def flatten(self, new_attributes: dict[tuple[int, int, int, int, int], int],
                 original_attributes: list[tuple[int, int, int, int, int]],
                 rotations: list[np.ndarray] = None,
@@ -226,55 +261,12 @@ class Model(FileFormat):
         pass
 
     @functools.cache
-    def get_panda3d_model(self, origin: Origin = Origin.DEFAULT) -> Geom:
-        triangles = self._all_tris
-
-        # associate all the UVs with the correct vertices
-        vertices: list[tuple[int, int, int, int | None, int | None]] = [
-            (x, y, z, None, None) for x, y, z in self.vertices
-        ]
-        final_tris = [[0, 0, 0] for _ in triangles]
-        for i, t in enumerate(triangles):
-            for j, vertex in enumerate(t):
-                x, y, z, old_u, old_v = vertices[vertex.vertex_index]
-                u, v = self.uvs[vertex.uv_index]
-                if old_u is not None and (old_u != u or old_v != v):
-                    # same vertex, different uv; add a new entry
-                    index = len(vertices)
-                    vertices.append((x, y, z, u, v))
-                else:
-                    index = vertex.vertex_index
-                    vertices[index] = (x, y, z, u, v)
-                final_tris[i][j] = index
-
-        points = [(Point(x, y, z), u, v) for x, y, z, u, v in vertices]
-        height_offset = 0
-        match origin:
-            case Origin.TOP:
-                height_offset = max(point[0].panda_z for point in points)
-            case Origin.BOTTOM:
-                height_offset = min(point[0].panda_z for point in points)
-
-        vdata = GeomVertexData('', GeomVertexFormat.getV3t2(), Geom.UHStatic)
-        vdata.setNumRows(len(vertices))
-
-        vertex = GeomVertexWriter(vdata, 'vertex')
-        texcoord = GeomVertexWriter(vdata, 'texcoord')
-        tex_height = self.texture_height
-        for x, y, z, u, v in vertices:
-            point = Point(x, y, z)
-            vertex.addData3(point.panda_x, point.panda_y, point.panda_z - height_offset)
-            texcoord.addData2(u / TEXTURE_WIDTH, (tex_height - v) / tex_height)
-
-        primitive = GeomTriangles(Geom.UHStatic)
-        for t in final_tris:
-            # the -x when adding the vertex data means we have to reverse the vertices for proper winding order
-            primitive.addVertices(t[2], t[1], t[0])
-        primitive.closePrimitive()
-
-        geom = Geom(vdata)
-        geom.addPrimitive(primitive)
-        return geom
+    def get_panda3d_model(self, origin: Origin = Origin.DEFAULT) -> NodePath:
+        node_path = NodePath()
+        for segment in self.root_segments:
+            child_path = segment.as_node_path(self.attributes, self.texture_height)
+            child_path.reparentTo(node_path)
+        return node_path
 
     @functools.cache
     def get_panda3d_texture(self) -> Texture:
@@ -748,11 +740,8 @@ illum 0
                 new_path = path.with_suffix('.bam')
                 model = self.get_panda3d_model()
                 texture = self.get_panda3d_texture()
-                node = GeomNode('model_export')
-                node.addGeom(model)
-                node_path = NodePath(node)
-                node_path.setTexture(texture)
-                node_path.writeBamFile(util.panda_path(new_path))
+                model.setTexture(texture)
+                model.writeBamFile(util.panda_path(new_path))
             case 'gltf':
                 new_path = path.with_suffix('.gltf')
                 texture_path = path.with_suffix('.png')
