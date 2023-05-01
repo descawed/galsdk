@@ -95,8 +95,12 @@ To open an existing project, use File > Open Project (or ctrl-O) and select the 
   identifies a specific placed *instance* of an actor. All of these models are also viewable on the Model tab. The
   difference with this tab is that some actors in the game are defined to use the same model (for instance, Rion's
   mirror image uses the same model as the playable Rion actor). The model tab will only show each model once, but this
-  tab has distinct entries for actors that share a model, and shows their unique IDs next to their name. You can
-  right-click on an actor in the list for an option to export the model and/or texture.
+  tab has distinct entries for actors that share a model, and shows their unique IDs next to their name. You can also
+  have the actor play an animation by selecting an animation set and animation at the bottom of the screen. Each actor
+  has a default animation set with common animations like idle, walking, running, etc., but you can (attempt to) play
+  any animation on any actor. Finally, you can right-click on an actor in the list for an option to export the model
+  and/or texture. When exporting to glTF or GLB, the currently selected animation set will also be included in the
+  export.
 - **Background** - This tab shows the background images associated with each stage of the game. Each entry in the list
   contains one or more images. The first image is always the background image itself. Subsequent images are overlaid
   in front of the background depending on their 3D position defined by the camera angle being viewed. These are mainly
@@ -109,7 +113,8 @@ To open an existing project, use File > Open Project (or ctrl-O) and select the 
   consumables). Medicine items do not have 3D models.
 - **Model** - This tab allows viewing of all the games 3D models. This includes actor and item models that are visible
   on previous tabs, as well as "Other" models which are either unused or appear as movable objects in the game world.
-  You can right-click on a model in the list to export.
+  You can right-click on a model in the list to export. See the documentation for the Actor tab for details on how
+  animations work on this tab and how they affect exporting.
 - **Art** - This tab allows viewing and exporting of all known images in the game except for backgrounds and model
   textures (which are available on other tabs). The exact organization of images on this tab varies depending on your
   game version. You can right-click on an image in the list to export.
@@ -129,9 +134,9 @@ To open an existing project, use File > Open Project (or ctrl-O) and select the 
 galsdk also comes with a number of CLI tools for manipulating the game's files. Since the editor is currently read-only,
 these are what you want if you actually want to make changes to the game. Each tool can be run with
 `python -m <module name>` and has usage help available with the `-h` option. The following modules have CLI interfaces:
-- `galsdk.animation` - Pack and unpack animation databases from MOT.CDB. The animation format is not currently
-  understood, but this can still be used to copy animations from one character to another character who doesn't have
-  them.
+- `galsdk.animation` - Pack and unpack animation databases from MOT.CDB. You usually want to use the `--all` switch when
+  unpacking, because animation databases can have gaps. `--all` exports empty files for animations that aren't present.
+  Without these empty files, the animations will likely be in the wrong order when repacked.
 - `galsdk.db` - Pack and unpack .CDB files. Note that MODULE.BIN is also a CDB file, despite the extension.
 - `galsdk.model` - Export the game's 3D models into other formats. To correctly export actor models, you need to know
   the actor ID (shown in the Actor tab of the editor or can be found in the actor list in galsdk/model.py). There is no
@@ -157,4 +162,8 @@ these are what you want if you actually want to make changes to the game. Each t
   DISPLAY.CDB for the disc you want, followed by the path to the XA file, and finally the path to a directory to extract
   the recordings to. This tool doesn't currently work with the Japanese version because the XA layouts are hard-coded
   in the exe.
+- `psx.cd` - Patch updated files into a BIN CD image. After you make changes to game files, you can use this to replace
+  the old versions of the files on the CD. You should try to make sure the size of the changed file is the same as (or
+  possibly less than) the original file. The tool tries to handle shuffling things around if the size changes, but it
+  doesn't really work.
 - `psx.tim` - Convert TIM images to other formats.
