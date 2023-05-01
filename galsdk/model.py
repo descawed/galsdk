@@ -667,17 +667,15 @@ class Model(FileFormat):
 
         # JSON chunk
         json_bin = json.dumps(gltf).encode()
-        bytes_over = len(json_bin) % 4
-        if bytes_over > 0:
+        if bytes_over := len(json_bin) % 4:
             json_bin += b' ' * (4 - bytes_over)
         glb += len(json_bin).to_bytes(4, 'little')
         glb += Glb.JSON.to_bytes(4, 'little')
         glb += json_bin
 
         # BIN chunk
-        bytes_over = len(buffer) % 4
-        if bytes_over > 0:
-            buffer += b'\0' * (4 - bytes_over)
+        if bytes_over := buffer_size % 4:
+            buffer += bytes(4 - bytes_over)
         glb += len(buffer).to_bytes(4, 'little')
         glb += Glb.BIN.to_bytes(4, 'little')
         glb += buffer
