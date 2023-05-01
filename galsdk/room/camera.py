@@ -19,10 +19,6 @@ class CameraObject(RoomObject):
         self.node_path.setScale(2)
         self.color = (0.5, 0.5, 0.5, 0.9)
 
-    def add_to_scene(self, scene: NodePath):
-        self.node_path.reparentTo(scene)
-        self.update()
-
     def remove_from_scene(self):
         self.node_path.detachNode()
 

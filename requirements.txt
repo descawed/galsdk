@@ -3,3 +3,4 @@ pytest==7.2.*
 pillow==9.3.*
 Pmw==2.1.*
 ffmpeg-python==0.2.*
+numpy==1.24.*

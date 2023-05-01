@@ -1,4 +1,4 @@
-from panda3d.core import Geom, NodePath
+from panda3d.core import GeomNode, NodePath
 
 from galsdk.coords import Line2d, Point, Triangle2d
 from galsdk.module import CameraCut
@@ -40,10 +40,14 @@ class CameraCutObject(RoomObject):
         # vertices are not in a consistent order in the game data
         self.node_path.setTwoSided(True)
 
-    def get_model(self) -> Geom:
-        return self._make_quad(
+    def get_model(self) -> NodePath:
+        geom = self._make_quad(
             (self.p1.panda_x - self.position.panda_x, self.p1.panda_y - self.position.panda_y),
             (self.p2.panda_x - self.position.panda_x, self.p2.panda_y - self.position.panda_y),
             (self.p4.panda_x - self.position.panda_x, self.p4.panda_y - self.position.panda_y),
             (self.p3.panda_x - self.position.panda_x, self.p3.panda_y - self.position.panda_y),
         )
+
+        node = GeomNode('cut_quad')
+        node.addGeom(geom)
+        return NodePath(node)

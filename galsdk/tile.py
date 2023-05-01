@@ -11,14 +11,14 @@ class TileSet:
         self.per_row = image.width // width
         self.cluts = [self.image.to_image(i) for i in range(self.image.num_palettes)]
 
-    def get(self, index: int, clut: int = 0) -> Image:
+    def get(self, index: int, clut: int = 0) -> Image.Image:
         image = self.cluts[clut]
         x = index % self.per_row * self.width
         y = index // self.per_row * self.height
         tile = image.crop((x, y, x + self.width, y + self.height))
         return tile
 
-    def __getitem__(self, item: int) -> Image:
+    def __getitem__(self, item: int) -> Image.Image:
         return self.get(item)
 
     def __len__(self) -> int:

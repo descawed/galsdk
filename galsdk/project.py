@@ -47,6 +47,12 @@ class Item:
     is_key_item: bool = True
 
 
+@dataclass
+class ActorGraphics:
+    model_index: int
+    anim_index: int
+
+
 KEY_ITEM_NAMES = [
     'Unused #0',
     'Security Card',
@@ -148,6 +154,7 @@ ADDRESSES = {
         'FontMetrics': 0x80191364,
         'StageMessageIndexes': 0x80191450,
         'ActorModels': 0x80192F18,
+        'ActorAnimations': 0x801917B0,
         'ItemArt': 0x80190ED4,
         'KeyItemDescriptions': 0x80192A28,
         'MedItemDescriptions': 0x80192ACC,
@@ -162,6 +169,7 @@ ADDRESSES = {
         'FontPages': 0x8019144C,
         'StageMessageIndexes': 0x80191494,
         'ActorModels': 0x80192CE8,
+        'ActorAnimations': 0x801914A4,
         'ItemArt': 0x80190EB0,
         'KeyItemDescriptions': 0x80192854,
         'MedItemDescriptions': 0x801928F8,
@@ -192,13 +200,13 @@ class Project:
 
     VERSION_MAP = {version.id: version for version in VERSIONS}
 
-    def __init__(self, project_dir: Path, version: GameVersion, actor_models: list[int] = None,
+    def __init__(self, project_dir: Path, version: GameVersion, actor_graphics: list[ActorGraphics] = None,
                  module_sets: list[list[dict[str, int]]] = None, x_scales: list[int] = None,
                  option_menu: list[ComponentInstance] = None, last_export_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
         self.last_export_date = last_export_date or datetime.datetime.utcnow()
-        self.actor_models = actor_models or []
+        self.actor_graphics = actor_graphics or []
         self.module_sets = module_sets or []
         self.x_scales = x_scales
         self.option_menu = option_menu
@@ -401,6 +409,25 @@ class Project:
         actor_models = list(
             struct.unpack(f'<{num_actors}h', exe[addresses['ActorModels']:addresses['ActorModels'] + 2 * num_actors])
         )
+        actor_animations = list(
+            struct.unpack(f'<{num_actors}h',
+                          exe[addresses['ActorAnimations']:addresses['ActorAnimations'] + 2 * num_actors])
+        )
+        actor_graphics = [ActorGraphics(model_index, anim_index)
+                          for model_index, anim_index in zip(actor_models, actor_animations, strict=True)]
+
+        anim_db_path = game_data / 'MOT.CDB'
+        anim_dir = project_path / 'animations'
+        anim_dir.mkdir(exist_ok=True)
+        with anim_db_path.open('rb') as f:
+            anim_db = Database.read(f)
+        with Manifest.from_archive(anim_dir, 'MOT', anim_db, recursive=False) as anim_manifest:
+            renamed_indexes = set()
+            for i, anim_index in enumerate(actor_animations):
+                if anim_index not in renamed_indexes:
+                    # we don't rename the file on disk because the actor names can contain special characters
+                    anim_manifest.rename(anim_index, ACTORS[i].name, False)
+                    renamed_indexes.add(anim_index)
 
         module_dir = project_path / 'modules'
         module_dir.mkdir(exist_ok=True)
@@ -548,7 +575,7 @@ class Project:
             xa_db.set_data(mxa_path.read_bytes())
             Manifest.from_archive(voice_dir, 'XA', xa_db, '.XA')
 
-        project = cls(project_path, version, actor_models, module_sets, x_scales, option_menu)
+        project = cls(project_path, version, actor_graphics, module_sets, x_scales, option_menu)
         project.save()
         return project
 
@@ -565,15 +592,15 @@ class Project:
             project_info = json.load(f)
         version = GameVersion(**project_info['version'])
         last_export_date = datetime.datetime.fromisoformat(project_info['last_export_date'])
-        actor_models = project_info['actor_models']
+        actor_graphics = [ActorGraphics(**actor) for actor in project_info['actor_graphics']]
         module_sets = project_info.get('module_sets', [])
         x_scales = project_info.get('x_scales', [])
         option_menu = [ComponentInstance(**instance) for instance in project_info.get('option_menu', [])]
-        return cls(project_path, version, actor_models, module_sets, x_scales, option_menu, last_export_date)
+        return cls(project_path, version, actor_graphics, module_sets, x_scales, option_menu, last_export_date)
 
     @property
     def all_actor_models(self) -> set[int]:
-        all_actor_models = set(self.actor_models)
+        all_actor_models = set(actor.model_index for actor in self.actor_graphics)
         for actor in ACTORS:
             if actor.model_index is not None:
                 all_actor_models.add(actor.model_index)
@@ -585,7 +612,7 @@ class Project:
             json.dump({
                 'version': asdict(self.version),
                 'last_export_date': self.last_export_date.isoformat(),
-                'actor_models': self.actor_models,
+                'actor_graphics': [asdict(instance) for instance in self.actor_graphics],
                 'module_sets': self.module_sets,
                 'x_scales': self.x_scales,
                 'option_menu': [asdict(instance) for instance in self.option_menu],
@@ -659,14 +686,20 @@ class Project:
         manifest = Manifest.load_from(self.project_dir / 'models')
         for actor in ACTORS:
             if actor.model_index is None:
-                model_index = self.actor_models[actor.id]
+                graphics = self.actor_graphics[actor.id]
+                model_index = graphics.model_index
+                anim_index = graphics.anim_index
             elif usable_only:
                 continue
             else:
                 model_index = actor.model_index
+                anim_index = None
             model_file = manifest[model_index]
             with model_file.path.open('rb') as f:
-                yield ActorModel.read(f, actor=actor)
+                yield ActorModel.read(f, actor=actor, anim_index=anim_index)
+
+    def get_animations(self) -> Manifest:
+        return Manifest.load_from(self.project_dir / 'animations')
 
     def get_item_art(self) -> Manifest:
         return Manifest.load_from(self.project_dir / 'art' / 'MENU').get_manifest('item_art')
@@ -703,11 +736,14 @@ class Project:
         actor_models = {}
         for actor in ACTORS:
             if actor.model_index is None:
-                model_index = self.actor_models[actor.id]
+                graphics = self.actor_graphics[actor.id]
+                model_index = graphics.model_index
+                anim_index = graphics.anim_index
             else:
                 model_index = actor.model_index
+                anim_index = None
             if model_index not in actor_models:
-                actor_models[model_index] = actor
+                actor_models[model_index] = (actor, anim_index)
 
         item_models = {}
         for entry in item_info:
@@ -720,7 +756,8 @@ class Project:
         for i, model_file in enumerate(model_manifest):
             with model_file.path.open('rb') as f:
                 if i in actor_models:
-                    actors[i] = ActorModel.read(f, actor=actor_models[i])
+                    actor, anim_index = actor_models[i]
+                    actors[i] = ActorModel.read(f, actor=actor, anim_index=anim_index)
                 elif i in item_models:
                     name, use_transparency = item_models[i]
                     items[i] = ItemModel.read(f, name=name, use_transparency=use_transparency)

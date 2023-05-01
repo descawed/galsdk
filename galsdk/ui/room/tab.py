@@ -4,11 +4,13 @@ from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
 
+from galsdk.animation import AnimationDb
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project, Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
     WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject
 from galsdk.tim import TimDb
+from galsdk.ui.animation import ActiveAnimation
 from galsdk.ui.room.actor import ActorEditor
 from galsdk.ui.room.camera import CameraEditor
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
@@ -36,18 +38,22 @@ class RoomViewport(Viewport):
         self.camera_node = self.render_target.attachNewNode('room_viewport_cameras')
         self.actors = []
         self.actor_node = self.render_target.attachNewNode('room_viewport_actors')
-        self.default_fov = self.camera.node().getLens().getMinFov()
+        self.default_fov = None
         self.project = project
         self.stage_backgrounds = {}
         for stage in Stage:
             stage: Stage
             self.stage_backgrounds[stage] = self.project.get_stage_backgrounds(stage)
         self.actor_models = list(self.project.get_actor_models(True))
+        self.actor_animations = []
+        self.anim_manifest = self.project.get_animations()
+        self.anim_dbs = {}
         self.current_stage = Stage.A
         self.background = None
         self.loaded_tims = {}
         self.actor_layouts = []
         self.current_layout = -1
+        self.camera_view = None
 
     def clear(self):
         self.name = None
@@ -65,8 +71,19 @@ class RoomViewport(Viewport):
         self.cameras = []
         self.actor_layouts = []
         self.actors = []
+        for animation in self.actor_animations:
+            animation.remove()
+        self.actor_animations = []
         self.current_layout = -1
         self.current_stage = Stage.A
+
+    def get_anim_db(self, index: int) -> AnimationDb:
+        if index not in self.anim_dbs:
+            anim_set = self.anim_manifest[index]
+            with anim_set.path.open('rb') as f:
+                self.anim_dbs[index] = AnimationDb.read(f)
+
+        return self.anim_dbs[index]
 
     def set_group_visibility(self, group: str, visibility: bool):
         if node_path := self.render_target.find(f'**/room_viewport_{group}'):
@@ -109,20 +126,37 @@ class RoomViewport(Viewport):
     def get_default_camera_distance(self) -> float:
         return self.calculate_screen_fill_distance(self.wall.width.panda_units, self.wall.height.panda_units)
 
+    def update_camera_view(self):
+        if self.camera_view:
+            self.camera.node().getLens().setMinFov(self.camera_view.fov)
+            if self.background:
+                distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
+                self.background.node_path.setPos(0, distance, 0)
+                self.background.node_path.setHpr(0, 90, 0)
+
     def set_camera_view(self, camera: CameraObject | None):
+        if self.default_fov is None and self.camera is not None:
+            self.default_fov = self.camera.node().getLens().getMinFov()
+
         if self.background:
             self.background.remove_from_scene()
+
         if self.camera_target:
             self.camera_target.removeNode()
             self.camera_target = None
+
+        # unhide the old camera
+        if self.camera_view:
+            self.camera_view.show()
+
+        self.camera_view = camera
         if camera:
             # TODO: this should track changes to the camera in real-time
             # TODO: implement camera orientation and scale
-            # FIXME: hide the camera model for the camera we're currently viewing
+            self.camera_view.hide()  # hide the model for the current camera angle so it's not in the way
             self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
             self.camera_target.setPos(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
             self.camera_target.setHpr(0, 0, 0)
-            self.camera.node().getLens().setMinFov(camera.fov)
             self.set_target(self.camera_target)
             self.camera.setPos(self.render_target, camera.position.panda_x, camera.position.panda_y,
                                camera.position.panda_z)
@@ -130,9 +164,7 @@ class RoomViewport(Viewport):
             bg_tim = self.loaded_tims[camera.background.index][0]
             self.background = BillboardObject('room_viewport_background', bg_tim)
             self.background.add_to_scene(self.camera)
-            distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
-            self.background.node_path.setPos(0, distance, 0)
-            self.background.node_path.setHpr(0, 90, 0)
+            self.update_camera_view()
         else:
             self.camera.node().getLens().setMinFov(self.default_fov)
             camera_distance = self.get_default_camera_distance()
@@ -165,11 +197,22 @@ class RoomViewport(Viewport):
             for actor in self.actors:
                 actor.remove_from_scene()
             self.actors = []
+            for animation in self.actor_animations:
+                animation.remove()
+            self.actor_animations = []
 
         layout = self.actor_layouts[index]
         for actor_instance in layout.actors:
             if actor_instance.type >= 0:
                 model = self.actor_models[actor_instance.type]
+                if model.anim_index is not None:
+                    anim_set = self.get_anim_db(model.anim_index)
+                    # FIXME: this is a hack because it relies on the fact that get_panda3d_model caches its result, so
+                    #  ActorObject will get the same NodePath
+                    animation = ActiveAnimation(self.base, f'room{self.name}_anim{actor_instance.id}',
+                                                model.get_panda3d_model(), anim_set[0])
+                    animation.play()
+                    self.actor_animations.append(animation)
             else:
                 model = None
             actor = ActorObject(f'room{self.name}_actor{len(self.actors)}', model, actor_instance)
@@ -242,6 +285,18 @@ class RoomViewport(Viewport):
 
         self.set_camera_view(None)
 
+    def set_active(self, is_active: bool):
+        super().set_active(is_active)
+        for animation in self.actor_animations:
+            if is_active:
+                animation.play()
+            else:
+                animation.pause()
+
+    def resize(self, width: int, height: int):
+        super().resize(width, height)
+        self.update_camera_view()
+
 
 class RoomTab(Tab):
     """Tab for inspecting and editing rooms in the game"""
@@ -299,6 +354,12 @@ class RoomTab(Tab):
 
         self.tree.bind('<<TreeviewSelect>>', self.select_item)
         self.tree.bind('<Button-3>', self.handle_right_click)
+        self.bind('<Configure>', self.resize_3d)
+
+    def resize_3d(self, _=None):
+        self.update()
+        x, y, width, height = self.grid_bbox(3, 0, 3, 0)
+        self.viewport.resize(width, height)
 
     def set_room(self, room_id: int):
         if self.current_room != room_id:
@@ -389,9 +450,7 @@ class RoomTab(Tab):
                     camera_view = obj = self.viewport.cameras[object_id]
                     editor = CameraEditor(obj, self)
                 case _:
-                    self.set_detail_widget(None)
-                    self.viewport.select(None)
-                    return
+                    editor = obj = None
             self.set_detail_widget(editor)
             self.viewport.select(obj)
             self.viewport.set_camera_view(camera_view)
@@ -409,3 +468,5 @@ class RoomTab(Tab):
 
     def set_active(self, is_active: bool):
         self.viewport.set_active(is_active)
+        if is_active:
+            self.resize_3d()

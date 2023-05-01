@@ -32,7 +32,7 @@ class Font(ABC):
     CHAR_HEIGHT = 0
 
     @abstractmethod
-    def draw(self, text: bytes, stage_index: int, bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image:
+    def draw(self, text: bytes, stage_index: int, bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image.Image:
         pass
 
     @classmethod
@@ -117,7 +117,8 @@ class LatinFont(Font):
             max_width = current_width
         return result, max_width, height
 
-    def draw(self, text: bytes, stage_index: int = 0, bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image:
+    def draw(self, text: bytes, stage_index: int = 0,
+             bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image.Image:
         parsed, width, height = self._parse_string(text)
         image = Image.new('RGBA', (width, height), bg_color)
         x = y = clut = 0
@@ -187,7 +188,7 @@ class JapaneseFont(Font):
         return max_width, height
 
     def draw(self, text: bytes | list[int], stage_index: int,
-             bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image:
+             bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image.Image:
         if isinstance(text, bytes):
             text = list(struct.unpack(f'<{len(text) >> 1}H', text))
         width, height = self._calculate_size(text)

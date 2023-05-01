@@ -1,4 +1,4 @@
-from panda3d.core import Geom, NodePath, Texture
+from panda3d.core import GeomNode, NodePath, Texture
 
 from galsdk.coords import Point
 from galsdk.room.object import RoomObject
@@ -15,13 +15,17 @@ class BillboardObject(RoomObject):
         self.width = self.SIZE * width_to_height_ratio
         self.height = self.SIZE
 
-    def get_model(self) -> Geom | None:
-        return self._make_quad(
+    def get_model(self) -> NodePath:
+        geom = self._make_quad(
             (-self.width, -self.height),
             (self.width, -self.height),
             (self.width, self.height),
             (-self.width, self.height),
             True)
+
+        node = GeomNode('billboard_quad')
+        node.addGeom(geom)
+        return NodePath(node)
 
     def get_texture(self) -> Texture | None:
         return self._create_texture_from_image(self.image.to_image(0, Transparency.NONE))
