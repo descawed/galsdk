@@ -22,12 +22,6 @@ from galsdk.format import FileFormat
 from psx.tim import BitsPerPixel, Tim, Transparency
 
 
-class Origin(Enum):
-    DEFAULT = auto()
-    TOP = auto()
-    BOTTOM = auto()
-
-
 class Gltf(IntEnum):
     POINTS = 0
     LINES = 1
@@ -248,7 +242,7 @@ class Model(FileFormat):
         pass
 
     @functools.cache
-    def get_panda3d_model(self, origin: Origin = Origin.DEFAULT) -> NodePath:
+    def get_panda3d_model(self) -> NodePath:
         vdata = GeomVertexData('', GeomVertexFormat.getV3t2(), Geom.UHStatic)
         vdata.setNumRows(len(self.attributes))
 

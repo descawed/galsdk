@@ -2,7 +2,7 @@ import io
 from abc import ABC, abstractmethod
 
 from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
-    Texture, StringStream, PNMImage
+    PandaNode, Texture, StringStream, PNMImage
 from PIL import Image
 
 from galsdk.coords import Point
@@ -15,7 +15,8 @@ class RoomObject(ABC):
         self.name = name
         self.position = position
         self.angle = angle
-        self.node_path = None
+        self.node_path = NodePath(PandaNode(f'{name}_object'))
+        self.model_node = None
         self.scene = None
         self.color = (0., 0., 0., 0.)
 
@@ -80,6 +81,7 @@ class RoomObject(ABC):
 
     def add_to_scene(self, scene: NodePath):
         self.scene = scene
+        self.node_path.reparentTo(scene)
         self.update()
 
     def remove_from_scene(self):
@@ -90,21 +92,19 @@ class RoomObject(ABC):
 
     def update_model(self):
         if model := self.get_model():
-            if self.node_path is not model:
-                self.node_path = model
-                if self.scene:
-                    self.node_path.reparentTo(self.scene)
+            if self.model_node is not model:
+                self.model_node = model
+                self.model_node.reparentTo(self.node_path)
 
     def update_texture(self):
-        if self.node_path:
+        if self.model_node:
             if texture := self.get_texture():
-                self.node_path.setTexture(texture, 1)
+                self.model_node.setTexture(texture, 1)
             else:
-                self.node_path.setColor(*self.color)
+                self.model_node.setColor(*self.color)
 
     def update_position(self):
-        if self.node_path:
-            self.node_path.setPos(self.position.panda_x, self.position.panda_y, self.position.panda_z)
+        self.node_path.setPos(self.position.panda_x, self.position.panda_y, self.position.panda_z)
 
     def set_color(self, color: tuple[float, float, float, float]):
         self.color = color
@@ -114,6 +114,12 @@ class RoomObject(ABC):
         self.update_model()
         self.update_texture()
         self.update_position()
+
+    def show(self):
+        self.node_path.show()
+
+    def hide(self):
+        self.node_path.hide()
 
     @abstractmethod
     def get_model(self) -> NodePath | None:

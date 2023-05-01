@@ -4,11 +4,13 @@ from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
 
+from galsdk.animation import AnimationDb
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project, Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
     WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject
 from galsdk.tim import TimDb
+from galsdk.ui.animation import ActiveAnimation
 from galsdk.ui.room.actor import ActorEditor
 from galsdk.ui.room.camera import CameraEditor
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
@@ -43,6 +45,9 @@ class RoomViewport(Viewport):
             stage: Stage
             self.stage_backgrounds[stage] = self.project.get_stage_backgrounds(stage)
         self.actor_models = list(self.project.get_actor_models(True))
+        self.actor_animations = []
+        self.anim_manifest = self.project.get_animations()
+        self.anim_dbs = {}
         self.current_stage = Stage.A
         self.background = None
         self.loaded_tims = {}
@@ -65,8 +70,19 @@ class RoomViewport(Viewport):
         self.cameras = []
         self.actor_layouts = []
         self.actors = []
+        for animation in self.actor_animations:
+            animation.remove()
+        self.actor_animations = []
         self.current_layout = -1
         self.current_stage = Stage.A
+
+    def get_anim_db(self, index: int) -> AnimationDb:
+        if index not in self.anim_dbs:
+            anim_set = self.anim_manifest[index]
+            with anim_set.path.open('rb') as f:
+                self.anim_dbs[index] = AnimationDb.read(f)
+
+        return self.anim_dbs[index]
 
     def set_group_visibility(self, group: str, visibility: bool):
         if node_path := self.render_target.find(f'**/room_viewport_{group}'):
@@ -120,10 +136,14 @@ class RoomViewport(Viewport):
             self.camera_target.removeNode()
             self.camera_target = None
 
+        # make sure all camera objects are visible so we can hide just the one we're viewing
+        for cam_object in self.cameras:
+            cam_object.show()
+
         if camera:
             # TODO: this should track changes to the camera in real-time
             # TODO: implement camera orientation and scale
-            # FIXME: hide the camera model for the camera we're currently viewing
+            camera.hide()  # hide the model for the current camera angle so it's not in the way
             self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
             self.camera_target.setPos(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
             self.camera_target.setHpr(0, 0, 0)
@@ -170,11 +190,22 @@ class RoomViewport(Viewport):
             for actor in self.actors:
                 actor.remove_from_scene()
             self.actors = []
+            for animation in self.actor_animations:
+                animation.remove()
+            self.actor_animations = []
 
         layout = self.actor_layouts[index]
         for actor_instance in layout.actors:
             if actor_instance.type >= 0:
                 model = self.actor_models[actor_instance.type]
+                if model.anim_index is not None:
+                    anim_set = self.get_anim_db(model.anim_index)
+                    # FIXME: this is a hack because it relies on the fact that get_panda3d_model caches its result, so
+                    #  ActorObject will get the same NodePath
+                    animation = ActiveAnimation(self.base, f'room{self.name}_anim{actor_instance.id}',
+                                                model.get_panda3d_model(), anim_set[0])
+                    animation.play()
+                    self.actor_animations.append(animation)
             else:
                 model = None
             actor = ActorObject(f'room{self.name}_actor{len(self.actors)}', model, actor_instance)
@@ -246,6 +277,14 @@ class RoomViewport(Viewport):
             self.set_actor_layout(0)
 
         self.set_camera_view(None)
+
+    def set_active(self, is_active: bool):
+        super().set_active(is_active)
+        for animation in self.actor_animations:
+            if is_active:
+                animation.play()
+            else:
+                animation.pause()
 
 
 class RoomTab(Tab):
