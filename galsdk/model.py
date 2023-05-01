@@ -49,6 +49,13 @@ class Gltf(IntEnum):
     ELEMENT_ARRAY_BUFFER = 34963
 
 
+class Glb(IntEnum):
+    VERSION = 2
+    MAGIC = 0x46546C67
+    JSON = 0x4E4F534A
+    BIN = 0x004E4942
+
+
 class Segment:
     def __init__(self, index: int, clut_index: int, triangles: list[tuple[int, int, int]],
                  quads: list[tuple[int, int, int, int]], offset: tuple[int, int, int] = (0, 0, 0),
@@ -218,6 +225,8 @@ TEXTURE_WIDTH = 0x100
 TEXTURE_HEIGHT = 0x100
 VERT_SIZE = 3 * 4
 UV_SIZE = 2 * 4
+# 'glTF', version 2, length placeholder
+GLB_HEADER = b'\x67\x6c\x54\x46\x02\0\0\0\0\0\0\0'
 
 
 class Model(FileFormat):
@@ -233,7 +242,7 @@ class Model(FileFormat):
         self.anim_index = anim_index
         self.animations = None
 
-    def set_animations(self, animations: AnimationDb):
+    def set_animations(self, animations: AnimationDb | None):
         self.animations = animations
 
     @property
@@ -631,6 +640,55 @@ class Model(FileFormat):
 
         return gltf, final_buf, self.get_texture_image()
 
+    def as_glb(self) -> bytes:
+        glb = bytearray()
+        gltf, buffer, texture = self.as_gltf()
+
+        # GLB only allows a single buffer, so we need to pack the texture into the buffer
+        tex_offset = len(buffer)
+        with io.BytesIO() as tex_bin:
+            texture.save(tex_bin, format='png')
+            buffer += tex_bin.getvalue()
+        buffer_size = len(buffer)
+        tex_size = buffer_size - tex_offset
+        # update buffers and images accordingly
+        del gltf['buffers'][0]['uri']
+        gltf['buffers'][0]['byteLength'] = buffer_size
+        tex_buffer_view = len(gltf['bufferViews'])
+        gltf['bufferViews'].append({
+            'name': 'texture',
+            'buffer': 0,
+            'byteOffset': tex_offset,
+            'byteLength': tex_size,
+        })
+        gltf['images'][0] = {'bufferView': tex_buffer_view, 'mimeType': 'image/png'}
+
+        glb += Glb.MAGIC.to_bytes(4, 'little')
+        # this is a 4-byte field; the extra 4 bytes are a placeholder for the length
+        glb += Glb.VERSION.to_bytes(8, 'little')
+
+        # JSON chunk
+        json_bin = json.dumps(gltf).encode()
+        bytes_over = len(json_bin) % 4
+        if bytes_over > 0:
+            json_bin += b' ' * (4 - bytes_over)
+        glb += len(json_bin).to_bytes(4, 'little')
+        glb += Glb.JSON.to_bytes(4, 'little')
+        glb += json_bin
+
+        # BIN chunk
+        bytes_over = len(buffer) % 4
+        if bytes_over > 0:
+            buffer += b'\0' * (4 - bytes_over)
+        glb += len(buffer).to_bytes(4, 'little')
+        glb += Glb.BIN.to_bytes(4, 'little')
+        glb += buffer
+
+        # update length
+        glb[8:12] = len(glb).to_bytes(4, 'little')
+
+        return bytes(glb)
+
     def as_ply(self) -> str:
         tris, attributes = self._flatten()
         ply = f"""ply
@@ -720,6 +778,9 @@ illum 0
                     json.dump(gltf, f, indent=4)
                 texture.save(texture_path)
                 bin_path.write_bytes(buffer)
+            case 'glb':
+                new_path = path.with_suffix('.glb')
+                new_path.write_bytes(self.as_glb())
             case 'tim':
                 new_path = path.with_suffix('.tim')
                 with new_path.open('wb') as f:
@@ -958,10 +1019,10 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--actor', type=int, help='The given model file is an actor model. The argument should '
                         'be the ID of the actor the model belongs to.')
     parser.add_argument('-m', '--animation', help='Path to an animation database to include in the export. Ignored '
-                        'when exporting to ply or obj.')
+                        'if not exporting as gltf or glb.')
     parser.add_argument('model', help='The model file to be exported')
     parser.add_argument('target', help='The path to export the model to. The format will be detected from the file '
-                        'extension. Supported extensions are ply, obj, gltf, bam, and tim (in which case only the '
+                        'extension. Supported extensions are ply, obj, gltf, glb, bam, and tim (in which case only the '
                         'texture will be exported).')
 
     args = parser.parse_args()

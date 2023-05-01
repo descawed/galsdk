@@ -126,9 +126,11 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
             values = ['None']
             values.extend(str(i) for i, animation in enumerate(self.animation_set) if animation)
             self.anim_select.configure(values=values, state=tk.NORMAL)
+            self.models[self.current_index].set_animations(self.animation_set)
         else:
             self.animation_set = None
             self.anim_select.configure(state=tk.DISABLED)
+            self.models[self.current_index].set_animations(None)
 
     def on_change_anim(self, *_):
         anim = self.anim_var.get()
@@ -151,12 +153,24 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         if self.export_index is None:
             return
 
+        did_set_animations = False
         model = self.models[self.export_index]
-        if filename := tkfile.asksaveasfilename(filetypes=[('3D models', '*.ply *.obj *.bam *.gltf'),
+        if model.animations is None and model.anim_index is not None:
+            # export with the default animation set if it has one and no other set has been selected
+            did_set_animations = True
+            mf = self.animations[model.anim_index]
+            with mf.path.open('rb') as f:
+                animation_set = AnimationDb.read(f)
+            model.set_animations(animation_set)
+
+        if filename := tkfile.asksaveasfilename(filetypes=[('3D models', '*.ply *.obj *.bam *.gltf *.glb'),
                                                            ('Images', '*.png *.jpg *.bmp *.tga *.webp *.tim'),
                                                            ('All Files', '*.*')]):
             path = Path(filename)
             model.export(path, path.suffix)
+
+        if did_set_animations:
+            model.set_animations(None)
 
     def select_model(self, _):
         try:
