@@ -86,7 +86,7 @@ class MediaPlayer(ttk.Frame):
 
         return self._window
 
-    def update_ui(self, _):
+    def update_ui(self, _) -> int:
         if self.player.status() == AudioSound.PLAYING:
             sfx_len = self.player.length()
             sfx_time = self.player.getTime()

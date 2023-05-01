@@ -38,7 +38,7 @@ class ActiveAnimation:
         for node in self.nodes.values():
             node.setHpr(0, 0, 0)
 
-    def animate(self, task: Task):
+    def animate(self, task: Task) -> int:
         if self.is_playing:
             self.frame_time += task.time - self.last_time
             if self.frame_time > self.duration:
