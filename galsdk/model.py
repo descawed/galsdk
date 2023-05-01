@@ -225,8 +225,6 @@ TEXTURE_WIDTH = 0x100
 TEXTURE_HEIGHT = 0x100
 VERT_SIZE = 3 * 4
 UV_SIZE = 2 * 4
-# 'glTF', version 2, length placeholder
-GLB_HEADER = b'\x67\x6c\x54\x46\x02\0\0\0\0\0\0\0'
 
 
 class Model(FileFormat):
