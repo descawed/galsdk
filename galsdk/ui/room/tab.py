@@ -433,9 +433,7 @@ class RoomTab(Tab):
                     camera_view = obj = self.viewport.cameras[object_id]
                     editor = CameraEditor(obj, self)
                 case _:
-                    self.set_detail_widget(None)
-                    self.viewport.select(None)
-                    return
+                    editor = obj = None
             self.set_detail_widget(editor)
             self.viewport.select(obj)
             self.viewport.set_camera_view(camera_view)

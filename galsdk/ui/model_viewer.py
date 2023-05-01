@@ -95,6 +95,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         anim_label.pack(padx=10, side=tk.LEFT)
         self.anim_select.pack(padx=10, side=tk.LEFT)
 
+        self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(2, weight=1)
 
         self.tree.bind('<<TreeviewSelect>>', self.select_model)

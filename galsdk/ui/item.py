@@ -4,7 +4,6 @@ from tkinter import ttk
 from direct.showbase.ShowBase import ShowBase
 from PIL import ImageTk
 
-from galsdk.manifest import Manifest
 from galsdk.project import Project
 from galsdk.tile import TileSet
 from galsdk.ui.model_viewer import ModelViewer
@@ -61,6 +60,7 @@ class ItemTab(Tab):
         self.description_label.grid(row=1, column=2, sticky=tk.SW)
         self.icon_label.grid(row=1, column=3, sticky=tk.SE)
 
+        self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(2, weight=1)
         self.grid_columnconfigure(3, weight=1)
 
@@ -78,14 +78,19 @@ class ItemTab(Tab):
             item = self.items[index]
             self.model_frame.set_model(item.model)
 
-            desc_image = ImageTk.PhotoImage(self.descriptions[item.description_index].to_image())
-            self.description_label.configure(image=desc_image)
-            self.description_label.image = desc_image
+            # these icons are pretty small, so we scale them up
+            desc_image = self.descriptions[item.description_index].to_image()
+            width, height = desc_image.size
+            desc_photo = ImageTk.PhotoImage(desc_image.resize((width * 2, height * 2)))
+            self.description_label.configure(image=desc_photo)
+            self.description_label.image = desc_photo
 
             source = self.key_item_icons if item.is_key_item else self.med_item_icons
-            icon_image = ImageTk.PhotoImage(source[item.id])
-            self.icon_label.configure(image=icon_image)
-            self.icon_label.image = icon_image
+            icon_image = source[item.id]
+            width, height = icon_image.size
+            icon_photo = ImageTk.PhotoImage(icon_image.resize((width * 2, height * 2)))
+            self.icon_label.configure(image=icon_photo)
+            self.icon_label.image = icon_photo
 
     def set_active(self, is_active: bool):
         self.model_frame.set_active(is_active)

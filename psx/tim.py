@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 import os.path
 from dataclasses import dataclass
 from enum import Enum, IntEnum
@@ -194,7 +193,7 @@ class Tim:
             raise ValueError('Image dimensions do not match TIM')
         self._update_image(image, self.bpp)
 
-    def to_image(self, clut_index: int = 0, transparency: Transparency = Transparency.FULL) -> Image:
+    def to_image(self, clut_index: int = 0, transparency: Transparency = Transparency.FULL) -> Image.Image:
         """
         Convert the TIM image to a Pillow image
 

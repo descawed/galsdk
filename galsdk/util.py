@@ -15,6 +15,18 @@ def interpolate(amount: float, p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
     return p1 + (p2 - p1) * amount
 
 
+def scale_to_fit(original_width: int, original_height: int, available_width: int, available_height: int,
+                 max_scale: int) -> tuple[int, int]:
+    if original_width > original_height:
+        new_width = min(available_width, original_width * max_scale)
+        new_height = original_height * (new_width / original_width)
+    else:
+        new_height = min(available_height, original_height * max_scale)
+        new_width = original_width * (new_height / original_height)
+
+    return int(new_width), int(new_height)
+
+
 def quat_mul(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
         """Multiply two quaternions which are in XYZW order"""
         x1, y1, z1, w1 = q1

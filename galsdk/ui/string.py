@@ -4,6 +4,7 @@ from tkinter import ttk
 
 from PIL import ImageTk
 
+from galsdk import util
 from galsdk.ui.tab import Tab
 from galsdk.project import Project, Stage
 from galsdk.string import StringDb
@@ -62,6 +63,7 @@ class StringTab(Tab):
         self.text_box = tk.Text(self)
 
         self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(2, weight=1)
 
         self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
@@ -70,13 +72,26 @@ class StringTab(Tab):
 
         self.tree.bind('<<TreeviewSelect>>', self.select_string)
         self.text_box.bind('<KeyRelease>', self.string_changed)
+        self.image_label.bind('<Configure>', self.show)
 
-    def show(self):
+    def show(self, *_):
+        if self.current_index is None:
+            return
+
         string = self.strings[self.current_index]
         try:
             pil_image = self.font.draw(string.raw, string.stage_index)
         except (ValueError, KeyError):
             return  # if the text is invalid, just ignore it; the user might be in the middle of changing it
+
+        # resize the image to fill the available space
+        self.image_label.update()
+        available_width = self.image_label.winfo_width()
+        available_height = self.image_label.winfo_height()
+        original_width, original_height = pil_image.size
+        new_size = util.scale_to_fit(original_width, original_height, available_width, available_height, 3)
+
+        pil_image = pil_image.resize(new_size)
         tk_image = ImageTk.PhotoImage(pil_image)
         self.image_label.configure(image=tk_image)
         self.image_label.image = tk_image
