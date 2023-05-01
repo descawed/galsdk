@@ -65,6 +65,12 @@ class ItemTab(Tab):
         self.grid_columnconfigure(3, weight=1)
 
         self.tree.bind('<<TreeviewSelect>>', self.select_item)
+        self.bind('<Configure>', self.resize_3d)
+
+    def resize_3d(self, _=None):
+        self.update()
+        x, y, width, height = self.grid_bbox(3, 0, 2, 0)
+        self.model_frame.resize(width, height)
 
     def select_item(self, _):
         try:
@@ -94,3 +100,5 @@ class ItemTab(Tab):
 
     def set_active(self, is_active: bool):
         self.model_frame.set_active(is_active)
+        if is_active:
+            self.resize_3d()

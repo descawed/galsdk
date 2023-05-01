@@ -36,6 +36,7 @@ class ModelViewer(Viewport):
         if self.node_path is not None:
             self.node_path.detachNode()
             self.node_path = None
+        self.stop_animation()
         if model is not None:
             self.node_path = model.get_panda3d_model()
             panda_texture = model.get_panda3d_texture()
@@ -100,6 +101,12 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
 
         self.tree.bind('<<TreeviewSelect>>', self.select_model)
         self.tree.bind('<Button-3>', self.handle_right_click)
+        self.bind('<Configure>', self.resize_3d)
+
+    def resize_3d(self, _=None):
+        self.update()
+        x, y, width, height = self.grid_bbox(2, 0)
+        self.model_frame.resize(width, height)
 
     @abstractmethod
     def fill_tree(self):
@@ -170,3 +177,5 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
 
     def set_active(self, is_active: bool):
         self.model_frame.set_active(is_active)
+        if is_active:
+            self.resize_3d()

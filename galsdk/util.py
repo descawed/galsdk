@@ -24,20 +24,28 @@ def scale_to_fit(original_width: int, original_height: int, available_width: int
         new_height = min(available_height, original_height * max_scale)
         new_width = original_width * (new_height / original_height)
 
+    if new_width > available_width:
+        new_height *= available_width / new_width
+        new_width = available_width
+
+    if new_height > available_height:
+        new_width *= available_height / new_height
+        new_height = available_height
+
     return int(new_width), int(new_height)
 
 
 def quat_mul(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
-        """Multiply two quaternions which are in XYZW order"""
-        x1, y1, z1, w1 = q1
-        x2, y2, z2, w2 = q2
+    """Multiply two quaternions which are in XYZW order"""
+    x1, y1, z1, w1 = q1
+    x2, y2, z2, w2 = q2
 
-        return np.array([
-            w1*x2 + x1*w2 + y1*z2 - z1*y2,
-            w1*y2 - x1*z2 + y1*w2 + z1*x2,
-            w1*z2 + x1*y2 - y1*x2 + z1*w2,
-            w1*w2 - x1*x2 - y1*y2 - z1*z2,
-        ], np.float32)
+    return np.array([
+        w1*x2 + x1*w2 + y1*z2 - z1*y2,
+        w1*y2 - x1*z2 + y1*w2 + z1*x2,
+        w1*z2 + x1*y2 - y1*x2 + z1*w2,
+        w1*w2 - x1*x2 - y1*y2 - z1*z2,
+    ], np.float32)
 
 
 @overload

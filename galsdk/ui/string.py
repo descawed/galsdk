@@ -85,9 +85,7 @@ class StringTab(Tab):
             return  # if the text is invalid, just ignore it; the user might be in the middle of changing it
 
         # resize the image to fill the available space
-        self.image_label.update()
-        available_width = self.image_label.winfo_width()
-        available_height = self.image_label.winfo_height()
+        x, y, available_width, available_height = self.grid_bbox(2, 0)
         original_width, original_height = pil_image.size
         new_size = util.scale_to_fit(original_width, original_height, available_width, available_height, 3)
 

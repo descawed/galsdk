@@ -53,6 +53,7 @@ class RoomViewport(Viewport):
         self.loaded_tims = {}
         self.actor_layouts = []
         self.current_layout = -1
+        self.camera_view = None
 
     def clear(self):
         self.name = None
@@ -125,6 +126,14 @@ class RoomViewport(Viewport):
     def get_default_camera_distance(self) -> float:
         return self.calculate_screen_fill_distance(self.wall.width.panda_units, self.wall.height.panda_units)
 
+    def update_camera_view(self):
+        if self.camera_view:
+            self.camera.node().getLens().setMinFov(self.camera_view.fov)
+            if self.background:
+                distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
+                self.background.node_path.setPos(0, distance, 0)
+                self.background.node_path.setHpr(0, 90, 0)
+
     def set_camera_view(self, camera: CameraObject | None):
         if self.default_fov is None and self.camera is not None:
             self.default_fov = self.camera.node().getLens().getMinFov()
@@ -136,18 +145,18 @@ class RoomViewport(Viewport):
             self.camera_target.removeNode()
             self.camera_target = None
 
-        # make sure all camera objects are visible so we can hide just the one we're viewing
-        for cam_object in self.cameras:
-            cam_object.show()
+        # unhide the old camera
+        if self.camera_view:
+            self.camera_view.show()
 
+        self.camera_view = camera
         if camera:
             # TODO: this should track changes to the camera in real-time
             # TODO: implement camera orientation and scale
-            camera.hide()  # hide the model for the current camera angle so it's not in the way
+            self.camera_view.hide()  # hide the model for the current camera angle so it's not in the way
             self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
             self.camera_target.setPos(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
             self.camera_target.setHpr(0, 0, 0)
-            self.camera.node().getLens().setMinFov(camera.fov)
             self.set_target(self.camera_target)
             self.camera.setPos(self.render_target, camera.position.panda_x, camera.position.panda_y,
                                camera.position.panda_z)
@@ -155,9 +164,7 @@ class RoomViewport(Viewport):
             bg_tim = self.loaded_tims[camera.background.index][0]
             self.background = BillboardObject('room_viewport_background', bg_tim)
             self.background.add_to_scene(self.camera)
-            distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
-            self.background.node_path.setPos(0, distance, 0)
-            self.background.node_path.setHpr(0, 90, 0)
+            self.update_camera_view()
         else:
             self.camera.node().getLens().setMinFov(self.default_fov)
             camera_distance = self.get_default_camera_distance()
@@ -286,6 +293,10 @@ class RoomViewport(Viewport):
             else:
                 animation.pause()
 
+    def resize(self, width: int, height: int):
+        super().resize(width, height)
+        self.update_camera_view()
+
 
 class RoomTab(Tab):
     """Tab for inspecting and editing rooms in the game"""
@@ -343,6 +354,12 @@ class RoomTab(Tab):
 
         self.tree.bind('<<TreeviewSelect>>', self.select_item)
         self.tree.bind('<Button-3>', self.handle_right_click)
+        self.bind('<Configure>', self.resize_3d)
+
+    def resize_3d(self, _=None):
+        self.update()
+        x, y, width, height = self.grid_bbox(3, 0, 3, 0)
+        self.viewport.resize(width, height)
 
     def set_room(self, room_id: int):
         if self.current_room != room_id:
@@ -451,3 +468,5 @@ class RoomTab(Tab):
 
     def set_active(self, is_active: bool):
         self.viewport.set_active(is_active)
+        if is_active:
+            self.resize_3d()

@@ -1,3 +1,4 @@
+import tkinter as tk
 from tkinter import ttk
 
 from direct.showbase.ShowBase import DirectObject, ShowBase
@@ -12,8 +13,9 @@ class Viewport(ttk.Frame):
     PAN_SCALE_Y = 1000
     DEFAULT_MIN_ZOOM = 3
     DEFAULT_MAX_ZOOM = 50
-    DEFAULT_ZOOM = 25
+    DEFAULT_ZOOM = 20
     DEFAULT_HEIGHT = 0
+    FOCAL_LENGTH = 700
 
     def __init__(self, name: str, base: ShowBase, width: int, height: int, *args, **kwargs):
         if 'width' not in kwargs:
@@ -40,6 +42,21 @@ class Viewport(ttk.Frame):
         self.render_target = NodePath(f'viewport_render_{name}')
         self.render_target.setTransparency(TransparencyAttrib.M_alpha)
 
+    def resize(self, width: int, height: int):
+        if self._window:
+            old_props = self._window.getProperties()
+            if width == old_props.getXSize() and height == old_props.getYSize():
+                return
+
+            props = WindowProperties()
+            props.setSize(width, height)
+            self._window.requestProperties(props)
+            self.configure(width=width, height=height)
+            # this ensures that when the aspect ratio of the window changes, the view isn't stretched and squished
+            lens = self.camera.node().getLens()
+            lens.setFilmSize(width, height)
+            lens.setFocalLength(self.FOCAL_LENGTH)
+
     @property
     def window(self) -> GraphicsWindow:
         if self._window is None:
@@ -56,6 +73,9 @@ class Viewport(ttk.Frame):
             self.camera = self.base.makeCamera(self._window)
             self.camera.reparentTo(self.render_target)
             self.camera.setPos(0, self.DEFAULT_ZOOM, 2)
+            lens = self.camera.node().getLens()
+            lens.setFilmSize(width, height)
+            lens.setFocalLength(self.FOCAL_LENGTH)
 
             # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality
             self.region = self.window.makeDisplayRegion(0, 1, 0, 1)

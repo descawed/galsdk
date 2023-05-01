@@ -6,6 +6,8 @@ from direct.task import Task
 from panda3d.core import AudioSound, CardMaker, GraphicsWindow, NativeWindowHandle, NodePath, MovieTexture,\
     WindowProperties
 
+from galsdk import util
+
 
 class MediaPlayer(ttk.Frame):
     def __init__(self, base: ShowBase, name: str, width: int, height: int, *args, use_video: bool = True,
@@ -43,12 +45,28 @@ class MediaPlayer(ttk.Frame):
             self.card_maker = CardMaker('FMV')
             self.card_maker.setFrameFullscreenQuad()
 
-            self.movie_frame.grid(row=0, column=0, sticky=tk.NS + tk.E)
+            self.movie_frame.grid(row=0, column=0, sticky=tk.NSEW)
             self.controls_frame.grid(row=1, column=0, sticky=tk.S + tk.EW)
+            self.bind('<Configure>', self.resize_panda)
         else:
             self.controls_frame.grid(row=0, column=0, sticky=tk.NSEW)
 
         self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+    def resize_panda(self, _=None):
+        if self._window:
+            self.update()
+            x, y, width, height = self.grid_bbox(0, 0)
+            # for videos, we always want to keep the same aspect ratio
+            new_width, new_height = util.scale_to_fit(320, 240, width, height, 10)
+            props = WindowProperties()
+            # center the window
+            x_offset = (width - new_width) // 2
+            y_offset = (height - new_height) // 2
+            props.setOrigin(x_offset, y_offset)
+            props.setSize(new_width, new_height)
+            self._window.requestProperties(props)
 
     @property
     def window(self) -> GraphicsWindow | None:
@@ -124,3 +142,5 @@ class MediaPlayer(ttk.Frame):
     def set_active(self, is_active: bool):
         if self.use_video and (self._window is not None or is_active):
             self.window.set_active(is_active)
+            if is_active:
+                self.resize_panda()
