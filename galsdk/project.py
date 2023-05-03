@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 from galsdk.db import Database
+from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
 from galsdk.manifest import Manifest
 from galsdk.menu import ComponentInstance, Menu
@@ -20,7 +21,8 @@ from galsdk.model import ACTORS, ActorModel, ItemModel
 from galsdk.module import RoomModule
 from galsdk.movie import Movie
 from galsdk.string import StringDb, LatinStringDb, JapaneseStringDb
-from galsdk.tim import TimDb
+from galsdk.tim import TimDb, TimFormat
+from galsdk.vab import VabDb
 from galsdk.xa import XaAudio, XaDatabase, XaRegion
 from psx import Region
 from psx.cd import PsxCd
@@ -318,7 +320,9 @@ class Project:
                 art_db = Database.read(f)
             project_art_dir = art_dir / art_db_path.stem
             project_art_dir.mkdir(exist_ok=True)
-            Manifest.from_archive(project_art_dir, art_db_path.stem, art_db, sniff=True, flatten=True)
+            Manifest.from_archive(project_art_dir, art_db_path.stem, art_db,
+                                  sniff=[LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Credits],
+                                  flatten=True)
 
         display_db_path = game_data / 'DISPLAY.CDB'
         with display_db_path.open('rb') as f:
@@ -403,7 +407,7 @@ class Project:
         model_dir.mkdir(exist_ok=True)
         with model_db_path.open('rb') as f:
             model_db = Database.read(f)
-        Manifest.from_archive(model_dir, 'MODEL', model_db, sniff=True)
+        Manifest.from_archive(model_dir, 'MODEL', model_db, sniff=[ActorModel, ItemModel])
         # only actors without a manually-assigned model index are in the list
         num_actors = sum(1 if actor.model_index is None else 0 for actor in ACTORS)
         actor_models = list(
@@ -435,7 +439,7 @@ class Project:
         module_db_path = game_data / 'MODULE.BIN'
         with module_db_path.open('rb') as f:
             module_db = Database.read(f)
-        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db, sniff=True)
+        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db, sniff=[RoomModule])
         with module_manifest:
             for i, module_file in enumerate(module_manifest):
                 # FIXME: figure out how the module sets work and pull the list from there
@@ -534,7 +538,7 @@ class Project:
         sound_db_path = game_data / 'SOUND.CDB'
         with sound_db_path.open('rb') as f:
             sound_db = Database.read(f)
-        Manifest.from_archive(sound_dir, 'SOUND', sound_db, sniff=True)
+        Manifest.from_archive(sound_dir, 'SOUND', sound_db, sniff=[VabDb])
 
         voice_dir = project_path / 'voice'
         voice_dir.mkdir(exist_ok=True)

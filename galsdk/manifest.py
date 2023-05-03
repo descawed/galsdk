@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Type
 
 from galsdk import util
 from galsdk.db import Database
-from galsdk.format import Archive
+from galsdk.format import Archive, FileFormat
 from galsdk.sniff import sniff_file
 from galsdk.tim import TimDb
 from galsdk.vab import VabDb
@@ -54,11 +53,21 @@ class Manifest:
         self.name_map = {}
         self.type = db_type
 
-    def _unpack_file(self, mf: ManifestFile, parent: Archive, i: int, sniff: bool, flatten: bool, recursive: bool):
+    def _unpack_file(self, mf: ManifestFile, parent: Archive, i: int, sniff: bool | list[Type[FileFormat]],
+                     flatten: bool, recursive: bool):
         entry = parent[i]
         if not isinstance(entry, Archive) or not recursive:
             mf.path = parent.unpack_one(mf.path, i)
-            if sniff and (detected_format := sniff_file(mf.path)):
+
+            detected_format = None
+            if sniff:
+                if isinstance(entry, FileFormat):
+                    detected_format = entry
+                else:
+                    formats = None if isinstance(sniff, bool) else sniff
+                    detected_format = sniff_file(mf.path, formats)
+
+            if detected_format:
                 mf.format = detected_format.suggested_extension
                 new_path = mf.path.with_suffix(detected_format.suggested_extension)
                 if new_path != mf.path:
@@ -82,8 +91,8 @@ class Manifest:
             Manifest.from_archive(mf.path, f'{self.name}_{mf.name}', archive, sniff=sniff, flatten=flatten)
             mf.is_manifest = True
 
-    def unpack_archive(self, archive: Archive, extension: str = '', sniff: bool = False, flatten: bool = False,
-                       recursive: bool = True):
+    def unpack_archive(self, archive: Archive, extension: str = '', sniff: bool | list[Type[FileFormat]] = False,
+                       flatten: bool = False, recursive: bool = True):
         if extension and extension[0] != '.':
             extension = '.' + extension
         self.type = archive.suggested_extension[1:].lower()
@@ -214,7 +223,8 @@ class Manifest:
 
     @classmethod
     def from_archive(cls, manifest_path: Path, name: str, archive: Archive, extension: str = '',
-                     sniff: bool = False, flatten: bool = False, recursive: bool = True) -> Manifest:
+                     sniff: bool | list[Type[FileFormat]] = False, flatten: bool = False,
+                     recursive: bool = True) -> Manifest:
         """
         Create a new manifest at a given path from a given archive
 

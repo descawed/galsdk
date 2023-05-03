@@ -1,6 +1,8 @@
 import pathlib
 import sys
 
+from galsdk.animation import AnimationDb
+from galsdk.credits import Credits
 from galsdk.db import Database
 from galsdk.format import FileFormat
 from galsdk.menu import Menu
@@ -13,8 +15,10 @@ from galsdk.xa import XaDatabase
 
 
 # TimDb needs to come before TimFormat in the list because TimFormat will miss additional images in TIM streams
+# Animation isn't included here because it's too easy to get false positives and we already know all the animations
+# live in MOT.CDB anyway
 formats: list[type[FileFormat]] = [LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Database, VabDb, RoomModule,
-                                   ActorModel, ItemModel, JapaneseStringDb]
+                                   Credits, AnimationDb, ActorModel, ItemModel, JapaneseStringDb]
 
 
 def sniff_file(path: pathlib.Path, formats_to_check: list[type[FileFormat]] = None) -> FileFormat | None:
