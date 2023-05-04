@@ -433,18 +433,22 @@ class RoomModule(FileFormat):
                 offset = i
                 try:
                     for _ in range(num_backgrounds):
-                        index = int.from_bytes(data[offset:offset + 2], 'little')
+                        index = int.from_bytes(data[offset:offset + 2], 'little', signed=True)
                         num_masks = int.from_bytes(data[offset + 2:offset + 4], 'little')
                         mask_ptr = int.from_bytes(data[offset + 4:offset + 8], 'little')
 
-                        # find masks
-                        mask_offset = mask_ptr - load_address
-                        if mask_offset < 0 or mask_offset >= len(data):
-                            raise ValueError
-                        background = Background(index, mask_ptr, [])
-                        for _ in range(num_masks):
-                            background.masks.append(BackgroundMask(*struct.unpack_from('<2I4h', data, mask_offset)))
-                            mask_offset += 16
+                        if index == -1:
+                            # not present; happens for some camera angles that are never actually used
+                            background = Background(-1, 0, [])
+                        else:
+                            # find masks
+                            mask_offset = mask_ptr - load_address
+                            if mask_offset < 0 or mask_offset >= len(data):
+                                raise ValueError
+                            background = Background(index, mask_ptr, [])
+                            for _ in range(num_masks):
+                                background.masks.append(BackgroundMask(*struct.unpack_from('<2I4h', data, mask_offset)))
+                                mask_offset += 16
 
                         backgrounds.backgrounds.append(background)
                         offset += 8

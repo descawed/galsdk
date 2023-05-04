@@ -1,14 +1,14 @@
 from panda3d.core import GeomNode, NodePath, Texture
+from PIL.Image import Image
 
 from galsdk.coords import Point
 from galsdk.room.object import RoomObject
-from psx.tim import Tim, Transparency
 
 
 class BillboardObject(RoomObject):
     SIZE = 50
 
-    def __init__(self, name: str, image: Tim):
+    def __init__(self, name: str, image: Image):
         super().__init__(name, Point(), 0)
         self.image = image
         width_to_height_ratio = self.image.width / self.image.height
@@ -28,7 +28,7 @@ class BillboardObject(RoomObject):
         return NodePath(node)
 
     def get_texture(self) -> Texture | None:
-        return self._create_texture_from_image(self.image.to_image(0, Transparency.NONE))
+        return self._create_texture_from_image(self.image)
 
     def add_to_scene(self, scene: NodePath):
         super().add_to_scene(scene)

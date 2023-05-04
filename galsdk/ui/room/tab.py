@@ -1,8 +1,10 @@
 import math
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
+from PIL import Image
 
 from galsdk.animation import AnimationDb
 from galsdk.module import RoomModule, ColliderType
@@ -19,6 +21,7 @@ from galsdk.ui.room.replaceable import Replaceable
 from galsdk.ui.room.trigger import TriggerEditor
 from galsdk.ui.tab import Tab
 from galsdk.ui.viewport import Viewport
+from psx.tim import Transparency
 
 
 class RoomViewport(Viewport):
@@ -54,6 +57,7 @@ class RoomViewport(Viewport):
         self.actor_layouts = []
         self.current_layout = -1
         self.camera_view = None
+        self.missing_bg = Image.open(Path.cwd() / 'assets/missing_bg.png')
 
     def clear(self):
         self.name = None
@@ -161,8 +165,11 @@ class RoomViewport(Viewport):
             self.camera.setPos(self.render_target, camera.position.panda_x, camera.position.panda_y,
                                camera.position.panda_z)
             self.camera.lookAt(self.camera_target)
-            bg_tim = self.loaded_tims[camera.background.index][0]
-            self.background = BillboardObject('room_viewport_background', bg_tim)
+            if camera.background.index == -1:
+                bg_image = self.missing_bg
+            else:
+                bg_image = self.loaded_tims[camera.background.index][0].to_image(0, Transparency.NONE)
+            self.background = BillboardObject('room_viewport_background', bg_image)
             self.background.add_to_scene(self.camera)
             self.update_camera_view()
         else:

@@ -22,7 +22,7 @@ class Editor(ShowBase):
         super().__init__(windowType='none')
         self.project = None
 
-        getModelPath().appendDirectory(pathlib.Path.cwd() / 'models')
+        getModelPath().appendDirectory(pathlib.Path.cwd() / 'assets')
 
         self.startTk()
         self.tkRoot.title('galsdk')
