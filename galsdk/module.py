@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import BinaryIO, Self
 
 from galsdk.format import FileFormat
+from galsdk.model import ACTORS
 
 
 class ColliderType(IntEnum):
@@ -576,9 +577,13 @@ def dump_info(module_path: str, language: str | None, force: bool):
     for i, layout in enumerate(module.actor_layouts.layouts):
         print(f'\tLayout {i}')
         for j, actor in enumerate(layout.actors):
+            if 0 <= actor.type < len(ACTORS):
+                actor_name = ACTORS[actor.type].name
+            else:
+                actor_name = 'unknown'
             print(f'\t\tActor {j}')
             print(f'\t\t\tID: {actor.id}')
-            print(f'\t\t\tType: {actor.type}')
+            print(f'\t\t\tType: {actor.type} ({actor_name})')
             print(f'\t\t\tX: {actor.x}')
             print(f'\t\t\tY: {actor.y}')
             print(f'\t\t\tZ: {actor.z}')
