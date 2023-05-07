@@ -6,7 +6,8 @@ from PIL import ImageTk
 
 from galsdk import util
 from galsdk.ui.tab import Tab
-from galsdk.project import Project, Stage
+from galsdk.project import Project
+from galsdk.game import Stage
 from galsdk.string import StringDb
 
 

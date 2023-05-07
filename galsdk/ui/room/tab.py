@@ -8,7 +8,8 @@ from PIL import Image
 
 from galsdk.animation import AnimationDb
 from galsdk.module import RoomModule, ColliderType
-from galsdk.project import Project, Stage
+from galsdk.project import Project
+from galsdk.game import Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
     WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject
 from galsdk.tim import TimDb
@@ -275,18 +276,23 @@ class RoomViewport(Viewport):
             trigger_object.add_to_scene(self.trigger_node)
             self.triggers.append(trigger_object)
 
-        for camera, background in zip(module.layout.cameras, module.backgrounds.backgrounds, strict=True):
-            object_name = f'room{self.name}_camera{len(self.cameras)}'
-            camera_object = CameraObject(object_name, camera, background, self.base.loader)
-            camera_object.add_to_scene(self.camera_node)
-            self.cameras.append(camera_object)
-            if camera_object.background.index not in self.loaded_tims:
-                path = self.stage_backgrounds[self.current_stage][camera_object.background.index].path
-                with path.open('rb') as f:
-                    db = TimDb.read(f, fmt=TimDb.Format.from_extension(path.suffix))
-                self.loaded_tims[camera_object.background.index] = db
+        # TODO: should we show cameras and backgrounds separately? right now, if a room has multiple background sets,
+        #  we're making it look like it has twice as many cameras
+        for background_set in module.backgrounds:
+            for camera, background in zip(module.layout.cameras, background_set.backgrounds, strict=True):
+                object_name = f'room{self.name}_camera{len(self.cameras)}'
+                camera_object = CameraObject(object_name, camera, background, self.base.loader)
+                camera_object.add_to_scene(self.camera_node)
+                self.cameras.append(camera_object)
+                if camera_object.background.index not in self.loaded_tims:
+                    path = self.stage_backgrounds[self.current_stage][camera_object.background.index].path
+                    with path.open('rb') as f:
+                        db = TimDb.read(f, fmt=TimDb.Format.from_extension(path.suffix))
+                    self.loaded_tims[camera_object.background.index] = db
 
-        self.actor_layouts = module.actor_layouts.layouts
+        self.actor_layouts = []
+        for layout_set in module.actor_layouts:
+            self.actor_layouts.extend(layout_set.layouts)
         if len(self.actor_layouts) > 0:
             self.set_actor_layout(0)
 

@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import Optional
 
 from galsdk.ui.image import ImageViewerTab
-from galsdk.project import Project, Stage
+from galsdk.project import Project
+from galsdk.game import Stage
 from galsdk.tim import TimDb
 from psx.tim import Tim
 
