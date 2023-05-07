@@ -97,9 +97,6 @@ class Viewport(ttk.Frame):
             self.camera = self.base.makeCamera(self._window)
             self.camera.reparentTo(self.render_target)
             self.camera.setPos(0, self.DEFAULT_ZOOM, 2)
-            # lens = self.camera.node().getLens()
-            # lens.setFilmSize(width, height)
-            # lens.setFocalLength(self.FOCAL_LENGTH)
 
             # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality
             self.region = self.window.makeDisplayRegion(0, 1, 0, 1)
