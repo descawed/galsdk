@@ -1,4 +1,5 @@
-from galsdk.project import GameVersion, Project, Region
+from galsdk.project import Project, Region
+from galsdk.game import GameVersion
 
 
 def test_save_open(tmp_path):

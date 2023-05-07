@@ -178,7 +178,7 @@ class Manifest:
             raise TypeError('The given key does not correspond to a manifest')
         return Manifest.load_from(mf.path)
 
-    def rename(self, key: int | str, name: str, on_disk: bool = True):
+    def rename(self, key: int | str, name: str, on_disk: bool = True, ext: str = None):
         """Rename a file in the manifest by index or name"""
         mf = self.files[key] if isinstance(key, int) else self.name_map[key]
         if name != mf.name:
@@ -186,6 +186,8 @@ class Manifest:
                 raise KeyError(f'There is already an entry named {name}')
             if on_disk:
                 new_path = mf.path.with_stem(name)
+                if ext is not None:
+                    new_path = new_path.with_suffix(ext)
                 util.unlink(new_path)
                 mf.path = mf.path.rename(new_path)
                 if mf.is_manifest:

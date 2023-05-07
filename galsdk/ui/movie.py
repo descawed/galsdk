@@ -6,7 +6,8 @@ from panda3d.core import MovieTexture
 
 from galsdk.ui.media import MediaPlayer
 from galsdk.ui.tab import Tab
-from galsdk.project import Project, Stage
+from galsdk.project import Project
+from galsdk.game import Stage
 
 
 class MovieTab(Tab):

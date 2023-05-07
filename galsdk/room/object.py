@@ -16,6 +16,7 @@ class RoomObject(ABC):
         self.position = position
         self.angle = angle
         self.node_path = NodePath(PandaNode(f'{name}_object'))
+        self.original_model = None
         self.model_node = None
         self.scene = None
         self.color = (0., 0., 0., 0.)
@@ -86,15 +87,18 @@ class RoomObject(ABC):
 
     def remove_from_scene(self):
         if self.node_path:
-            self.node_path.detachNode()
+            self.node_path.removeNode()
             self.node_path = None
             self.scene = None
 
     def update_model(self):
         if model := self.get_model():
-            if self.model_node is not model:
-                self.model_node = model
-                self.model_node.reparentTo(self.node_path)
+            if self.original_model is not model:
+                self.original_model = model
+                # because we frequently reuse the same model (i.e. same NodePath) for different instances of the same
+                # character, we need to make separate instances of the model for each RoomObject, otherwise we'll have
+                # problems when a room includes more than one of the same type of NPC
+                self.model_node = self.original_model.instanceUnderNode(self.node_path, f'{self.name}_instance')
 
     def update_texture(self):
         if self.model_node:

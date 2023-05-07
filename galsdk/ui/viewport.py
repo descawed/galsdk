@@ -38,24 +38,48 @@ class Viewport(ttk.Frame):
         self.camera = None
         self.region = None
         self.wheel_listener = None
+        self.aspect_ratio = width / height
 
         self.render_target = NodePath(f'viewport_render_{name}')
         self.render_target.setTransparency(TransparencyAttrib.M_alpha)
 
-    def resize(self, width: int, height: int):
+    def resize(self, width: int, height: int, keep_aspect_ratio: bool = False):
         if self._window:
+            x = y = 0
+            new_width = width
+            new_height = height
+            if keep_aspect_ratio:
+                if self.aspect_ratio < 1:
+                    new_width = self.aspect_ratio * height
+                    if new_width > width:
+                        new_width = width
+                        new_height = new_width / self.aspect_ratio
+                else:
+                    new_height = width / self.aspect_ratio
+                    if new_height > height:
+                        new_height = height
+                        new_width = self.aspect_ratio * new_height
+                x = int((width - new_width) / 2)
+                y = int((height - new_height) / 2)
+                new_width = int(new_width)
+                new_height = int(new_height)
+            else:
+                self.aspect_ratio = width / height
+
             old_props = self._window.getProperties()
-            if width == old_props.getXSize() and height == old_props.getYSize():
+            if new_width == old_props.getXSize() and new_height == old_props.getYSize():
                 return
 
             props = WindowProperties()
-            props.setSize(width, height)
+            props.setOrigin(x, y)
+            props.setSize(new_width, new_height)
             self._window.requestProperties(props)
             self.configure(width=width, height=height)
-            # this ensures that when the aspect ratio of the window changes, the view isn't stretched and squished
-            lens = self.camera.node().getLens()
-            lens.setFilmSize(width, height)
-            lens.setFocalLength(self.FOCAL_LENGTH)
+            if not keep_aspect_ratio:
+                # this ensures that when the aspect ratio of the window changes, the view isn't stretched and squished
+                lens = self.camera.node().getLens()
+                lens.setFilmSize(width, height)
+                lens.setFocalLength(self.FOCAL_LENGTH)
 
     @property
     def window(self) -> GraphicsWindow:
@@ -73,9 +97,6 @@ class Viewport(ttk.Frame):
             self.camera = self.base.makeCamera(self._window)
             self.camera.reparentTo(self.render_target)
             self.camera.setPos(0, self.DEFAULT_ZOOM, 2)
-            lens = self.camera.node().getLens()
-            lens.setFilmSize(width, height)
-            lens.setFocalLength(self.FOCAL_LENGTH)
 
             # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality
             self.region = self.window.makeDisplayRegion(0, 1, 0, 1)

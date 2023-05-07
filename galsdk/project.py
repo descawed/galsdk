@@ -8,13 +8,14 @@ import shutil
 import struct
 import tempfile
 from dataclasses import asdict, dataclass
-from enum import Enum
 from pathlib import Path
 from typing import Iterable
 
 from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
+from galsdk.game import Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_KEY_ITEMS, NUM_MED_ITEMS, NUM_MAPS, \
+    MODULE_ENTRY_SIZE, GameVersion, VERSIONS, ADDRESSES
 from galsdk.manifest import Manifest
 from galsdk.menu import ComponentInstance, Menu
 from galsdk.model import ACTORS, ActorModel, ItemModel
@@ -30,16 +31,6 @@ from psx.config import Config
 from psx.exe import Exe
 
 
-class Stage(str, Enum):
-    A = 'A'
-    B = 'B'
-    C = 'C'
-    D = 'D'
-
-    def __str__(self):
-        return self.value
-
-
 @dataclass
 class Item:
     id: int
@@ -53,142 +44,6 @@ class Item:
 class ActorGraphics:
     model_index: int
     anim_index: int
-
-
-KEY_ITEM_NAMES = [
-    'Unused #0',
-    'Security Card',
-    'Beeject',
-    'Freezer Room Key',
-    'PPEC Storage Key',
-    'Fuse',
-    'Liquid Explosive',
-    'Unused #7',
-    'Security Card (reformatted)',
-    'Special PPEC Office Key',
-    'Unused #10',
-    'Test Lab Key',
-    'Control Room Key',
-    'Research Lab Key',
-    'Two-Headed Snake',
-    'Two-Headed Monkey',
-    'Two-Headed Wolf',
-    'Two-Headed Eagle',
-    'Unused #18',
-    'Backdoor Key',
-    'Door Knob',
-    '9 Ball',
-    "Mother's Ring",
-    "Father's Ring",
-    "Lilia's Doll",
-    'Metamorphosis',
-    'Bedroom Key',
-    'Second Floor Key',
-    'Medical Staff Notes',
-    'G Project Report',
-    'Photo of Parents',
-    "Rion's test data",
-    "Dr. Lem's Notes",
-    'New Replicative Computer Theory',
-    "Dr. Pascalle's Diary",
-    'Letter from Elsa',
-    'Newspaper',
-    '3 Ball',
-    'Shed Key',
-    'Letter from Lilia',
-]
-
-MED_ITEM_NAMES = [
-    'Nalcon',
-    'Red',
-    'D-Felon',
-    'Recovery Capsule',
-    'Delmetor',
-    'Appollinar',
-    'Skip',
-]
-
-NUM_KEY_ITEMS = len(KEY_ITEM_NAMES)
-NUM_MED_ITEMS = len(MED_ITEM_NAMES)
-NUM_MODULE_SETS = 9
-MODULE_ENTRY_SIZE = 8
-
-
-@dataclass
-class GameVersion:
-    """Information on the specific version of the game this project was created from and will be exported as"""
-
-    id: str
-    region: Region
-    language: str
-    disc: int
-    is_demo: bool = False
-
-
-VERSIONS = [
-    GameVersion('SLUS-00986', Region.NTSC_U, 'en-US', 1),
-    GameVersion('SLUS-01098', Region.NTSC_U, 'en-US', 2),
-    GameVersion('SLUS-01099', Region.NTSC_U, 'en-US', 3),
-
-    GameVersion('SLUS-90077', Region.NTSC_U, 'en-US', 1, is_demo=True),
-
-    GameVersion('SLPS-02192', Region.NTSC_J, 'ja', 1),
-    GameVersion('SLPS-02193', Region.NTSC_J, 'ja', 2),
-    GameVersion('SLPS-02194', Region.NTSC_J, 'ja', 3),
-
-    GameVersion('SLES-02328', Region.PAL, 'en-GB', 1),
-    GameVersion('SLES-12328', Region.PAL, 'en-GB', 2),
-    GameVersion('SLES-22328', Region.PAL, 'en-GB', 3),
-
-    GameVersion('SLED-02869', Region.PAL, 'en-GB', 1, is_demo=True),
-
-    GameVersion('SLES-02329', Region.PAL, 'fr', 1),
-    GameVersion('SLES-12329', Region.PAL, 'fr', 2),
-    GameVersion('SLES-22329', Region.PAL, 'fr', 3),
-
-    GameVersion('SLES-02330', Region.PAL, 'de', 1),
-    GameVersion('SLES-12330', Region.PAL, 'de', 2),
-    GameVersion('SLES-22330', Region.PAL, 'de', 3),
-]
-
-ADDRESSES = {
-    'SLUS-00986': {
-        'FontMetrics': 0x80191364,
-        'StageMessageIndexes': 0x80191450,
-        'ActorModels': 0x80192F18,
-        'ActorAnimations': 0x801917B0,
-        'ItemArt': 0x80190ED4,
-        'KeyItemDescriptions': 0x80192A28,
-        'MedItemDescriptions': 0x80192ACC,
-        'ModuleSets': 0x80191BE0,
-        'RoomLoad': RoomModule.LOAD_ADDRESSES['en-US'],
-        'OptionMenuStart': 0x8019148C,
-        'OptionMenuStop': 0x80191714,
-        'MenuXScaleStart': 0x801917A4,
-        'MenuXScaleStop': 0x801917B0,
-    },
-    'SLPS-02192': {
-        'FontPages': 0x8019144C,
-        'StageMessageIndexes': 0x80191494,
-        'ActorModels': 0x80192CE8,
-        'ActorAnimations': 0x801914A4,
-        'ItemArt': 0x80190EB0,
-        'KeyItemDescriptions': 0x80192854,
-        'MedItemDescriptions': 0x801928F8,
-        'ModuleSets': 0x801918D4,
-        'RoomLoad': RoomModule.LOAD_ADDRESSES['ja'],
-        'XaDef1': 0x80193870,
-        'XaDef2': 0x80193880,
-        'XaDef3': 0x801938D0,
-        'XaDefEnd': 0x8019392C,
-    },
-}
-
-ADDRESSES['SLUS-01098'] = ADDRESSES['SLUS-00986']
-ADDRESSES['SLUS-01099'] = ADDRESSES['SLUS-00986']
-
-ADDRESSES['SLPS-02193'] = ADDRESSES['SLPS-02192']
-ADDRESSES['SLPS-02194'] = ADDRESSES['SLPS-02192']
 
 
 class Project:
@@ -439,35 +294,46 @@ class Project:
         module_db_path = game_data / 'MODULE.BIN'
         with module_db_path.open('rb') as f:
             module_db = Database.read(f)
-        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db, sniff=[RoomModule])
-        with module_manifest:
-            for i, module_file in enumerate(module_manifest):
-                # FIXME: figure out how the module sets work and pull the list from there
-                with module_file.path.open('rb') as f:
-                    module = RoomModule.load(f, addresses['RoomLoad'])
-                if module.is_valid:
-                    try:
-                        module_manifest.rename(i, module.name)
-                    except KeyError:
-                        # there are a few modules that use the same name
-                        module_manifest.rename(i, f'{module.name}_{i}')
+        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db)
 
-        module_set_addr = addresses['ModuleSets']
-        module_set_addrs = struct.unpack(f'<{NUM_MODULE_SETS}I',
-                                         exe[module_set_addr:module_set_addr + 4 * NUM_MODULE_SETS])
-        module_sets = []
+        module_set_addr = addresses['MapModules']
+        module_set_addrs = struct.unpack(f'<{NUM_MAPS}I',
+                                         exe[module_set_addr:module_set_addr + 4 * NUM_MAPS])
+        maps = []
         for i in range(len(module_set_addrs)):
             this_addr = module_set_addrs[i]
-            if i + 1 >= NUM_MODULE_SETS:
+            if i + 1 >= NUM_MAPS:
                 next_addr = module_set_addr
             else:
                 next_addr = module_set_addrs[i + 1]
             num_modules = (next_addr - this_addr) // MODULE_ENTRY_SIZE
             raw_entries = struct.unpack('<' + ('2I' * num_modules), exe[this_addr:next_addr])
-            module_sets.append([
+            maps.append([
                 {'index': raw_entries[j], 'entry_point': raw_entries[j + 1]}
                 for j in range(0, len(raw_entries), 2)
             ])
+
+        rooms_seen = set()
+        with module_manifest:
+            for modules in maps:
+                for module_entry in modules:
+                    index = module_entry['index']
+                    if index in rooms_seen:
+                        continue
+
+                    rooms_seen.add(index)
+                    module_file = module_manifest[index]
+                    with module_file.path.open('rb') as f:
+                        module = RoomModule.parse(f, version.language, module_entry['entry_point'])
+                    if not module.is_empty:
+                        try:
+                            module_manifest.rename(index, module.name, ext=module.suggested_extension)
+                        except KeyError:
+                            module_manifest.rename(index, f'{module.name}_{index}', ext=module.suggested_extension)
+
+                        new_file = module_manifest[index]
+                        with new_file.path.with_suffix('.json').open('w') as f:
+                            module.save_metadata(f)
 
         x_scales = []
         option_menu = []
@@ -579,7 +445,7 @@ class Project:
             xa_db.set_data(mxa_path.read_bytes())
             Manifest.from_archive(voice_dir, 'XA', xa_db, '.XA')
 
-        project = cls(project_path, version, actor_graphics, module_sets, x_scales, option_menu)
+        project = cls(project_path, version, actor_graphics, maps, x_scales, option_menu)
         project.save()
         return project
 
@@ -683,8 +549,7 @@ class Project:
         manifest = Manifest.load_from(self.project_dir / 'modules')
         for manifest_file in manifest:
             if manifest_file.name[0] == stage:
-                with manifest_file.path.open('rb') as f:
-                    yield RoomModule.load(f, self.addresses['RoomLoad'])
+                yield RoomModule.load_with_metadata(manifest_file.path)
 
     def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
         manifest = Manifest.load_from(self.project_dir / 'models')

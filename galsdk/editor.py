@@ -8,7 +8,8 @@ from typing import Optional
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import getModelPath
 
-from galsdk.project import GameVersion, Project
+from galsdk.project import Project
+from galsdk.game import GameVersion
 from galsdk.ui import ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab, StringTab,\
     VoiceTab
 

@@ -8,7 +8,8 @@ from PIL import Image
 
 from galsdk.animation import AnimationDb
 from galsdk.module import RoomModule, ColliderType
-from galsdk.project import Project, Stage
+from galsdk.project import Project
+from galsdk.game import Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
     WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject
 from galsdk.tim import TimDb
@@ -128,7 +129,9 @@ class RoomViewport(Viewport):
         return dimension / math.tan(fov / 2)
 
     def get_default_camera_distance(self) -> float:
-        return self.calculate_screen_fill_distance(self.wall.width.panda_units, self.wall.height.panda_units)
+        if self.wall:
+            return self.calculate_screen_fill_distance(self.wall.width.panda_units, self.wall.height.panda_units)
+        return 20.
 
     def update_camera_view(self):
         if self.camera_view:
@@ -145,9 +148,8 @@ class RoomViewport(Viewport):
         if self.background:
             self.background.remove_from_scene()
 
-        if self.camera_target:
-            self.camera_target.removeNode()
-            self.camera_target = None
+        if not self.camera_target:
+            self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
 
         # unhide the old camera
         if self.camera_view:
@@ -157,8 +159,9 @@ class RoomViewport(Viewport):
         if camera:
             # TODO: this should track changes to the camera in real-time
             # TODO: implement camera orientation and scale
+            # FIXME: hiding the camera doesn't work right in C0101. I think it has something to do with the fact that
+            #  that room has two background sets.
             self.camera_view.hide()  # hide the model for the current camera angle so it's not in the way
-            self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
             self.camera_target.setPos(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
             self.camera_target.setHpr(0, 0, 0)
             self.set_target(self.camera_target)
@@ -176,7 +179,10 @@ class RoomViewport(Viewport):
             self.camera.node().getLens().setMinFov(self.default_fov)
             camera_distance = self.get_default_camera_distance()
             self.max_zoom = camera_distance * 4
-            self.set_target(self.wall.node_path, (0, 0, camera_distance))
+            if self.wall:
+                self.set_target(self.wall.node_path, (0, 0, camera_distance))
+            else:
+                self.set_target(self.camera_target)
             self.background = None
 
     def select(self, item: RoomObject | None):
@@ -275,18 +281,23 @@ class RoomViewport(Viewport):
             trigger_object.add_to_scene(self.trigger_node)
             self.triggers.append(trigger_object)
 
-        for camera, background in zip(module.layout.cameras, module.backgrounds.backgrounds, strict=True):
-            object_name = f'room{self.name}_camera{len(self.cameras)}'
-            camera_object = CameraObject(object_name, camera, background, self.base.loader)
-            camera_object.add_to_scene(self.camera_node)
-            self.cameras.append(camera_object)
-            if camera_object.background.index not in self.loaded_tims:
-                path = self.stage_backgrounds[self.current_stage][camera_object.background.index].path
-                with path.open('rb') as f:
-                    db = TimDb.read(f, fmt=TimDb.Format.from_extension(path.suffix))
-                self.loaded_tims[camera_object.background.index] = db
+        # TODO: should we show cameras and backgrounds separately? right now, if a room has multiple background sets,
+        #  we're making it look like it has twice as many cameras
+        for background_set in module.backgrounds:
+            for camera, background in zip(module.layout.cameras, background_set.backgrounds, strict=True):
+                object_name = f'room{self.name}_camera{len(self.cameras)}'
+                camera_object = CameraObject(object_name, camera, background, self.base.loader)
+                camera_object.add_to_scene(self.camera_node)
+                self.cameras.append(camera_object)
+                if camera_object.background.index not in self.loaded_tims:
+                    path = self.stage_backgrounds[self.current_stage][camera_object.background.index].path
+                    with path.open('rb') as f:
+                        db = TimDb.read(f, fmt=TimDb.Format.from_extension(path.suffix))
+                    self.loaded_tims[camera_object.background.index] = db
 
-        self.actor_layouts = module.actor_layouts.layouts
+        self.actor_layouts = []
+        for layout_set in module.actor_layouts:
+            self.actor_layouts.extend(layout_set.layouts)
         if len(self.actor_layouts) > 0:
             self.set_actor_layout(0)
 
@@ -300,8 +311,8 @@ class RoomViewport(Viewport):
             else:
                 animation.pause()
 
-    def resize(self, width: int, height: int):
-        super().resize(width, height)
+    def resize(self, width: int, height: int, keep_aspect_ratio: bool = False):
+        super().resize(width, height, keep_aspect_ratio)
         self.update_camera_view()
 
 
@@ -366,7 +377,7 @@ class RoomTab(Tab):
     def resize_3d(self, _=None):
         self.update()
         x, y, width, height = self.grid_bbox(3, 0, 3, 0)
-        self.viewport.resize(width, height)
+        self.viewport.resize(width, height, True)
 
     def set_room(self, room_id: int):
         if self.current_room != room_id:
