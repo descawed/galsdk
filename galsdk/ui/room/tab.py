@@ -129,7 +129,9 @@ class RoomViewport(Viewport):
         return dimension / math.tan(fov / 2)
 
     def get_default_camera_distance(self) -> float:
-        return self.calculate_screen_fill_distance(self.wall.width.panda_units, self.wall.height.panda_units)
+        if self.wall:
+            return self.calculate_screen_fill_distance(self.wall.width.panda_units, self.wall.height.panda_units)
+        return 20.
 
     def update_camera_view(self):
         if self.camera_view:
@@ -146,9 +148,8 @@ class RoomViewport(Viewport):
         if self.background:
             self.background.remove_from_scene()
 
-        if self.camera_target:
-            self.camera_target.removeNode()
-            self.camera_target = None
+        if not self.camera_target:
+            self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
 
         # unhide the old camera
         if self.camera_view:
@@ -158,8 +159,9 @@ class RoomViewport(Viewport):
         if camera:
             # TODO: this should track changes to the camera in real-time
             # TODO: implement camera orientation and scale
+            # FIXME: hiding the camera doesn't work right in C0101. I think it has something to do with the fact that
+            #  that room has two background sets.
             self.camera_view.hide()  # hide the model for the current camera angle so it's not in the way
-            self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
             self.camera_target.setPos(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
             self.camera_target.setHpr(0, 0, 0)
             self.set_target(self.camera_target)
@@ -177,7 +179,10 @@ class RoomViewport(Viewport):
             self.camera.node().getLens().setMinFov(self.default_fov)
             camera_distance = self.get_default_camera_distance()
             self.max_zoom = camera_distance * 4
-            self.set_target(self.wall.node_path, (0, 0, camera_distance))
+            if self.wall:
+                self.set_target(self.wall.node_path, (0, 0, camera_distance))
+            else:
+                self.set_target(self.camera_target)
             self.background = None
 
     def select(self, item: RoomObject | None):
@@ -306,8 +311,8 @@ class RoomViewport(Viewport):
             else:
                 animation.pause()
 
-    def resize(self, width: int, height: int):
-        super().resize(width, height)
+    def resize(self, width: int, height: int, keep_aspect_ratio: bool = False):
+        super().resize(width, height, keep_aspect_ratio)
         self.update_camera_view()
 
 
@@ -372,7 +377,7 @@ class RoomTab(Tab):
     def resize_3d(self, _=None):
         self.update()
         x, y, width, height = self.grid_bbox(3, 0, 3, 0)
-        self.viewport.resize(width, height)
+        self.viewport.resize(width, height, True)
 
     def set_room(self, room_id: int):
         if self.current_room != room_id:
