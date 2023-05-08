@@ -1,5 +1,5 @@
 from direct.showbase.Loader import Loader
-from panda3d.core import Geom, NodePath
+from panda3d.core import Geom
 
 from galsdk.coords import Point
 from galsdk.module import Camera, Background
@@ -7,9 +7,9 @@ from galsdk.room.object import RoomObject
 
 
 class CameraObject(RoomObject):
-    def __init__(self, name: str, camera: Camera, background: Background, loader: Loader):
+    def __init__(self, name: str, camera: Camera, backgrounds: list[Background], loader: Loader):
         super().__init__(name, Point(camera.x, camera.y, camera.z), 0)
-        self.background = background
+        self.backgrounds = backgrounds
         self.target = Point(camera.target_x, camera.target_y, camera.target_z)
         self.orientation = camera.orientation
         self.fov = camera.vertical_fov / 10

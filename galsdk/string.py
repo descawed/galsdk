@@ -203,7 +203,7 @@ class JapaneseStringDb(StringDb):
         ' .\u2bc8\u300c\u300d()\uff62\uff63\u201c\u201d\u2bc6012345'
         '6789:\u3001\u3002\u201d!? ABCDEFG'
         'HIJKLMNOPQRSTUVWXY'
-        "Z[/]'-\u00b7abcdefghijk"
+        "Z[/]'\uff0d\u00b7abcdefghijk"
         'lmnopqrstuvwxyzあいう'
         'えおかきくけこさしすせそたちつてとな'
         'にぬねのはひふへほまみむめもやゆよら'
@@ -214,7 +214,7 @@ class JapaneseStringDb(StringDb):
         'ミムメモヤユヨラリルレロワヲンガギグ'
         'ゲゴザジズゼゾダヂヅデドバビブベボパ'
         'ピプペポァィゥェォャュョッヷ\u2e3a\u200b\0\0'
-        '&\u2026+\uff0d#$%=          '
+        '&\u2026+-#$%=          '
         '\0\0\0\0\0\0\0\0\u21e7\u21e9\u21e6\u21e8'
     )
 

@@ -54,6 +54,8 @@ class RoomViewport(Viewport):
         self.anim_dbs = {}
         self.current_stage = Stage.A
         self.background = None
+        self.current_bg = 0
+        self.num_bgs = 0
         self.loaded_tims = {}
         self.actor_layouts = []
         self.current_layout = -1
@@ -141,12 +143,30 @@ class RoomViewport(Viewport):
                 self.background.node_path.setPos(0, distance, 0)
                 self.background.node_path.setHpr(0, 90, 0)
 
+    def set_bg(self):
+        if self.background:
+            self.background.remove_from_scene()
+
+        bg_index = self.camera_view.backgrounds[self.current_bg].index
+        if bg_index == -1:
+            bg_image = self.missing_bg
+        else:
+            bg_image = self.loaded_tims[bg_index][0].to_image(0, Transparency.NONE)
+        self.background = BillboardObject('room_viewport_background', bg_image)
+        self.background.add_to_scene(self.camera)
+        self.update_camera_view()
+
+    def select_bg(self, index: int):
+        self.current_bg = index
+        self.set_bg()
+
     def set_camera_view(self, camera: CameraObject | None):
         if self.default_fov is None and self.camera is not None:
             self.default_fov = self.camera.node().getLens().getMinFov()
 
         if self.background:
             self.background.remove_from_scene()
+            self.background = None
 
         if not self.camera_target:
             self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
@@ -168,13 +188,7 @@ class RoomViewport(Viewport):
             self.camera.setPos(self.render_target, camera.position.panda_x, camera.position.panda_y,
                                camera.position.panda_z)
             self.camera.lookAt(self.camera_target)
-            if camera.background.index == -1:
-                bg_image = self.missing_bg
-            else:
-                bg_image = self.loaded_tims[camera.background.index][0].to_image(0, Transparency.NONE)
-            self.background = BillboardObject('room_viewport_background', bg_image)
-            self.background.add_to_scene(self.camera)
-            self.update_camera_view()
+            self.set_bg()
         else:
             self.camera.node().getLens().setMinFov(self.default_fov)
             camera_distance = self.get_default_camera_distance()
@@ -183,7 +197,6 @@ class RoomViewport(Viewport):
                 self.set_target(self.wall.node_path, (0, 0, camera_distance))
             else:
                 self.set_target(self.camera_target)
-            self.background = None
 
     def select(self, item: RoomObject | None):
         if self.selected_item:
@@ -240,6 +253,7 @@ class RoomViewport(Viewport):
         circle_iter = iter(module.layout.circle_colliders)
         self.name = module.name or 'UNKWN'
         self.current_stage = Stage(self.name[0])
+        self.current_bg = 0
 
         for cut in module.layout.cuts:
             object_name = f'room{self.name}_cut{len(self.cuts)}'
@@ -281,19 +295,19 @@ class RoomViewport(Viewport):
             trigger_object.add_to_scene(self.trigger_node)
             self.triggers.append(trigger_object)
 
-        # TODO: should we show cameras and backgrounds separately? right now, if a room has multiple background sets,
-        #  we're making it look like it has twice as many cameras
-        for background_set in module.backgrounds:
-            for camera, background in zip(module.layout.cameras, background_set.backgrounds, strict=True):
-                object_name = f'room{self.name}_camera{len(self.cameras)}'
-                camera_object = CameraObject(object_name, camera, background, self.base.loader)
-                camera_object.add_to_scene(self.camera_node)
-                self.cameras.append(camera_object)
-                if camera_object.background.index not in self.loaded_tims:
-                    path = self.stage_backgrounds[self.current_stage][camera_object.background.index].path
+        self.num_bgs = len(module.backgrounds)
+        for i, camera in enumerate(module.layout.cameras):
+            object_name = f'room{self.name}_camera{len(self.cameras)}'
+            backgrounds = [background_set.backgrounds[i] for background_set in module.backgrounds]
+            camera_object = CameraObject(object_name, camera, backgrounds, self.base.loader)
+            camera_object.add_to_scene(self.camera_node)
+            self.cameras.append(camera_object)
+            for background in backgrounds:
+                if background.index >= 0 and background.index not in self.loaded_tims:
+                    path = self.stage_backgrounds[self.current_stage][background.index].path
                     with path.open('rb') as f:
                         db = TimDb.read(f, fmt=TimDb.Format.from_extension(path.suffix))
-                    self.loaded_tims[camera_object.background.index] = db
+                    self.loaded_tims[background.index] = db
 
         self.actor_layouts = []
         for layout_set in module.actor_layouts:
@@ -348,7 +362,7 @@ class RoomTab(Tab):
                 room_id = len(self.rooms)
                 self.rooms.append(room)
                 iid = f'room_{room_id}'
-                self.tree.insert(stage, tk.END, text=room.name, iid=iid)
+                self.tree.insert(stage, tk.END, text=f'#{room.module_id:02X}: {room.name}', iid=iid)
 
                 actor_iid = f'actors_{room_id}'
                 self.tree.insert(iid, tk.END, text='Actors', iid=actor_iid, open=True)
@@ -466,7 +480,8 @@ class RoomTab(Tab):
                     editor = CameraCutEditor(obj, self)
                 case 'camera':
                     camera_view = obj = self.viewport.cameras[object_id]
-                    editor = CameraEditor(obj, self)
+                    editor = CameraEditor(obj, self.viewport.num_bgs, self.viewport.current_bg, self.viewport.select_bg,
+                                          self)
                 case _:
                     editor = obj = None
             self.set_detail_widget(editor)

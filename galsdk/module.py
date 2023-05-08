@@ -399,6 +399,7 @@ class RoomModule(FileFormat):
                 case _:
                     num_rects += 1
             element_ptr = int.from_bytes(data[offset + 4:offset + 8], 'little')
+            # TODO: this might be an angle; see main function in D0003
             unknown = int.from_bytes(data[offset + 8:offset + 12], 'little')
             room_layout.colliders.append(Collider(collider_type, element_ptr, unknown))
             offset += 12

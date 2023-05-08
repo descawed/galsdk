@@ -1,14 +1,18 @@
 import tkinter as tk
 from tkinter import ttk
+from typing import Callable
 
 from galsdk.room import CameraObject
 from galsdk.ui.room.util import validate_int, validate_float
 
 
 class CameraEditor(ttk.Frame):
-    def __init__(self, camera: CameraObject, *args, **kwargs):
+    def __init__(self, camera: CameraObject, num_bgs: int, current_bg: int, bg_change_listener: Callable[[int], None],
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.camera = camera
+        self.num_bgs = num_bgs
+        self.bg_change_listener = bg_change_listener
 
         validator = (self.register(validate_int), '%P')
         float_validator = (self.register(validate_float), '%P')
@@ -59,6 +63,9 @@ class CameraEditor(ttk.Frame):
         target_z_label = ttk.Label(self, text='Target Z:', anchor=tk.W)
         target_z_input = ttk.Entry(self, textvariable=self.target_z_var, validate='all', validatecommand=validator)
 
+        self.bg_var = tk.StringVar(self, str(current_bg))
+        self.bg_var.trace_add('write', self.on_change_bg)
+
         orientation_label.grid(row=0, column=0)
         orientation_input.grid(row=0, column=1)
         fov_label.grid(row=1, column=0)
@@ -78,6 +85,12 @@ class CameraEditor(ttk.Frame):
         target_z_label.grid(row=8, column=0)
         target_z_input.grid(row=8, column=1)
 
+        if num_bgs > 1:
+            bg_label = ttk.Label(self, text='BG preview:', anchor=tk.W)
+            bg_select = ttk.Combobox(self, textvariable=self.bg_var, values=[str(i) for i in range(num_bgs)])
+            bg_label.grid(row=9, column=0)
+            bg_select.grid(row=9, column=1)
+
         orientation_input.focus_force()
 
     def on_change_orientation(self, *_):
@@ -92,3 +105,7 @@ class CameraEditor(ttk.Frame):
     def on_change_pos(self, position: str, axis: str, new_value: tk.StringVar):
         setattr(getattr(self.camera, position), f'game_{axis}', int(new_value.get() or '0'))
         self.camera.update_position()
+
+    def on_change_bg(self, *_):
+        bg_num = int(self.bg_var.get() or '0')
+        self.bg_change_listener(bg_num)
