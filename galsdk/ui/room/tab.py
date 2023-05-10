@@ -11,13 +11,14 @@ from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project
 from galsdk.game import Stage
 from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
-    WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject
+    WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject, EntranceObject
 from galsdk.tim import TimDb
 from galsdk.ui.animation import ActiveAnimation
 from galsdk.ui.room.actor import ActorEditor
 from galsdk.ui.room.camera import CameraEditor
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
 from galsdk.ui.room.cut import CameraCutEditor
+from galsdk.ui.room.entrance import EntranceEditor
 from galsdk.ui.room.replaceable import Replaceable
 from galsdk.ui.room.trigger import TriggerEditor
 from galsdk.ui.tab import Tab
@@ -42,6 +43,8 @@ class RoomViewport(Viewport):
         self.camera_node = self.render_target.attachNewNode('room_viewport_cameras')
         self.actors = []
         self.actor_node = self.render_target.attachNewNode('room_viewport_actors')
+        self.entrances = []
+        self.entrance_node = self.render_target.attachNewNode('room_viewport_entrances')
         self.default_fov = None
         self.project = project
         self.stage_backgrounds = {}
@@ -70,12 +73,13 @@ class RoomViewport(Viewport):
             self.background.remove_from_scene()
             self.background = None
         self.loaded_tims = {}
-        for obj in [*self.colliders, *self.triggers, *self.cuts, *self.cameras, *self.actors]:
+        for obj in [*self.colliders, *self.triggers, *self.cuts, *self.cameras, *self.actors, *self.entrances]:
             obj.remove_from_scene()
         self.colliders = []
         self.triggers = []
         self.cuts = []
         self.cameras = []
+        self.entrances = []
         self.actor_layouts = []
         self.actors = []
         for animation in self.actor_animations:
@@ -179,8 +183,6 @@ class RoomViewport(Viewport):
         if camera:
             # TODO: this should track changes to the camera in real-time
             # TODO: implement camera orientation and scale
-            # FIXME: hiding the camera doesn't work right in C0101. I think it has something to do with the fact that
-            #  that room has two background sets.
             self.camera_view.hide()  # hide the model for the current camera angle so it's not in the way
             self.camera_target.setPos(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
             self.camera_target.setHpr(0, 0, 0)
@@ -295,6 +297,12 @@ class RoomViewport(Viewport):
             trigger_object.add_to_scene(self.trigger_node)
             self.triggers.append(trigger_object)
 
+        for entrance in module.entrances.entrances:
+            object_name = f'room{self.name}_entrance{len(self.entrances)}'
+            entrance_object = EntranceObject(object_name, entrance, self.base.loader)
+            entrance_object.add_to_scene(self.entrance_node)
+            self.entrances.append(entrance_object)
+
         self.num_bgs = len(module.backgrounds)
         for i, camera in enumerate(module.layout.cameras):
             object_name = f'room{self.name}_camera{len(self.cameras)}'
@@ -340,7 +348,8 @@ class RoomTab(Tab):
         self.detail_widget = None
         self.menu_item = None
         self.rooms = []
-        self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True, 'actors': True}
+        self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True, 'actors': True,
+                           'entrances': True}
 
         key_items = list(self.project.get_items(True))
         self.item_names = [f'Unused #{i}' for i in range(len(key_items))]
@@ -368,6 +377,8 @@ class RoomTab(Tab):
                 self.tree.insert(iid, tk.END, text='Actors', iid=actor_iid, open=True)
                 collider_iid = f'colliders_{room_id}'
                 self.tree.insert(iid, tk.END, text='Colliders', iid=collider_iid)
+                entrance_iid = f'entrances_{room_id}'
+                self.tree.insert(iid, tk.END, text='Entrances', iid=entrance_iid)
                 camera_iid = f'cameras_{room_id}'
                 self.tree.insert(iid, tk.END, text='Cameras', iid=camera_iid)
                 cut_iid = f'cuts_{room_id}'
@@ -434,13 +445,14 @@ class RoomTab(Tab):
 
     def select_item(self, _):
         iid = self.tree.selection()[0]
-        room_level_ids = ['room', 'actors', 'colliders', 'cameras', 'cuts', 'triggers']
-        object_ids = ['collider', 'trigger', 'cut', 'camera']
+        room_level_ids = ['room', 'actors', 'colliders', 'cameras', 'cuts', 'triggers', 'entrances']
+        object_ids = ['collider', 'trigger', 'cut', 'camera', 'entrance']
         if any(iid.startswith(f'{room_level_id}_') for room_level_id in room_level_ids):
             room_id = int(iid.split('_')[1])
             if self.current_room != room_id:
                 self.set_room(room_id)
                 self.add_children(room_id, 'collider', self.viewport.colliders)
+                self.add_children(room_id, 'entrance', self.viewport.entrances)
                 self.add_children(room_id, 'cut', self.viewport.cuts)
                 self.add_children(room_id, 'trigger', self.viewport.triggers)
                 self.add_children(room_id, 'camera', self.viewport.cameras)
@@ -472,6 +484,9 @@ class RoomTab(Tab):
                                            lambda c: self.viewport.replace_collider(object_id, c))
                     editor = ColliderEditor(collider, self)
                     obj = collider.object
+                case 'entrance':
+                    obj = self.viewport.entrances[object_id]
+                    editor = EntranceEditor(obj, self)
                 case 'trigger':
                     obj = self.viewport.triggers[object_id]
                     editor = TriggerEditor(obj, self.item_names, self)

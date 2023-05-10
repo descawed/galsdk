@@ -1,5 +1,5 @@
 from direct.showbase.Loader import Loader
-from panda3d.core import Geom
+from panda3d.core import NodePath
 
 from galsdk.coords import Point
 from galsdk.module import Camera, Background
@@ -27,5 +27,5 @@ class CameraObject(RoomObject):
         # FIXME: camera rotation looks weird
         self.node_path.lookAt(self.target.panda_x, self.target.panda_y, self.target.panda_z)
 
-    def get_model(self) -> Geom | None:
+    def get_model(self) -> NodePath | None:
         return None
