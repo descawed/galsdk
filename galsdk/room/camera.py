@@ -12,6 +12,7 @@ class CameraObject(RoomObject):
         self.backgrounds = backgrounds
         self.target = Point(camera.target_x, camera.target_y, camera.target_z)
         self.orientation = camera.orientation
+        self.unknown = camera.unknown
         self.fov = camera.vertical_fov / 10
         self.scale = camera.scale
         self.loader = loader
@@ -29,3 +30,7 @@ class CameraObject(RoomObject):
 
     def get_model(self) -> NodePath | None:
         return None
+
+    def as_camera(self) -> Camera:
+        return Camera(self.orientation, int(self.fov * 10), self.scale, self.position.game_x, self.position.game_y,
+                      self.position.game_z, self.target.game_x, self.target.game_y, self.target.game_z, self.unknown)

@@ -141,6 +141,13 @@ class RoomViewport(Viewport):
 
     def update_camera_view(self):
         if self.camera_view:
+            self.camera_target.setPos(self.camera_view.target.panda_x, self.camera_view.target.panda_y,
+                                      self.camera_view.target.panda_z)
+            self.camera_target.setHpr(0, 0, 0)
+            self.set_target(self.camera_target)
+            self.camera.setPos(self.render_target, self.camera_view.position.panda_x, self.camera_view.position.panda_y,
+                               self.camera_view.position.panda_z)
+            self.camera.lookAt(self.camera_target)
             self.camera.node().getLens().setMinFov(self.camera_view.fov)
             if self.background:
                 distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
@@ -181,15 +188,8 @@ class RoomViewport(Viewport):
 
         self.camera_view = camera
         if camera:
-            # TODO: this should track changes to the camera in real-time
             # TODO: implement camera orientation and scale
             self.camera_view.hide()  # hide the model for the current camera angle so it's not in the way
-            self.camera_target.setPos(camera.target.panda_x, camera.target.panda_y, camera.target.panda_z)
-            self.camera_target.setHpr(0, 0, 0)
-            self.set_target(self.camera_target)
-            self.camera.setPos(self.render_target, camera.position.panda_x, camera.position.panda_y,
-                               camera.position.panda_z)
-            self.camera.lookAt(self.camera_target)
             self.set_bg()
         else:
             self.camera.node().getLens().setMinFov(self.default_fov)
@@ -496,7 +496,7 @@ class RoomTab(Tab):
                 case 'camera':
                     camera_view = obj = self.viewport.cameras[object_id]
                     editor = CameraEditor(obj, self.viewport.num_bgs, self.viewport.current_bg, self.viewport.select_bg,
-                                          self)
+                                          self.viewport.update_camera_view, self)
                 case _:
                     editor = obj = None
             self.set_detail_widget(editor)

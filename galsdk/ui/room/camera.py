@@ -8,11 +8,12 @@ from galsdk.ui.room.util import validate_int, validate_float
 
 class CameraEditor(ttk.Frame):
     def __init__(self, camera: CameraObject, num_bgs: int, current_bg: int, bg_change_listener: Callable[[int], None],
-                 *args, **kwargs):
+                 view_change_listener: Callable[[], None], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.camera = camera
         self.num_bgs = num_bgs
         self.bg_change_listener = bg_change_listener
+        self.view_change_listener = view_change_listener
 
         validator = (self.register(validate_int), '%P')
         float_validator = (self.register(validate_float), '%P')
@@ -98,6 +99,7 @@ class CameraEditor(ttk.Frame):
 
     def on_change_fov(self, *_):
         self.camera.fov = float(self.fov_var.get() or '0')
+        self.view_change_listener()
 
     def on_change_scale(self, *_):
         self.camera.scale = int(self.scale_var.get() or '0')
@@ -105,6 +107,7 @@ class CameraEditor(ttk.Frame):
     def on_change_pos(self, position: str, axis: str, new_value: tk.StringVar):
         setattr(getattr(self.camera, position), f'game_{axis}', int(new_value.get() or '0'))
         self.camera.update_position()
+        self.view_change_listener()
 
     def on_change_bg(self, *_):
         bg_num = int(self.bg_var.get() or '0')
