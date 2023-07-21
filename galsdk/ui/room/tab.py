@@ -43,6 +43,7 @@ class RoomViewport(Viewport):
         self.camera_node = self.render_target.attachNewNode('room_viewport_cameras')
         self.actors = []
         self.actor_node = self.render_target.attachNewNode('room_viewport_actors')
+        self.entrance_sets = []
         self.entrances = []
         self.entrance_node = self.render_target.attachNewNode('room_viewport_entrances')
         self.default_fov = None
@@ -58,6 +59,7 @@ class RoomViewport(Viewport):
         self.current_stage = Stage.A
         self.background = None
         self.current_bg = 0
+        self.current_entrance_set = -1
         self.num_bgs = 0
         self.loaded_tims = {}
         self.actor_layouts = []
@@ -79,12 +81,14 @@ class RoomViewport(Viewport):
         self.triggers = []
         self.cuts = []
         self.cameras = []
+        self.entrance_sets = []
         self.entrances = []
         self.actor_layouts = []
         self.actors = []
         for animation in self.actor_animations:
             animation.remove()
         self.actor_animations = []
+        self.current_entrance_set = -1
         self.current_layout = -1
         self.current_stage = Stage.A
 
@@ -247,6 +251,21 @@ class RoomViewport(Viewport):
             actor.add_to_scene(self.actor_node)
             self.actors.append(actor)
 
+    def set_entrance_set(self, index: int):
+        if self.current_entrance_set == index:
+            return
+
+        self.current_entrance_set = index
+        for entrance_object in self.entrances:
+            entrance_object.remove_from_scene()
+
+        self.entrances = []
+        for entrance in self.entrance_sets[index]:
+            object_name = f'room{self.name}_entrance{len(self.entrances)}'
+            entrance_object = EntranceObject(object_name, entrance, self.base.loader)
+            entrance_object.add_to_scene(self.entrance_node)
+            self.entrances.append(entrance_object)
+
     def set_room(self, module: RoomModule):
         self.clear()
 
@@ -297,11 +316,10 @@ class RoomViewport(Viewport):
             trigger_object.add_to_scene(self.trigger_node)
             self.triggers.append(trigger_object)
 
-        for entrance in module.entrances.entrances:
-            object_name = f'room{self.name}_entrance{len(self.entrances)}'
-            entrance_object = EntranceObject(object_name, entrance, self.base.loader)
-            entrance_object.add_to_scene(self.entrance_node)
-            self.entrances.append(entrance_object)
+        for entrance_set in module.entrances:
+            self.entrance_sets.append(entrance_set.entrances)
+        if len(self.entrance_sets) > 0:
+            self.set_entrance_set(0)
 
         self.num_bgs = len(module.backgrounds)
         for i, camera in enumerate(module.layout.cameras):
@@ -317,7 +335,6 @@ class RoomViewport(Viewport):
                         db = TimDb.read(f, fmt=TimDb.Format.from_extension(path.suffix))
                     self.loaded_tims[background.index] = db
 
-        self.actor_layouts = []
         for layout_set in module.actor_layouts:
             self.actor_layouts.extend(layout_set.layouts)
         if len(self.actor_layouts) > 0:
@@ -446,13 +463,20 @@ class RoomTab(Tab):
     def select_item(self, _):
         iid = self.tree.selection()[0]
         room_level_ids = ['room', 'actors', 'colliders', 'cameras', 'cuts', 'triggers', 'entrances']
-        object_ids = ['collider', 'trigger', 'cut', 'camera', 'entrance']
+        object_ids = ['collider', 'trigger', 'cut', 'camera']
         if any(iid.startswith(f'{room_level_id}_') for room_level_id in room_level_ids):
             room_id = int(iid.split('_')[1])
             if self.current_room != room_id:
                 self.set_room(room_id)
                 self.add_children(room_id, 'collider', self.viewport.colliders)
-                self.add_children(room_id, 'entrance', self.viewport.entrances)
+                iid = f'entrances_{room_id}'
+                if not self.tree.get_children(iid):
+                    for i, entrance_set in enumerate(self.viewport.entrance_sets):
+                        set_iid = f'entrance-set_{i}_{room_id}'
+                        self.tree.insert(iid, tk.END, text=f'Set #{i}', iid=set_iid)
+                        for j, entrance in enumerate(entrance_set):
+                            entrance_iid = f'entrance-set_{i}_entrance_{j}_{room_id}'
+                            self.tree.insert(set_iid, tk.END, text=f'#{j}', iid=entrance_iid)
                 self.add_children(room_id, 'cut', self.viewport.cuts)
                 self.add_children(room_id, 'trigger', self.viewport.triggers)
                 self.add_children(room_id, 'camera', self.viewport.cameras)
@@ -484,9 +508,6 @@ class RoomTab(Tab):
                                            lambda c: self.viewport.replace_collider(object_id, c))
                     editor = ColliderEditor(collider, self)
                     obj = collider.object
-                case 'entrance':
-                    obj = self.viewport.entrances[object_id]
-                    editor = EntranceEditor(obj, self)
                 case 'trigger':
                     obj = self.viewport.triggers[object_id]
                     editor = TriggerEditor(obj, self.item_names, self)
@@ -502,6 +523,18 @@ class RoomTab(Tab):
             self.set_detail_widget(editor)
             self.viewport.select(obj)
             self.viewport.set_camera_view(camera_view)
+        elif iid.startswith('entrance-set_'):
+            pieces = iid.split('_')
+            set_id = int(pieces[1])
+            room_id = int(pieces[-1])
+            self.set_room(room_id)
+            self.viewport.set_entrance_set(set_id)
+            if pieces[2] == 'entrance':
+                entrance_id = int(pieces[3])
+                entrance = self.viewport.entrances[entrance_id]
+                self.set_detail_widget(EntranceEditor(entrance, self))
+                self.viewport.select(entrance)
+                self.viewport.set_camera_view(None)
         elif iid.startswith('layout_'):
             pieces = iid.split('_')
             layout_id = int(pieces[1])

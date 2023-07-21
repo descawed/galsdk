@@ -314,6 +314,16 @@ class Project:
             ])
 
         rooms_seen = set()
+        all_modules_path = Path.cwd() / 'data' / 'module'
+        module_metadata = None
+        if (candidate := all_modules_path / version.id).exists():
+            module_metadata = candidate
+        elif (candidate := all_modules_path / version.language).exists():
+            module_metadata = candidate
+
+        if module_metadata is not None:
+            shutil.copytree(module_metadata, module_dir, dirs_exist_ok=True)
+
         with module_manifest:
             for modules in maps:
                 for module_entry in modules:
@@ -323,17 +333,24 @@ class Project:
 
                     rooms_seen.add(index)
                     module_file = module_manifest[index]
-                    with module_file.path.open('rb') as f:
-                        module = RoomModule.parse(f, version.language, module_entry['entry_point'])
+                    metadata_path = module_file.path.with_suffix('.json')
+                    if metadata_path.exists():
+                        module = RoomModule.load_with_metadata(module_file.path)
+                    else:
+                        with module_file.path.open('rb') as f:
+                            module = RoomModule.parse(f, version.language, module_entry['entry_point'])
                     if not module.is_empty:
                         try:
                             module_manifest.rename(index, module.name, ext=module.suggested_extension)
                         except KeyError:
                             module_manifest.rename(index, f'{module.name}_{index}', ext=module.suggested_extension)
 
-                        new_file = module_manifest[index]
-                        with new_file.path.with_suffix('.json').open('w') as f:
-                            module.save_metadata(f)
+                        new_metadata_path = module_manifest[index].path.with_suffix('.json')
+                        if metadata_path.exists():
+                            metadata_path.rename(new_metadata_path)
+                        else:
+                            with new_metadata_path.with_suffix('.json').open('w') as f:
+                                module.save_metadata(f)
 
         x_scales = []
         option_menu = []

@@ -16,8 +16,10 @@ class CameraObject(RoomObject):
         self.fov = camera.vertical_fov / 10
         self.scale = camera.scale
         self.loader = loader
-        self.node_path = loader.loadModel('movie_camera.egg')
-        self.node_path.setScale(2)
+        self.model = loader.loadModel('movie_camera.egg')
+        self.model.setScale(2)
+        self.model.setHpr(90, 90, 0)
+        self.model.reparentTo(self.node_path)
         self.color = (0.5, 0.5, 0.5, 0.9)
 
     def remove_from_scene(self):
@@ -25,7 +27,6 @@ class CameraObject(RoomObject):
 
     def update_position(self):
         super().update_position()
-        # FIXME: camera rotation looks weird
         self.node_path.lookAt(self.target.panda_x, self.target.panda_y, self.target.panda_z)
 
     def get_model(self) -> NodePath | None:
