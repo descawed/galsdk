@@ -36,11 +36,16 @@ To open an existing project, use File > Open Project (or ctrl-O) and select the 
     colliders are shown in green and represent obstacles within the room. The game supports rectangular, triangular, and
     circular colliders. Wall-type colliders are rectangular but inverted such that the player is blocked from walking
     out of the area rather than walking into it.
+  - **Entrances** - Entrances are the different points the player can appear at when entering a room. Typically, you
+    enter a room by going through a door, and the entrance point corresponds to where you appear on the other side of
+    the door. There are also a few scripted entrance points, though, such as where you start at the beginning of each
+    stage. Entrances appear in the 3D view as cones pointing in the direction the player will face when entering at
+    that point.
   - **Cameras** - Cameras define the different camera angles the room can be viewed from in-game. Each camera angle is
     associated with a particular pre-rendered background image. Cameras' 3D positions are represented in the 3D view by
-    a model of a film camera (although those models currently don't point the right way). You can click on a camera
-    angle in the list to view the room from that camera angle with the associated background. The orientation and scale
-    settings on the camera are not currently reflected by the 3D view.
+    a model of a film camera. You can click on a camera angle in the list to view the room from that camera angle with
+    the associated background. The orientation and scale settings on the camera are not currently reflected by the 3D
+    view.
   - **Cuts** - Cuts define which camera angle the game should use when the player is standing in various parts of the
     room. Cuts are shown in orange in the 3D view. When the player moves from one cut to another, the camera angle will
     change to the one defined by the cut.
@@ -133,7 +138,9 @@ To open an existing project, use File > Open Project (or ctrl-O) and select the 
 ## CLI utilities
 galsdk also comes with a number of CLI tools for manipulating the game's files. Since the editor is currently read-only,
 these are what you want if you actually want to make changes to the game. Each tool can be run with
-`python -m <module name>` and has usage help available with the `-h` option. The following modules have CLI interfaces:
+`python -m <module name>` and has usage help available with the `-h` option. There are also a couple bonus scripts for
+working with Galerians: Ash files (no additional Ash support is planned at this time). The following modules have CLI
+interfaces:
 - `galsdk.animation` - Pack and unpack animation databases from MOT.CDB. You usually want to use the `--all` switch when
   unpacking, because animation databases can have gaps. `--all` exports empty files for animations that aren't present.
   Without these empty files, the animations will likely be in the wrong order when repacked.
@@ -167,3 +174,5 @@ these are what you want if you actually want to make changes to the game. Each t
   possibly less than) the original file. The tool tries to handle shuffling things around if the size changes, but it
   doesn't really work.
 - `psx.tim` - Convert TIM images to other formats.
+- `ash.bd` - Extract Galerians: Ash .BD1 and .BD2 archives.
+- `ash.tex` - Convert Galerians: Ash texture images to other formats.
