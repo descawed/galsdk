@@ -163,7 +163,7 @@ class Tim:
             case BitsPerPixel.BPP_24:
                 return self._decode_pixel_24(self.image_data)
 
-    def _update_image(self, image: Image, bpp: BitsPerPixel):
+    def _update_image(self, image: Image.Image, bpp: BitsPerPixel):
         if bpp in [BitsPerPixel.BPP_4, BitsPerPixel.BPP_8]:
             raise NotImplementedError('Importing images as 4- or 8-bit TIMs is not supported')
 
@@ -182,12 +182,12 @@ class Tim:
             self.set_image(tim_data, bpp, width)
 
     @classmethod
-    def from_image(cls, image: Image, bpp: BitsPerPixel = BitsPerPixel.BPP_24) -> Self:
+    def from_image(cls, image: Image.Image, bpp: BitsPerPixel = BitsPerPixel.BPP_24) -> Self:
         tim = cls()
         tim._update_image(image, bpp)
         return tim
 
-    def update_image_in_place(self, image: Image):
+    def update_image_in_place(self, image: Image.Image):
         width, height = image.size
         if width != self.width or height != self.height:
             raise ValueError('Image dimensions do not match TIM')

@@ -3,7 +3,7 @@ from tkinter import ttk
 
 from galsdk.model import ActorModel
 from galsdk.room import ActorObject
-from galsdk.ui.room.util import validate_int
+from galsdk.ui.room.util import validate_int, validate_float
 
 
 class ActorEditor(ttk.Frame):
@@ -14,6 +14,7 @@ class ActorEditor(ttk.Frame):
         self.actor_names = [model.name for model in self.actor_models]
 
         validator = (self.register(validate_int), '%P')
+        float_validator = (self.register(validate_float), '%P')
 
         self.id_var = tk.StringVar(self, str(self.actor.id))
         self.id_var.trace_add('write', self.on_change_id)
@@ -40,11 +41,11 @@ class ActorEditor(ttk.Frame):
         z_label = ttk.Label(self, text='Z:', anchor=tk.W)
         z_input = ttk.Entry(self, textvariable=self.z_var, validate='all', validatecommand=validator)
 
-        self.orientation_var = tk.StringVar(self, str(self.actor.orientation))
+        self.orientation_var = tk.StringVar(self, str(self.actor.angle))
         self.orientation_var.trace_add('write', self.on_change_orientation)
         orientation_label = ttk.Label(self, text='Orientation:', anchor=tk.W)
         orientation_input = ttk.Entry(self, textvariable=self.orientation_var, validate='all',
-                                      validatecommand=validator)
+                                      validatecommand=float_validator)
 
         id_label.grid(row=0, column=0)
         id_input.grid(row=0, column=1)
@@ -62,7 +63,8 @@ class ActorEditor(ttk.Frame):
         id_input.focus_force()
 
     def on_change_orientation(self, *_):
-        self.actor.orientation = int(self.orientation_var.get() or '0')
+        self.actor.angle = float(self.orientation_var.get() or '0')
+        self.actor.update_position()
 
     def on_change_id(self, *_):
         self.actor.id = int(self.id_var.get() or '0')

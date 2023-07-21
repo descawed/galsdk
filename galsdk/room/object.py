@@ -109,6 +109,7 @@ class RoomObject(ABC):
 
     def update_position(self):
         self.node_path.setPos(self.position.panda_x, self.position.panda_y, self.position.panda_z)
+        self.node_path.setH(self.angle)
 
     def set_color(self, color: tuple[float, float, float, float]):
         self.color = color

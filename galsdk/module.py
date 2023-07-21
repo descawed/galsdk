@@ -40,6 +40,21 @@ class TriggerFlag(IntFlag):
 
 
 @dataclass
+class Entrance:
+    room_index: int
+    x: int
+    y: int
+    z: int
+    angle: int
+
+
+@dataclass
+class EntranceSet:
+    address: int = 0
+    entrances: list[Entrance] = field(default_factory=list)
+
+
+@dataclass
 class ActorInstance:
     id: int
     type: int
@@ -61,7 +76,7 @@ class ActorLayout:
 @dataclass
 class ActorLayoutSet:
     address: int = 0
-    layouts: list[ActorLayout] = field(default_factory=lambda: [])
+    layouts: list[ActorLayout] = field(default_factory=list)
 
 
 @dataclass
@@ -77,7 +92,7 @@ class Trigger:
 @dataclass
 class TriggerSet:
     address: int = 0
-    triggers: list[Trigger] = field(default_factory=lambda: [])
+    triggers: list[Trigger] = field(default_factory=list)
 
 
 @dataclass
@@ -100,7 +115,7 @@ class Background:
 @dataclass
 class BackgroundSet:
     address: int = 0
-    backgrounds: list[Background] = field(default_factory=lambda: [])
+    backgrounds: list[Background] = field(default_factory=list)
 
 
 @dataclass
@@ -209,6 +224,21 @@ class Undefined:
     def __pos__(self) -> Undefined:
         return self
 
+    def __and__(self, other: Any) -> Undefined:
+        return self
+
+    def __or__(self, other: Any) -> Undefined:
+        return self
+
+    def __xor__(self, other: Any) -> Undefined:
+        return self
+
+    def __eq__(self, other: Any) -> bool:
+        return False
+
+    def __ne__(self, other: Any) -> bool:
+        return False
+
 
 UNDEFINED = Undefined()
 
@@ -217,10 +247,12 @@ UNDEFINED = Undefined()
 class RoomAddresses:
     game_state: int
     set_room_layout: int
-    actor_layouts: set[int] = field(default_factory=lambda: set())
-    triggers: set[int] = field(default_factory=lambda: set())
-    backgrounds: set[int] = field(default_factory=lambda: set())
-    room_layout: set[int] = field(default_factory=lambda: set())
+    actor_layouts: set[int] = field(default_factory=set)
+    triggers: set[int] = field(default_factory=set)
+    backgrounds: set[int] = field(default_factory=set)
+    room_layout: set[int] = field(default_factory=set)
+    entrances: set[int] = field(default_factory=set)
+    num_entrances: int = 0
 
     @property
     def is_valid(self) -> bool:
@@ -248,6 +280,9 @@ class RoomAddresses:
 
         return UNDEFINED
 
+    def is_last_room_address(self, address: int | Undefined) -> bool:
+        return address == self.game_state + GameStateOffsets.LAST_ROOM
+
 
 class RoomModule(FileFormat):
     ACTOR_INSTANCE_SIZE = 16
@@ -255,20 +290,24 @@ class RoomModule(FileFormat):
     MAX_ACTORS = 4
     MAX_ADDRESS = 0x801FFFFF
     MAX_CAMERAS = 10
+    MAX_ENTRANCES = 15
     MAX_ITEM_ID = 38
     MAX_REGIONS = 100
+    MAX_ROOMS_PER_MAP = 21
     MIN_ADDRESS = 0x80000000
     NAME_REGEX = re.compile(rb'[ABCD]\d{2}[0-9A-Z]{2}')
     ROOM_LAYOUT_SIZE = 0x2d5c
     TRIGGER_SIZE = 16
 
     def __init__(self, module_id: int, layout: RoomLayout, backgrounds: list[BackgroundSet],
-                 actor_layouts: list[ActorLayoutSet], triggers: TriggerSet, load_address: int):
+                 actor_layouts: list[ActorLayoutSet], triggers: TriggerSet, entrances: list[EntranceSet],
+                 load_address: int):
         self.module_id = module_id
         self.layout = layout
         self.backgrounds = backgrounds
         self.actor_layouts = actor_layouts
         self.triggers = triggers
+        self.entrances = entrances
         self.load_address = load_address
 
     @property
@@ -337,6 +376,8 @@ class RoomModule(FileFormat):
             'roomLayout': self.layout.address + self.load_address,
             'backgrounds': [background_set.address + self.load_address for background_set in self.backgrounds],
             'triggers': self.triggers.address + self.load_address,
+            'entrances': [entrance_set.address + self.load_address for entrance_set in self.entrances],
+            'numEntrances': len(self.entrances[0].entrances) if self.entrances else 0,
         }, f)
 
     @classmethod
@@ -347,7 +388,8 @@ class RoomModule(FileFormat):
 
         load_address = metadata['loadAddress']
         room_addresses = RoomAddresses(0, 0, set(metadata['actorLayouts']), {metadata['triggers']},
-                                       set(metadata['backgrounds']), {metadata['roomLayout']})
+                                       set(metadata['backgrounds']), {metadata['roomLayout']},
+                                       set(metadata['entrances']), metadata['numEntrances'])
 
         data = path.read_bytes()
         return cls.parse_with_addresses(data, load_address, room_addresses)
@@ -355,6 +397,34 @@ class RoomModule(FileFormat):
     @classmethod
     def _is_ptr(cls, p: int) -> bool:
         return p == 0 or cls.MIN_ADDRESS <= p <= cls.MAX_ADDRESS
+
+    @classmethod
+    def parse_entrances(cls, data: bytes, address: int, num_entrances: int, addresses: RoomAddresses) -> EntranceSet:
+        entrance_set = EntranceSet(address)
+        if num_entrances > 0:
+            for _ in range(num_entrances):
+                entrance_set.entrances.append(Entrance(*struct.unpack_from('<4hi', data, address)))
+                address += 12
+        else:
+            # try to find the end heuristically
+            for _ in range(cls.MAX_ENTRANCES):
+                if (address in addresses.backgrounds or address in addresses.actor_layouts
+                        or address in addresses.room_layout or address in addresses.triggers):
+                    break  # if we've run into one of the other data structures, we're at the end
+                entrance = Entrance(*struct.unpack_from('<4hi', data, address))
+                if not -1 <= entrance.room_index <= cls.MAX_ROOMS_PER_MAP:
+                    break  # invalid room index
+                if entrance.room_index == entrance.x == entrance.y == entrance.z == entrance.angle == 0:
+                    break  # all zeroes
+                if not -0x1000 <= entrance.angle <= 0x1000:
+                    break  # invalid angle
+                entrance_set.entrances.append(entrance)
+                address += 12
+            else:
+                # MAX_ENTRANCES is set a little higher than the actual max number of entrances any of the rooms have,
+                # so if we don't hit one of our exit conditions, we probably went too far
+                return EntranceSet(address)
+        return entrance_set
 
     @classmethod
     def parse_actor_layout(cls, data: bytes, address: int) -> ActorLayoutSet:
@@ -385,7 +455,7 @@ class RoomModule(FileFormat):
             raise ValueError('Invalid collider count')
 
         # reset the room layout from any previous aborted parsing attempt
-        room_layout = RoomLayout()
+        room_layout = RoomLayout(address)
 
         offset = address + 4
         num_rects = num_tris = num_circles = 0
@@ -489,7 +559,7 @@ class RoomModule(FileFormat):
 
     @classmethod
     def parse_triggers(cls, data: bytes, address: int, num_triggers: int, known_good: bool = False) -> TriggerSet:
-        triggers = TriggerSet()
+        triggers = TriggerSet(address)
         offset = address
 
         for _ in range(num_triggers):
@@ -517,6 +587,20 @@ class RoomModule(FileFormat):
 
         return triggers
 
+    @staticmethod
+    def find_entrance_count(data: bytes, start_address: int, module_space: range) -> int:
+        for i in range(start_address, module_space.stop, 4):
+            offset = i - module_space.start
+            word = int.from_bytes(data[offset:offset + 4], 'little')
+            inst = rabbitizer.Instruction(word, i)
+            if not inst.isValid():
+                return 0
+            if inst.isBranch() or inst.isJump():
+                # we've gone too far and hit the end of the loop; give up
+                return 0
+            if inst.getOpcodeName() == 'slti':
+                return inst.getProcessedImmediate()
+
     @classmethod
     def parse_function(cls, data: bytes, start_address: int, module_space: range, room_address: RoomAddresses,
                        regs: list[Undefined | int]):
@@ -525,6 +609,8 @@ class RoomModule(FileFormat):
         do_return = False
         restore_regs = False
         grab_room_layout_ptr = False
+        found_entrance_array = False
+        sources: list[Undefined | int] = [UNDEFINED for _ in regs]
 
         for i in range(start_address, module_space.stop, 4):
             offset = i - module_space.start
@@ -536,10 +622,13 @@ class RoomModule(FileFormat):
             match inst.getOpcodeName():
                 case 'lui':
                     regs[inst.rt.value] = inst.getProcessedImmediate() << 16
+                    sources[inst.rt.value] = UNDEFINED
                 case 'addiu':
                     regs[inst.rt.value] = regs[inst.rs.value] + inst.getProcessedImmediate()
+                    sources[inst.rt.value] = UNDEFINED
                 case 'addu':
                     regs[inst.rd.value] = regs[inst.rs.value] + regs[inst.rt.value]
+                    sources[inst.rd.value] = UNDEFINED
                 case 'jal':
                     dest = inst.getInstrIndexAsVram()
                     in_delay_slot = True
@@ -563,10 +652,37 @@ class RoomModule(FileFormat):
                     address = regs[inst.rs.value] + inst.getProcessedImmediate()
                     if address is not UNDEFINED:
                         regs[inst.rt.value] = room_address.get_by_address(address)
+                        sources[inst.rt.value] = address
+                case 'lh':
+                    address = regs[inst.rs.value] + inst.getProcessedImmediate()
+                    if address is not UNDEFINED:
+                        regs[inst.rt.value] = room_address.get_by_address(address) & 0xffff
+                        sources[inst.rt.value] = address
                 case _:
-                    if inst.isBranch() or inst.isJump():
+                    if (is_branch := inst.isBranch()) and inst.readsRt() and inst.readsRs():
+                        # first, check if we're comparing to the game state's lastRoom field; that will identify if this
+                        # value came from the room's entrance array
+                        had_found_entrance_array = found_entrance_array
+                        if (room_address.is_last_room_address(sources[inst.rt.value])
+                                and sources[inst.rs.value] is not UNDEFINED):
+                            room_address.entrances.add(sources[inst.rs.value])
+                            found_entrance_array = True
+                        elif (room_address.is_last_room_address(sources[inst.rs.value])
+                              and sources[inst.rt.value] is not UNDEFINED):
+                            room_address.entrances.add(sources[inst.rt.value])
+                            found_entrance_array = True
+
                         # for some reason, this function can return a signed number, so do the two's complement
                         dest = (inst.getBranchVramGeneric() + (1 << 32)) & 0xffffffff
+                        if had_found_entrance_array != found_entrance_array:
+                            # if we just found the entrance array, try to follow the branch and see if it leads us to
+                            # the condition checking the count
+                            room_address.num_entrances = cls.find_entrance_count(data, dest, module_space)
+
+                    if is_branch or inst.isJump():
+                        # for some reason, this function can return a signed number, so do the two's complement
+                        dest = (inst.getBranchVramGeneric() + (1 << 32)) & 0xffffffff
+
                         # we only care about forward branches because we don't want to revisit code we've already seen
                         if dest > i:
                             in_delay_slot = True
@@ -582,10 +698,13 @@ class RoomModule(FileFormat):
                     # wipe out any registers modified by instructions we don't know about
                     if inst.modifiesRt():
                         regs[inst.rt.value] = UNDEFINED
+                        sources[inst.rt.value] = UNDEFINED
                     if inst.modifiesRd():
                         regs[inst.rd.value] = UNDEFINED
+                        sources[inst.rd.value] = UNDEFINED
                     if inst.modifiesRs():
                         regs[inst.rs.value] = UNDEFINED
+                        sources[inst.rs.value] = UNDEFINED
 
             if in_delay_slot:
                 in_delay_slot = False
@@ -617,6 +736,7 @@ class RoomModule(FileFormat):
                     for j in range(1, len(regs)):
                         if not rabbitizer.RegGprO32.s0.value <= j <= rabbitizer.RegGprO32.s7.value:
                             regs[j] = UNDEFINED
+                            sources[j] = UNDEFINED
 
     @classmethod
     def parse_with_addresses(cls, data: bytes, load_address: int, room_addresses: RoomAddresses) -> RoomModule:
@@ -637,7 +757,6 @@ class RoomModule(FileFormat):
 
         offset = room_addresses.room_layout.pop() - load_address
         room_layout = cls.parse_room_layout(data, offset, True)
-        room_layout.address = offset
 
         backgrounds = []
         for address in room_addresses.backgrounds:
@@ -649,9 +768,13 @@ class RoomModule(FileFormat):
 
         offset = room_addresses.triggers.pop() - load_address
         triggers = cls.parse_triggers(data, offset, len(room_layout.interactables), True)
-        triggers.address = offset
 
-        return cls(module_id, room_layout, backgrounds, actor_layouts, triggers, load_address)
+        entrance_sets = []
+        for address in room_addresses.entrances:
+            offset = address - load_address
+            entrance_sets.append(cls.parse_entrances(data, offset, room_addresses.num_entrances, room_addresses))
+
+        return cls(module_id, room_layout, backgrounds, actor_layouts, triggers, entrance_sets, load_address)
 
     @classmethod
     def parse(cls, f: BinaryIO, language: str, entry_point: int) -> RoomModule:
@@ -663,7 +786,7 @@ class RoomModule(FileFormat):
 
         if (entry_point - load_address) >= len(data):
             # this is a stub; return a dummy module
-            return cls(module_id, RoomLayout(), [], [], TriggerSet(), load_address)
+            return cls(module_id, RoomLayout(), [], [], TriggerSet(), [], load_address)
 
         game_state = addresses['GameState']
         regs: list[Undefined | int] = [UNDEFINED] * 32
@@ -751,10 +874,10 @@ class RoomModule(FileFormat):
                 except (IndexError, ValueError, struct.error):
                     pass
 
-        return cls(module_id, room_layout, [backgrounds], actor_layouts, triggers, load_address)
+        return cls(module_id, room_layout, [backgrounds], actor_layouts, triggers, [], load_address)
 
 
-def dump_info(module_path: str, language: str | None, force: bool, entry_point: int = None):
+def dump_info(module_path: str, language: str | None, force: bool, json_path: str | None, entry_point: int = None):
     guessed = ''
     with open(module_path, 'rb') as f:
         if language is None:
@@ -774,6 +897,10 @@ def dump_info(module_path: str, language: str | None, force: bool, entry_point: 
         if addresses['ModuleLoadAddresses'][0] == module.load_address:
             language = addr_lang
             break
+
+    if json_path is not None:
+        with open(json_path, 'w') as f:
+            module.save_metadata(f)
 
     print(f'Name: {module.name}')
     print(f'Load address{guessed}: {module.load_address:08X} ({language})')
@@ -852,6 +979,17 @@ def dump_info(module_path: str, language: str | None, force: bool, entry_point: 
         print(f'\t\tTrigger callback: {trigger.trigger_callback:08X}')
         print(f'\t\tUnknown: {trigger.unknown:08X}')
 
+    print('Entrance sets')
+    for i, entrance_set in enumerate(module.entrances):
+        print(f'\tEntrance set {i}: {entrance_set.address:08X}')
+        for j, entrance in enumerate(entrance_set.entrances):
+            print(f'\t\tEntrance {j}')
+            print(f'\t\t\tRoom index: {entrance.room_index}')
+            print(f'\t\t\tX: {entrance.x}')
+            print(f'\t\t\tY: {entrance.y}')
+            print(f'\t\t\tZ: {entrance.z}')
+            print(f'\t\t\tAngle: {entrance.angle}')
+
     print('Backgrounds')
     for i, background_set in enumerate(module.backgrounds):
         print(f'\tBackground set {i}: {background_set.address:08X}')
@@ -901,7 +1039,9 @@ if __name__ == '__main__':
                         type=lambda e: int(e, 16))
     parser.add_argument('-f', '--force', help="Dump what data we were able to find even if the file doesn't look like "
                         'a valid room module', action='store_true')
+    parser.add_argument('-j', '--json', help="Write module metadata to the given JSON file. The file won't be written "
+                        "if the module isn't valid unless the --force flag was given.")
     parser.add_argument('module', help='Path to the room module to examine')
 
     args = parser.parse_args()
-    dump_info(args.module, args.language, args.force, args.entry)
+    dump_info(args.module, args.language, args.force, args.json, args.entry)
