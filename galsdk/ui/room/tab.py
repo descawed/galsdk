@@ -4,8 +4,10 @@ from pathlib import Path
 from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase
+from panda3d.core import GeomNode, NodePath
 from PIL import Image
 
+from galsdk import util
 from galsdk.animation import AnimationDb
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project
@@ -27,12 +29,16 @@ from psx.tim import Transparency
 
 
 class RoomViewport(Viewport):
+    CAMERA_TARGET_WIDTH = 1.78
+    CAMERA_TARGET_HEIGHT = 2.
+
     def __init__(self, base: ShowBase, width: int, height: int, project: Project, *args, **kwargs):
         super().__init__('room', base, width, height, *args, **kwargs)
         self.name = None
         self.wall = None
         self.selected_item = None
         self.camera_target = None
+        self.camera_target_model = None
         self.colliders = []
         self.collider_node = self.render_target.attachNewNode('room_viewport_colliders')
         self.triggers = []
@@ -66,6 +72,7 @@ class RoomViewport(Viewport):
         self.current_layout = -1
         self.camera_view = None
         self.missing_bg = Image.open(Path.cwd() / 'assets/missing_bg.png')
+        self.target_icon = Image.open(Path.cwd() / 'assets/target.png')
 
     def clear(self):
         self.name = None
@@ -152,6 +159,7 @@ class RoomViewport(Viewport):
             self.camera.setPos(self.render_target, self.camera_view.position.panda_x, self.camera_view.position.panda_y,
                                self.camera_view.position.panda_z)
             self.camera.lookAt(self.camera_target)
+            self.camera_target_model.setHpr(self.camera, 0, 90, 0)
             self.camera.node().getLens().setMinFov(self.camera_view.fov)
             if self.background:
                 distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
@@ -185,6 +193,20 @@ class RoomViewport(Viewport):
 
         if not self.camera_target:
             self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
+            width = self.CAMERA_TARGET_WIDTH / 2
+            height = self.CAMERA_TARGET_HEIGHT / 2
+            geom = util.make_quad(
+                (-width, -height),
+                (width, -height),
+                (width, height),
+                (-width, height),
+                True,
+            )
+            node = GeomNode('room_viewport_camera_target_model')
+            node.addGeom(geom)
+            self.camera_target_model = NodePath(node)
+            self.camera_target_model.setTexture(util.create_texture_from_image(self.target_icon), 1)
+            self.camera_target_model.reparentTo(self.camera_target)
 
         # unhide the old camera
         if self.camera_view:
@@ -192,10 +214,12 @@ class RoomViewport(Viewport):
 
         self.camera_view = camera
         if camera:
+            self.camera_target.show()
             # TODO: implement camera orientation and scale
             self.camera_view.hide()  # hide the model for the current camera angle so it's not in the way
             self.set_bg()
         else:
+            self.camera_target.hide()
             self.camera.node().getLens().setMinFov(self.default_fov)
             camera_distance = self.get_default_camera_distance()
             self.max_zoom = camera_distance * 4
@@ -501,6 +525,8 @@ class RoomTab(Tab):
             object_id = int(pieces[1])
             room_id = int(pieces[2])
             self.set_room(room_id)
+            # TODO: switching back to the overhead view should be a manual toggle so that it's possible to manipulate
+            #  things' position in the camera view
             camera_view = None
             match object_type:
                 case 'collider':

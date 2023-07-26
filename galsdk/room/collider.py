@@ -1,6 +1,7 @@
 from panda3d.core import GeomNode, NodePath, SamplerState, Texture
 from PIL import Image, ImageDraw
 
+from galsdk import util
 from galsdk.coords import Dimension, Point, Triangle2d
 from galsdk.module import CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room.object import RoomObject
@@ -21,7 +22,7 @@ class RectangleColliderObject(RoomObject):
     def get_model(self) -> NodePath:
         half_x = (self.width / 2).panda_units
         half_z = (self.height / 2).panda_units
-        geom = self._make_quad((-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
+        geom = util.make_quad((-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
         node = GeomNode('rectangle_collider_quad')
         node.addGeom(geom)
         return NodePath(node)
@@ -98,7 +99,7 @@ class TriangleColliderObject(RoomObject):
         self.triangle.p3 = value
 
     def get_model(self) -> NodePath:
-        geom = self._make_triangle(
+        geom = util.make_triangle(
             (self.p1.panda_x - self.position.panda_x, self.p1.panda_y - self.position.panda_y),
             (self.p2.panda_x - self.position.panda_x, self.p2.panda_y - self.position.panda_y),
             (self.p3.panda_x - self.position.panda_x, self.p3.panda_y - self.position.panda_y),
@@ -136,7 +137,7 @@ class CircleColliderObject(RoomObject):
         draw = ImageDraw.Draw(image)
         draw.ellipse([(0, 0), (width - 1, height - 1)], tuple(int(c * 255) for c in color))
 
-        texture = cls._create_texture_from_image(image)
+        texture = util.create_texture_from_image(image)
         # prevents artifacts around the edge of the circle
         texture.setMagfilter(SamplerState.FT_nearest)
         texture.setMinfilter(SamplerState.FT_nearest)
@@ -149,7 +150,7 @@ class CircleColliderObject(RoomObject):
 
     def get_model(self) -> NodePath:
         radius = self.radius.panda_units
-        geom = self._make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
+        geom = util.make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
         node = GeomNode('circle_collider_quad')
         node.addGeom(geom)
         return NodePath(node)

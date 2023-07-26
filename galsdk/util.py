@@ -2,7 +2,70 @@ import shutil
 from pathlib import Path
 from typing import BinaryIO, Literal, TextIO, overload
 
+from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, StringStream, \
+    PNMImage, Texture
+from PIL.Image import Image
+import io
 import numpy as np
+
+
+def make_triangle(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float]) -> Geom:
+    vdata = GeomVertexData('', GeomVertexFormat.getV3(), Geom.UHStatic)
+    vdata.setNumRows(3)
+
+    vertex = GeomVertexWriter(vdata, 'vertex')
+    vertex.addData3(p1[0], p1[1], 0)
+    vertex.addData3(p2[0], p2[1], 0)
+    vertex.addData3(p3[0], p3[1], 0)
+
+    primitive = GeomTriangles(Geom.UHStatic)
+    primitive.addVertices(0, 1, 2)
+    primitive.closePrimitive()
+
+    geom = Geom(vdata)
+    geom.addPrimitive(primitive)
+    return geom
+
+
+def make_quad(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float],
+              p4: tuple[float, float], use_texture: bool = False) -> Geom:
+    vertex_format = GeomVertexFormat.getV3t2() if use_texture else GeomVertexFormat.getV3()
+    vdata = GeomVertexData('', vertex_format, Geom.UHStatic)
+    vdata.setNumRows(4)
+
+    vertex = GeomVertexWriter(vdata, 'vertex')
+    vertex.addData3(p1[0], p1[1], 0)
+    vertex.addData3(p2[0], p2[1], 0)
+    vertex.addData3(p3[0], p3[1], 0)
+    vertex.addData3(p4[0], p4[1], 0)
+
+    if use_texture:
+        texcoord = GeomVertexWriter(vdata, 'texcoord')
+        texcoord.addData2(0, 0)
+        texcoord.addData2(1, 0)
+        texcoord.addData2(1, 1)
+        texcoord.addData2(0, 1)
+
+    primitive = GeomTriangles(Geom.UHStatic)
+    primitive.addVertices(0, 1, 2)
+    primitive.addVertices(2, 3, 0)
+    primitive.closePrimitive()
+
+    geom = Geom(vdata)
+    geom.addPrimitive(primitive)
+    return geom
+
+
+def create_texture_from_image(image: Image) -> Texture:
+    buffer = io.BytesIO()
+    image.save(buffer, format='png')
+
+    panda_image = PNMImage()
+    panda_image.read(StringStream(buffer.getvalue()))
+
+    texture = Texture()
+    texture.load(panda_image)
+    return texture
 
 
 def int_from_bytes(b: bytes, endianness: Literal['little', 'big'] = 'little', *, signed: bool = False):
