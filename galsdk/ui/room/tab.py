@@ -3,7 +3,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
-from direct.showbase.ShowBase import ShowBase
+from direct.showbase.ShowBase import KeyboardButton, ShowBase
+from direct.task import Task
 from panda3d.core import GeomNode, NodePath
 from PIL import Image
 
@@ -31,10 +32,13 @@ from psx.tim import Transparency
 class RoomViewport(Viewport):
     CAMERA_TARGET_WIDTH = 1.78
     CAMERA_TARGET_HEIGHT = 2.
+    MOVE_PER_SECOND = 15.
 
     def __init__(self, base: ShowBase, width: int, height: int, project: Project, *args, **kwargs):
         super().__init__('room', base, width, height, *args, **kwargs)
         self.name = None
+        self.key_listener = None
+        self.last_key_time = 0.
         self.wall = None
         self.selected_item = None
         self.camera_target = None
@@ -365,6 +369,45 @@ class RoomViewport(Viewport):
             self.set_actor_layout(0)
 
         self.set_camera_view(None)
+
+    def setup_input(self):
+        super().setup_input()
+
+        self.base.taskMgr.add(self.move_camera, 'room_viewport_move')
+
+    def move_camera(self, task: Task) -> int:
+        if not self.has_focus:
+            self.last_key_time = task.time
+            return Task.cont
+
+        if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('w')):
+            y = 1.
+        elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('s')):
+            y = -1.
+        else:
+            y = 0.
+
+        if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('a')):
+            x = -1.
+        elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('d')):
+            x = 1.
+        else:
+            x = 0.
+
+        if x != 0. or y != 0.:
+            if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.shift()):
+                mult = 2.
+            elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.control()):
+                mult = 0.5
+            else:
+                mult = 1.
+
+            move_amount = mult * self.MOVE_PER_SECOND * (task.time - self.last_key_time)
+            self.camera.setX(self.camera, x * move_amount)
+            self.camera.setY(self.camera, y * move_amount)
+
+        self.last_key_time = task.time
+        return Task.cont
 
     def set_active(self, is_active: bool):
         super().set_active(is_active)

@@ -1,4 +1,3 @@
-import tkinter as tk
 from tkinter import ttk
 
 from direct.showbase.ShowBase import DirectObject, ShowBase
@@ -81,6 +80,18 @@ class Viewport(ttk.Frame):
                 lens.setFilmSize(width, height)
                 lens.setFocalLength(self.FOCAL_LENGTH)
 
+    def setup_input(self):
+        # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality
+        self.region = self._window.makeDisplayRegion(0, 1, 0, 1)
+        self.base.setupMouse(self._window)
+        self.base.mouseWatcherNode.setDisplayRegion(self.region)
+
+        self.wheel_listener = DirectObject.DirectObject()
+        self.wheel_listener.accept('wheel_up', self.zoom, extraArgs=[1])
+        self.wheel_listener.accept('wheel_down', self.zoom, extraArgs=[-1])
+
+        self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{self.name}')
+
     @property
     def window(self) -> GraphicsWindow:
         if self._window is None:
@@ -98,21 +109,16 @@ class Viewport(ttk.Frame):
             self.camera.reparentTo(self.render_target)
             self.camera.setPos(0, self.DEFAULT_ZOOM, 2)
 
-            # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality
-            self.region = self.window.makeDisplayRegion(0, 1, 0, 1)
-            self.base.setupMouse(self._window)
-            self.base.mouseWatcherNode.setDisplayRegion(self.region)
-
-            self.wheel_listener = DirectObject.DirectObject()
-            self.wheel_listener.accept('wheel_up', self.zoom, extraArgs=[1])
-            self.wheel_listener.accept('wheel_down', self.zoom, extraArgs=[-1])
-
-            self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{self.name}')
+            self.setup_input()
 
         return self._window
 
+    @property
+    def has_focus(self) -> bool:
+        return self.base.mouseWatcherNode.hasMouse() and self.window.is_active()
+
     def zoom(self, direction: int):
-        if not self.base.mouseWatcherNode.hasMouse() or not self.window.is_active():
+        if not self.has_focus:
             return
 
         if self.target:
@@ -151,7 +157,7 @@ class Viewport(ttk.Frame):
         self.target_orbit = None
 
     def watch_mouse(self, _) -> int:
-        if not self.base.mouseWatcherNode.hasMouse() or not self.window.is_active():
+        if not self.has_focus:
             return Task.cont
 
         # rotate the model with left click, pan with middle click
