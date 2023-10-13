@@ -13,6 +13,7 @@ class RoomObject(ABC):
         self.position = position
         self.angle = angle
         self.node_path = NodePath(PandaNode(f'{name}_object'))
+        self.node_path.setTag('object_name', name)
         self.original_model = None
         self.model_node = None
         self.scene = None

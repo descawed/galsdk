@@ -2,10 +2,12 @@ import math
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
+from typing import Callable
 
-from direct.showbase.ShowBase import KeyboardButton, ShowBase
+from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
-from panda3d.core import GeomNode, NodePath
+from panda3d.core import (CollisionHandlerQueue, CollisionNode, CollisionPlane, CollisionRay, CollisionTraverser,
+                          GeomNode, KeyboardButton, MouseButton, NodePath, Plane, Vec3)
 from PIL import Image
 
 from galsdk import util
@@ -13,8 +15,9 @@ from galsdk.animation import AnimationDb
 from galsdk.module import RoomModule, ColliderType
 from galsdk.project import Project
 from galsdk.game import Stage
-from galsdk.room import CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,\
-    WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject, EntranceObject
+from galsdk.room import (CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,
+                         WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject,
+                         EntranceObject)
 from galsdk.tim import TimDb
 from galsdk.ui.animation import ActiveAnimation
 from galsdk.ui.room.actor import ActorEditor
@@ -25,7 +28,7 @@ from galsdk.ui.room.entrance import EntranceEditor
 from galsdk.ui.room.replaceable import Replaceable
 from galsdk.ui.room.trigger import TriggerEditor
 from galsdk.ui.tab import Tab
-from galsdk.ui.viewport import Viewport
+from galsdk.ui.viewport import Cursor, Viewport
 from psx.tim import Transparency
 
 
@@ -37,12 +40,29 @@ class RoomViewport(Viewport):
     def __init__(self, base: ShowBase, width: int, height: int, project: Project, *args, **kwargs):
         super().__init__('room', base, width, height, *args, **kwargs)
         self.name = None
+        self.room_id = -1
+
         self.key_listener = None
         self.last_key_time = 0.
+        self.select_listeners = []
+
+        self.picker_node = CollisionNode('room_viewport_mouse_ray')
+        self.picker_node.setFromCollideMask(GeomNode.getDefaultCollideMask())
+        self.picker_ray = CollisionRay()
+        self.picker_node.addSolid(self.picker_ray)
+
+        self.collision_traverser = CollisionTraverser('room_viewport_traverser')
+        self.collision_queue = CollisionHandlerQueue()
+
+        # we use this plane when dragging to detect the point where the mouse has dragged to
+        self.horizontal_plane = CollisionPlane(Plane(Vec3(0, 0, 1), Vec3(0, 0, 0)))
+        self.horizontal_node_path = None
+
         self.wall = None
         self.selected_item = None
         self.camera_target = None
         self.camera_target_model = None
+
         self.colliders = []
         self.collider_node = self.render_target.attachNewNode('room_viewport_colliders')
         self.triggers = []
@@ -56,6 +76,7 @@ class RoomViewport(Viewport):
         self.entrance_sets = []
         self.entrances = []
         self.entrance_node = self.render_target.attachNewNode('room_viewport_entrances')
+
         self.default_fov = None
         self.project = project
         self.stage_backgrounds = {}
@@ -75,8 +96,8 @@ class RoomViewport(Viewport):
         self.actor_layouts = []
         self.current_layout = -1
         self.camera_view = None
-        self.missing_bg = Image.open(Path.cwd() / 'assets/missing_bg.png')
-        self.target_icon = Image.open(Path.cwd() / 'assets/target.png')
+        self.missing_bg = Image.open(Path.cwd() / 'assets' / 'missing_bg.png')
+        self.target_icon = Image.open(Path.cwd() / 'assets' / 'target.png')
 
     def clear(self):
         self.name = None
@@ -102,6 +123,9 @@ class RoomViewport(Viewport):
         self.current_entrance_set = -1
         self.current_layout = -1
         self.current_stage = Stage.A
+
+    def on_select(self, listener: Callable[[str], None]):
+        self.select_listeners.append(listener)
 
     def get_anim_db(self, index: int) -> AnimationDb:
         if index not in self.anim_dbs:
@@ -238,7 +262,8 @@ class RoomViewport(Viewport):
             r, g, b, _ = old_item.color
             a = self.selected_item[1]
             old_item.set_color((r, g, b, a))
-            old_item.node_path.setDepthTest(True)
+            if old_item.node_path:
+                old_item.node_path.setDepthTest(True)
         if item:
             r, g, b, a = item.color
             self.selected_item = (item, a)
@@ -275,7 +300,8 @@ class RoomViewport(Viewport):
                     self.actor_animations.append(animation)
             else:
                 model = None
-            actor = ActorObject(f'room{self.name}_actor{len(self.actors)}', model, actor_instance)
+            actor = ActorObject(f'layout_{self.current_layout}_actor_{len(self.actors)}_{self.room_id}', model,
+                                actor_instance)
             actor.add_to_scene(self.actor_node)
             self.actors.append(actor)
 
@@ -289,23 +315,24 @@ class RoomViewport(Viewport):
 
         self.entrances = []
         for entrance in self.entrance_sets[index]:
-            object_name = f'room{self.name}_entrance{len(self.entrances)}'
+            object_name = f'entrance-set_{self.current_entrance_set}_entrance_{len(self.entrances)}_{self.room_id}'
             entrance_object = EntranceObject(object_name, entrance, self.base.loader)
             entrance_object.add_to_scene(self.entrance_node)
             self.entrances.append(entrance_object)
 
-    def set_room(self, module: RoomModule):
+    def set_room(self, module: RoomModule, room_id: int):
         self.clear()
 
         rect_iter = iter(module.layout.rectangle_colliders)
         tri_iter = iter(module.layout.triangle_colliders)
         circle_iter = iter(module.layout.circle_colliders)
         self.name = module.name or 'UNKWN'
+        self.room_id = room_id
         self.current_stage = Stage(self.name[0])
         self.current_bg = 0
 
         for cut in module.layout.cuts:
-            object_name = f'room{self.name}_cut{len(self.cuts)}'
+            object_name = f'cut_{len(self.cuts)}_{room_id}'
             cut_object = CameraCutObject(object_name, cut)
             # FIXME: use proper depth sorting instead of this hack, which doesn't look right in many circumstances
             cut_object.position.game_y += 1
@@ -315,7 +342,7 @@ class RoomViewport(Viewport):
         for collider in module.layout.colliders:
             index = len(self.colliders)
             is_wall = False
-            object_name = f'room{self.name}_collider{index}'
+            object_name = f'collider_{index}_{room_id}'
             match collider.type:
                 case ColliderType.WALL:
                     collider_object = self.wall = WallColliderObject(object_name, next(rect_iter))
@@ -338,7 +365,7 @@ class RoomViewport(Viewport):
         # far as I can tell, no triggers. it appears to be a copy of D0101 with the triggers removed. still, I should
         # check the code to see if I'm missing something.
         for interactable, trigger in zip(module.layout.interactables, module.triggers.triggers):
-            object_name = f'room{self.name}_trigger{len(self.triggers)}'
+            object_name = f'trigger_{len(self.triggers)}_{room_id}'
             trigger_object = TriggerObject(object_name, interactable, trigger)
             trigger_object.position.game_y += 3
             trigger_object.add_to_scene(self.trigger_node)
@@ -351,7 +378,7 @@ class RoomViewport(Viewport):
 
         self.num_bgs = len(module.backgrounds)
         for i, camera in enumerate(module.layout.cameras):
-            object_name = f'room{self.name}_camera{len(self.cameras)}'
+            object_name = f'camera_{len(self.cameras)}_{room_id}'
             backgrounds = [background_set.backgrounds[i] for background_set in module.backgrounds]
             camera_object = CameraObject(object_name, camera, backgrounds, self.base.loader)
             camera_object.add_to_scene(self.camera_node)
@@ -370,10 +397,40 @@ class RoomViewport(Viewport):
 
         self.set_camera_view(None)
 
-    def setup_input(self):
-        super().setup_input()
+    def setup_window(self):
+        super().setup_window()
+
+        picker_node_path = self.camera.attachNewNode(self.picker_node)
+        self.collision_traverser.addCollider(picker_node_path, self.collision_queue)
+
+        # we use this plane when dragging to detect the point where the mouse has dragged to
+        self.horizontal_node_path = self.render_target.attachNewNode(CollisionNode('room_viewport_horizontal'))
+        self.horizontal_node_path.node().addSolid(self.horizontal_plane)
 
         self.base.taskMgr.add(self.move_camera, 'room_viewport_move')
+
+    def watch_mouse(self, _) -> int:
+        if not self.has_focus:
+            return Task.cont
+
+        is_mouse1_down = self.base.mouseWatcherNode.isButtonDown(MouseButton.one())
+        if is_mouse1_down and not self.was_mouse1_down_last_frame:
+            mouse_pos = self.base.mouseWatcherNode.getMouse()
+            self.picker_ray.setFromLens(self.camera.node(), mouse_pos.getX(), mouse_pos.getY())
+            self.collision_traverser.traverse(self.render_target)
+            if self.collision_queue.getNumEntries() > 0:
+                self.collision_queue.sortEntries()
+                for entry in self.collision_queue.entries:
+                    node_path = entry.getIntoNodePath()
+                    if not node_path.isHidden() and (object_name := node_path.getNetTag('object_name')):
+                        if self.selected_item is None or self.selected_item[0].name != object_name:
+                            for listener in self.select_listeners:
+                                listener(object_name)
+                        self.was_mouse1_down_last_frame = is_mouse1_down
+                        self.was_dragging_last_frame = False
+                        return Task.cont
+
+        return super().watch_mouse(_)
 
     def move_camera(self, task: Task) -> int:
         if not self.has_focus:
@@ -471,6 +528,7 @@ class RoomTab(Tab):
                 self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
 
         self.viewport = RoomViewport(self.base, 1024, 768, self.project, self)
+        self.viewport.on_select(self.on_viewport_select)
 
         self.tree.grid(row=0, column=0, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, sticky=tk.NS)
@@ -483,6 +541,10 @@ class RoomTab(Tab):
         self.tree.bind('<Button-3>', self.handle_right_click)
         self.bind('<Configure>', self.resize_3d)
 
+    def on_viewport_select(self, identifier: str):
+        self.tree.selection_set(identifier)
+        self.tree.see(identifier)
+
     def resize_3d(self, _=None):
         self.update()
         x, y, width, height = self.grid_bbox(3, 0, 3, 0)
@@ -491,7 +553,7 @@ class RoomTab(Tab):
     def set_room(self, room_id: int):
         if self.current_room != room_id:
             self.current_room = room_id
-            self.viewport.set_room(self.rooms[room_id])
+            self.viewport.set_room(self.rooms[room_id], room_id)
 
     def toggle_current_group(self, *_):
         if self.menu_item:
