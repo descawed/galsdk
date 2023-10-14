@@ -140,6 +140,8 @@ class Project:
         project_path = Path(project_dir)
         game_path = Path(game_dir)
 
+        project_path.mkdir(exist_ok=True)
+
         # determine game version
         version = cls.detect_files_version(game_dir)
         if version.region == Region.PAL or version.is_demo:
@@ -157,10 +159,10 @@ class Project:
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
 
-        # prepare project directory
-        export_dir = project_path / 'export'
-        export_dir.mkdir(exist_ok=True)
-        shutil.copy(base_image, export_dir / 'output.bin')
+        boot_dir = project_path / 'boot'
+        boot_dir.mkdir(exist_ok=True)
+        shutil.copy(exe_path, boot_dir / exe_path.name)
+        shutil.copy(config_path, boot_dir / config_path.name)
 
         art_dir = project_path / 'art'
         art_dir.mkdir(exist_ok=True)
@@ -461,6 +463,15 @@ class Project:
             xa_db = XaDatabase.read_bytes(xa_map)
             xa_db.set_data(mxa_path.read_bytes())
             Manifest.from_archive(voice_dir, 'XA', xa_db, '.XA')
+
+        # prepare export directory
+        export_dir = project_path / 'export'
+        export_dir.mkdir(exist_ok=True)
+        output_path = export_dir / 'output.bin'
+        shutil.copy(base_image, output_path)
+        # ensure that the modified date on the export image is later than all the other files we just created, because
+        # that's how we identify what's changed
+        output_path.touch(exist_ok=True)
 
         project = cls(project_path, version, actor_graphics, maps, x_scales, option_menu)
         project.save()

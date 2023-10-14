@@ -1,3 +1,4 @@
+import json
 import pathlib
 import tkinter as tk
 import tkinter.filedialog as tkfile
@@ -14,6 +15,9 @@ from galsdk.ui import ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTa
     VoiceTab
 
 
+MAX_RECENT_PROJECTS = 10
+
+
 class Editor(ShowBase):
     """The main editor window"""
 
@@ -23,7 +27,16 @@ class Editor(ShowBase):
         super().__init__(windowType='none')
         self.project = None
 
-        getModelPath().appendDirectory(pathlib.Path.cwd() / 'assets')
+        cwd = pathlib.Path.cwd()
+        getModelPath().appendDirectory(cwd / 'assets')
+
+        settings_path = cwd / 'editor.json'
+        if settings_path.exists():
+            with settings_path.open() as f:
+                settings = json.load(f)
+        else:
+            settings = {}
+        self.recent_projects = settings.get('recent', [])
 
         self.startTk()
         self.tkRoot.title('galsdk')
@@ -34,8 +47,12 @@ class Editor(ShowBase):
 
         file_menu = tk.Menu(menu_bar, tearoff=False)
 
+        self.recent_menu = tk.Menu(file_menu, tearoff=False)
+        self.populate_recent()
+
         file_menu.add_command(label='New Project...', underline=0, command=self.ask_new_project)
         file_menu.add_command(label='Open Project...', underline=0, command=self.ask_open_project)
+        file_menu.add_cascade(label='Recent', menu=self.recent_menu, underline=0)
         file_menu.add_separator()
         file_menu.add_command(label='Exit', underline=1, command=self.exit)
 
@@ -85,21 +102,21 @@ class Editor(ShowBase):
         self.new_project_view.grid_rowconfigure(7, weight=1)
         self.new_project_view.grid_columnconfigure(1, weight=1)
 
-        image_label.grid(row=0, column=0, sticky=tk.S+tk.E)
-        image_path.grid(row=0, column=1, columnspan=4, sticky=tk.S+tk.W)
-        game_id_label.grid(row=1, column=0, sticky=tk.E)
-        game_id.grid(row=1, column=1, sticky=tk.W)
-        region_label.grid(row=2, column=0, sticky=tk.E)
-        region.grid(row=2, column=1, sticky=tk.W)
-        language_label.grid(row=3, column=0, sticky=tk.E)
-        language.grid(row=3, column=1, sticky=tk.W)
-        disc_number_label.grid(row=4, column=0, sticky=tk.E)
-        disc_number.grid(row=4, column=1, sticky=tk.W)
-        demo_text_label.grid(row=5, column=0, sticky=tk.E)
-        demo_text.grid(row=5, column=1, sticky=tk.W)
-        project_label.grid(row=6, column=0, sticky=tk.E)
-        project_path.grid(row=6, column=1, columnspan=3, sticky=tk.E+tk.W)
-        browse_project_path.grid(row=6, column=4, sticky=tk.W)
+        image_label.grid(padx=5, row=0, column=0, sticky=tk.S+tk.E)
+        image_path.grid(padx=5, row=0, column=1, columnspan=4, sticky=tk.S+tk.W)
+        game_id_label.grid(padx=5, row=1, column=0, sticky=tk.E)
+        game_id.grid(padx=5, row=1, column=1, sticky=tk.W)
+        region_label.grid(padx=5, row=2, column=0, sticky=tk.E)
+        region.grid(padx=5, row=2, column=1, sticky=tk.W)
+        language_label.grid(padx=5, row=3, column=0, sticky=tk.E)
+        language.grid(padx=5, row=3, column=1, sticky=tk.W)
+        disc_number_label.grid(padx=5, row=4, column=0, sticky=tk.E)
+        disc_number.grid(padx=5, row=4, column=1, sticky=tk.W)
+        demo_text_label.grid(padx=5, row=5, column=0, sticky=tk.E)
+        demo_text.grid(padx=5, row=5, column=1, sticky=tk.W)
+        project_label.grid(padx=5, row=6, column=0, sticky=tk.E)
+        project_path.grid(padx=5, row=6, column=1, columnspan=3, sticky=tk.E+tk.W)
+        browse_project_path.grid(padx=5, row=6, column=4, sticky=tk.W)
         self.create_project_button.grid(row=7, column=0, sticky=tk.N+tk.E)
 
         rows, cols = self.new_project_view.grid_size()
@@ -118,6 +135,9 @@ class Editor(ShowBase):
 
     def ask_new_project(self, *_):
         image_path = tkfile.askopenfilename(filetypes=[('CD images', '*.bin *.img'), ('All files', '*.*')])
+        if not image_path:
+            return
+
         try:
             # TODO: this is slow because we read the whole CD image. find a better way
             version = Project.detect_cd_version(image_path)
@@ -129,13 +149,16 @@ class Editor(ShowBase):
 
     def ask_open_project(self, *_):
         project_dir = tkfile.askdirectory()
+        if not project_dir:
+            return
+
         try:
-            self.project = Project.open(project_dir)
+            project = Project.open(project_dir)
         except Exception as e:
             tkmsg.showerror('Failed to open project', str(e))
             return
 
-        self.open_project()
+        self.open_project(project)
 
     def ask_project_dir(self):
         project_dir = tkfile.askdirectory(mustexist=False)
@@ -164,14 +187,16 @@ class Editor(ShowBase):
         image_path = self.image_path_var.get()
         project_path = self.project_path_var.get()
         try:
-            self.project = Project.create_from_cd(image_path, project_path)
+            project = Project.create_from_cd(image_path, project_path)
         except Exception as e:
             tkmsg.showerror('Failed to create project', str(e))
             return
 
-        self.open_project()
+        self.open_project(project)
 
-    def open_project(self):
+    def open_project(self, project: Project):
+        self.project = project
+
         self.default_message.pack_forget()
         self.new_project_view.pack_forget()
 
@@ -188,6 +213,29 @@ class Editor(ShowBase):
         self.notebook.pack(expand=1, fill=tk.BOTH)
         self.set_active_tab()
 
+        project_dir = str(self.project.project_dir)
+        if project_dir in self.recent_projects:
+            self.recent_projects.remove(project_dir)
+        self.recent_projects.append(project_dir)
+        if len(self.recent_projects) > MAX_RECENT_PROJECTS:
+            del self.recent_projects[:-MAX_RECENT_PROJECTS]
+        self.populate_recent()
+        self.save_settings()
+
+        self.tkRoot.title(f'galsdk - {project_dir}')
+
+    def populate_recent(self):
+        self.recent_menu.delete(0, 'end')
+        for path in reversed(self.recent_projects):
+            path = pathlib.Path(path)
+            self.recent_menu.add_command(label=path.name, command=lambda *_: self.open_project(Project.open(str(path))))
+
+    def save_settings(self):
+        with (pathlib.Path.cwd() / 'editor.json').open('w') as f:
+            json.dump({
+                'recent': self.recent_projects,
+            }, f)
+
     def set_active_tab(self, _=None):
         tab_index = self.notebook.index(self.notebook.select())
         for i, tab in enumerate(self.tabs):
@@ -195,7 +243,7 @@ class Editor(ShowBase):
 
     def exit(self):
         """Exit the editor application"""
-        self.destroy()
+        self.tkRoot.destroy()
 
 
 if __name__ == '__main__':
