@@ -530,9 +530,20 @@ class RoomTab(Tab):
         self.viewport = RoomViewport(self.base, 1024, 768, self.project, self)
         self.viewport.on_select(self.on_viewport_select)
 
-        self.tree.grid(row=0, column=0, sticky=tk.NS + tk.W)
-        scroll.grid(row=0, column=1, sticky=tk.NS)
+        viewport_options = ttk.Frame(self)
+        self.view_var = tk.StringVar(self, 'None')
+        view_label = ttk.Label(viewport_options, text='View: ', anchor=tk.W)
+        self.view_select = ttk.OptionMenu(viewport_options, self.view_var, self.view_var.get(), 'None')
+        # do this after creating the OptionMenu so it doesn't trigger immediately
+        self.view_var.trace_add('write', self.select_view)
+
+        self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NS + tk.W)
+        scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
         self.viewport.grid(row=0, column=3, sticky=tk.NS + tk.E)
+        viewport_options.grid(row=1, column=3, sticky=tk.EW + tk.S)
+
+        view_label.pack(padx=10, side=tk.LEFT)
+        self.view_select.pack(side=tk.LEFT)
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(3, weight=1)
@@ -545,6 +556,15 @@ class RoomTab(Tab):
         self.tree.selection_set(identifier)
         self.tree.see(identifier)
 
+    def select_view(self, *_):
+        view_name = self.view_var.get()
+        if view_name == 'None':
+            view = None
+        else:
+            camera_id = int(view_name.rsplit('#', 1)[1])
+            view = self.viewport.cameras[camera_id]
+        self.viewport.set_camera_view(view)
+
     def resize_3d(self, _=None):
         self.update()
         x, y, width, height = self.grid_bbox(3, 0, 3, 0)
@@ -554,6 +574,14 @@ class RoomTab(Tab):
         if self.current_room != room_id:
             self.current_room = room_id
             self.viewport.set_room(self.rooms[room_id], room_id)
+
+            # update selectable views
+            self.view_var.set('None')
+            menu = self.view_select['menu']
+            menu.delete(1, 'end')
+            for i in range(len(self.viewport.cameras)):
+                label = f'Camera #{i}'
+                menu.add_command(label=label, command=lambda value=label: self.view_var.set(value))
 
     def toggle_current_group(self, *_):
         if self.menu_item:
@@ -630,8 +658,6 @@ class RoomTab(Tab):
             object_id = int(pieces[1])
             room_id = int(pieces[2])
             self.set_room(room_id)
-            # TODO: switching back to the overhead view should be a manual toggle so that it's possible to manipulate
-            #  things' position in the camera view
             camera_view = None
             match object_type:
                 case 'collider':
@@ -653,7 +679,8 @@ class RoomTab(Tab):
                     editor = obj = None
             self.set_detail_widget(editor)
             self.viewport.select(obj)
-            self.viewport.set_camera_view(camera_view)
+            if camera_view is not None:
+                self.viewport.set_camera_view(camera_view)
         elif iid.startswith('entrance-set_'):
             pieces = iid.split('_')
             set_id = int(pieces[1])
