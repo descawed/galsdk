@@ -17,7 +17,9 @@ class RectangleColliderObject(RoomObject):
         super().__init__(name, Point(center_x, 0, center_z), 0.)
         self.width = Dimension(bounds.x_size, True)
         self.height = Dimension(bounds.z_size)
+        self.unknown = bounds.unknown
         self.color = COLLIDER_COLOR
+        self.is_wall = False
 
     def get_model(self) -> NodePath:
         half_x = (self.width / 2).panda_units
@@ -57,11 +59,16 @@ class RectangleColliderObject(RoomObject):
         self.position.y = center_z
         self.height = value
 
+    def as_collider(self) -> RectangleCollider:
+        return RectangleCollider(self.position.game_x, self.position.game_z, self.width.game_units,
+                                 self.height.game_units, self.unknown)
+
 
 class WallColliderObject(RectangleColliderObject):
     def __init__(self, name: str, bounds: RectangleCollider):
         super().__init__(name, bounds)
         self.color = (0.75, 0., 0., 0.9)
+        self.is_wall = True
 
 
 class TriangleColliderObject(RoomObject):
@@ -118,6 +125,12 @@ class TriangleColliderObject(RoomObject):
         self.position.x = centroid.x
         self.position.y = centroid.y
 
+    def as_collider(self) -> TriangleCollider:
+        return TriangleCollider(self.triangle.p1.game_x, self.triangle.p1.game_z,
+                                self.triangle.p2.game_x, self.triangle.p2.game_z,
+                                self.triangle.p3.game_x, self.triangle.p3.game_z,
+                                )
+
 
 class CircleColliderObject(RoomObject):
     texture_cache = {}
@@ -157,3 +170,6 @@ class CircleColliderObject(RoomObject):
 
     def get_texture(self) -> Texture | None:
         return self.create_texture(500, 500, self.color)
+
+    def as_collider(self) -> CircleCollider:
+        return CircleCollider(self.position.game_x, self.position.game_z, self.radius.game_units)

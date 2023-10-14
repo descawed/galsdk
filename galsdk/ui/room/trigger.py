@@ -38,35 +38,61 @@ class TriggerEditor(ttk.Frame):
         height_label = ttk.Label(self, text='H:', anchor=tk.W)
         height_input = ttk.Entry(self, textvariable=self.height_var, validate='all', validatecommand=validator)
 
-        self.enabled_var = tk.StringVar(self, f'{self.trigger.trigger.enabled_callback:08X}')
+        if self.trigger.trigger:
+            state = tk.NORMAL
+            value = self.trigger.trigger.enabled_callback
+        else:
+            state = tk.DISABLED
+            value = 0
+        self.enabled_var = tk.StringVar(self, f'{value:08X}')
         enabled_label = ttk.Label(self, text='Enabled:', anchor=tk.W)
-        enabled_input = ttk.Entry(self, textvariable=self.enabled_var, validate='all', validatecommand=hex_validator)
+        enabled_input = ttk.Entry(self, textvariable=self.enabled_var, validate='all', validatecommand=hex_validator,
+                                  state=state)
 
-        self.condition_var = tk.StringVar(self, self.conditions[self.trigger.trigger.type])
+        if self.trigger.trigger:
+            value = self.conditions[self.trigger.trigger.type]
+        else:
+            value = 'Always'
+        self.condition_var = tk.StringVar(self, value)
         condition_label = ttk.Label(self, text='Condition:', anchor=tk.W)
         condition_select = ttk.OptionMenu(self, self.condition_var, self.condition_var.get(), *self.conditions)
+        condition_select.configure(state=state)
 
-        assert self.trigger.trigger.item_id >= 0
-        self.item_var = tk.StringVar(self, self.item_names[self.trigger.trigger.item_id])
+        if self.trigger.trigger:
+            assert self.trigger.trigger.item_id >= 0
+            value = self.item_names[self.trigger.trigger.item_id]
+        else:
+            value = 'Unused #0'
+        self.item_var = tk.StringVar(self, value)
         self.item_label = ttk.Label(self, text='Item:', anchor=tk.W)
         self.item_select = ttk.OptionMenu(self, self.item_var, self.item_var.get(), *self.item_names)
+        self.item_select.configure(state=state)
 
-        self.actor_1_var = tk.BooleanVar(self, bool(self.trigger.trigger.flags & TriggerFlag.ACTOR_1))
-        self.actor_1_checkbox = ttk.Checkbutton(self, text='Actor 1', variable=self.actor_1_var)
+        if self.trigger.trigger:
+            flags = self.trigger.trigger.flags
+        else:
+            flags = TriggerFlag(0)
+        self.actor_1_var = tk.BooleanVar(self, bool(flags & TriggerFlag.ACTOR_1))
+        self.actor_1_checkbox = ttk.Checkbutton(self, text='Actor 1', variable=self.actor_1_var, state=state)
 
-        self.actor_2_var = tk.BooleanVar(self, bool(self.trigger.trigger.flags & TriggerFlag.ACTOR_2))
-        self.actor_2_checkbox = ttk.Checkbutton(self, text='Actor 2', variable=self.actor_2_var)
+        self.actor_2_var = tk.BooleanVar(self, bool(flags & TriggerFlag.ACTOR_2))
+        self.actor_2_checkbox = ttk.Checkbutton(self, text='Actor 2', variable=self.actor_2_var, state=state)
 
-        self.actor_3_var = tk.BooleanVar(self, bool(self.trigger.trigger.flags & TriggerFlag.ACTOR_3))
-        self.actor_3_checkbox = ttk.Checkbutton(self, text='Actor 3', variable=self.actor_3_var)
+        self.actor_3_var = tk.BooleanVar(self, bool(flags & TriggerFlag.ACTOR_3))
+        self.actor_3_checkbox = ttk.Checkbutton(self, text='Actor 3', variable=self.actor_3_var, state=state)
 
-        self.living_actor_var = tk.BooleanVar(self, bool(self.trigger.trigger.flags & TriggerFlag.ALLOW_LIVING_ACTOR))
-        self.living_actor_checkbox = ttk.Checkbutton(self, text='Allow living actor', variable=self.living_actor_var)
+        self.living_actor_var = tk.BooleanVar(self, bool(flags & TriggerFlag.ALLOW_LIVING_ACTOR))
+        self.living_actor_checkbox = ttk.Checkbutton(self, text='Allow living actor', variable=self.living_actor_var,
+                                                     state=state)
 
-        self.callback_var = tk.StringVar(self, f'{self.trigger.trigger.trigger_callback:08X}')
+        if self.trigger.trigger:
+            value = self.trigger.trigger.trigger_callback
+        else:
+            value = 0
+        self.callback_var = tk.StringVar(self, f'{value:08X}')
         self.callback_label = ttk.Label(self, text='Callback:', anchor=tk.W)
         self.callback_input = ttk.Entry(self, textvariable=self.callback_var, validate='all',
-                                        validatecommand=hex_validator)
+                                        validatecommand=hex_validator, state=state)
 
         self.id_var.trace_add('write', self.on_change_id)
         self.x_var.trace_add('write', lambda *_: self.on_change_pos('x'))
@@ -102,7 +128,8 @@ class TriggerEditor(ttk.Frame):
         id_input.focus_force()
 
     def toggle_item(self):
-        if self.trigger.trigger.type in [TriggerType.ON_SCAN_WITH_ITEM, TriggerType.ON_USE_ITEM]:
+        if self.trigger.trigger and self.trigger.trigger.type in [TriggerType.ON_SCAN_WITH_ITEM,
+                                                                  TriggerType.ON_USE_ITEM]:
             self.item_label.grid(row=7, column=0)
             self.item_select.grid(row=7, column=1)
             self.actor_1_checkbox.grid(row=8, column=0, columnspan=2)

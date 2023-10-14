@@ -52,3 +52,7 @@ class CameraCutObject(RoomObject):
         node = GeomNode('cut_quad')
         node.addGeom(geom)
         return NodePath(node)
+
+    def as_camera_cut(self) -> CameraCut:
+        return CameraCut(self.camera_id, self.p1.game_x, self.p1.game_z, self.p2.game_x, self.p2.game_z,
+                         self.p3.game_x, self.p3.game_z, self.p4.game_x, self.p4.game_z)
