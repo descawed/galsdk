@@ -21,6 +21,10 @@ class ColliderType(IntEnum):
     TRIANGLE = 2
     CIRCLE = 3
 
+    @property
+    def unknown(self) -> int:
+        return 0x3F if self == ColliderType.WALL else 0x3FF
+
 
 class TriggerType(IntEnum):
     ALWAYS = 0
@@ -56,14 +60,14 @@ class EntranceSet:
 
 @dataclass
 class ActorInstance:
-    id: int
-    type: int
-    x: int
-    y: int
-    z: int
-    unknown1: int
-    orientation: int
-    unknown2: int
+    id: int = 0
+    type: int = -1
+    x: int = 0
+    y: int = 0
+    z: int = 0
+    unknown1: int = 0
+    orientation: int = 0
+    unknown2: int = 0
 
 
 @dataclass
@@ -121,6 +125,8 @@ class BackgroundSet:
 @dataclass
 class Collider:
     type: ColliderType
+    # this is recalculated by SetRoomObjInfo by iterating through the collider lists, so the actual value in the module
+    # doesn't matter
     element_ptr: int
     unknown: int
 
@@ -290,9 +296,10 @@ class RoomModule(FileFormat):
     MAX_ACTORS = 4
     MAX_ADDRESS = 0x801FFFFF
     MAX_CAMERAS = 10
+    MAX_COLLIDERS = 100
     MAX_ENTRANCES = 15
+    MAX_INTERACTABLES = 50
     MAX_ITEM_ID = 38
-    MAX_REGIONS = 100
     MAX_ROOMS_PER_MAP = 21
     MIN_ADDRESS = 0x80000000
     NAME_REGEX = re.compile(rb'[ABCD]\d{2}[0-9A-Z]{2}')
@@ -368,6 +375,34 @@ class RoomModule(FileFormat):
 
     def write(self, f: BinaryIO, **kwargs):
         raise NotImplementedError
+
+    def validate_for_write(self):
+        if len(self.layout.colliders) > self.MAX_COLLIDERS:
+            raise ValueError(f'Too many colliders: max {self.MAX_COLLIDERS}, found {len(self.layout.colliders)}')
+        if len(self.layout.rectangle_colliders) > self.MAX_COLLIDERS:
+            raise ValueError(f'Too many rectangle colliders: max {self.MAX_COLLIDERS}, '
+                             f'found {len(self.layout.rectangle_colliders)}')
+        if len(self.layout.triangle_colliders) > self.MAX_COLLIDERS:
+            raise ValueError(f'Too many triangle colliders: max {self.MAX_COLLIDERS}, '
+                             f'found {len(self.layout.triangle_colliders)}')
+        if len(self.layout.circle_colliders) > self.MAX_COLLIDERS:
+            raise ValueError(f'Too many circle colliders: max {self.MAX_COLLIDERS}, '
+                             f'found {len(self.layout.circle_colliders)}')
+
+        if len(self.layout.cameras) > self.MAX_CAMERAS:
+            raise ValueError(f'Too many cameras: max {self.MAX_CAMERAS}, found {len(self.layout.cameras)}')
+        if len(self.layout.cuts) > self.MAX_CAMERAS:
+            raise ValueError(f'Too many camera cuts: max {self.MAX_CAMERAS}, found {len(self.layout.cuts)}')
+
+        if len(self.layout.interactables) > self.MAX_INTERACTABLES:
+            raise ValueError(f'Too many interactables: max {self.MAX_INTERACTABLES}, '
+                             f'found {len(self.layout.interactables)}')
+
+        for i, actor_layout_set in enumerate(self.actor_layouts):
+            for j, actor_layout in enumerate(actor_layout_set.layouts):
+                if len(actor_layout.actors) > self.MAX_ACTORS:
+                    raise ValueError(f'Too many actors in layout set {i} layout {j}: max {self.MAX_ACTORS}, '
+                                     f'found {len(actor_layout.actors)}')
 
     def save_metadata(self, f: TextIO):
         json.dump({
@@ -448,9 +483,8 @@ class RoomModule(FileFormat):
 
     @classmethod
     def parse_room_layout(cls, data: bytes, address: int, known_good: bool = False) -> RoomLayout:
-        max_colliders = cls.MAX_REGIONS * 3  # rectangle (includes wall), triangle, circle
         collider_count = int.from_bytes(data[address:address + 4], 'little')
-        if collider_count > max_colliders or (collider_count == 0 and not known_good):
+        if collider_count > cls.MAX_COLLIDERS or (collider_count == 0 and not known_good):
             # invalid number of colliders; this isn't it
             raise ValueError('Invalid collider count')
 
@@ -474,7 +508,7 @@ class RoomModule(FileFormat):
             room_layout.colliders.append(Collider(collider_type, element_ptr, unknown))
             offset += 12
 
-        if num_rects > cls.MAX_REGIONS or num_tris > cls.MAX_REGIONS or num_circles > cls.MAX_REGIONS:
+        if num_rects > cls.MAX_COLLIDERS or num_tris > cls.MAX_COLLIDERS or num_circles > cls.MAX_COLLIDERS:
             raise ValueError('Too many collider shapes')
 
         # these are fixed-size arrays (size = MAX_REGIONS), which is why we manually calculate the offset after
@@ -515,7 +549,7 @@ class RoomModule(FileFormat):
 
         offset = address + 0x2970
         num_interactables = int.from_bytes(data[offset:offset + 4], 'little')
-        if num_interactables > cls.MAX_REGIONS:
+        if num_interactables > cls.MAX_COLLIDERS:
             raise ValueError('Invalid number of interactables')
 
         offset += 4

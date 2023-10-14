@@ -54,6 +54,8 @@ class Editor(ShowBase):
         file_menu.add_command(label='Open Project...', underline=0, command=self.ask_open_project)
         file_menu.add_cascade(label='Recent', menu=self.recent_menu, underline=0)
         file_menu.add_separator()
+        file_menu.add_command(label='Save', underline=0, command=self.save_project)
+        file_menu.add_separator()
         file_menu.add_command(label='Exit', underline=1, command=self.exit)
 
         menu_bar.add_cascade(label='File', menu=file_menu, underline=0)
@@ -223,6 +225,10 @@ class Editor(ShowBase):
         self.save_settings()
 
         self.tkRoot.title(f'galsdk - {project_dir}')
+
+    def save_project(self, *_):
+        for tab in self.tabs:
+            tab.save()
 
     def populate_recent(self):
         self.recent_menu.delete(0, 'end')

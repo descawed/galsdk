@@ -3,7 +3,7 @@ import tkinter as tk
 from itertools import zip_longest
 from pathlib import Path
 from tkinter import ttk
-from typing import Callable
+from typing import Callable, Literal
 
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
@@ -14,7 +14,8 @@ from PIL import Image
 from galsdk import util
 from galsdk.animation import AnimationDb
 from galsdk.model import ActorModel
-from galsdk.module import ActorInstance, ColliderType, RoomModule
+from galsdk.module import (ActorInstance, CircleCollider, Collider, ColliderType, RectangleCollider, RoomModule,
+                           TriangleCollider)
 from galsdk.project import Project
 from galsdk.game import Stage
 from galsdk.room import (CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,
@@ -504,6 +505,7 @@ class RoomTab(Tab):
     def __init__(self, project: Project, base: ShowBase):
         super().__init__('Room', project)
         self.base = base
+        self.changed_room_ids = set()
         self.current_room = None
         self.detail_widget = None
         self.menu_item = None
@@ -598,8 +600,176 @@ class RoomTab(Tab):
         x, y, width, height = self.grid_bbox(3, 0, 3, 0)
         self.viewport.resize(width, height, True)
 
+    @staticmethod
+    def _update_collider(colliders: list[RectangleCollider | TriangleCollider | CircleCollider],
+                         collider: RectangleCollider | TriangleCollider | CircleCollider,
+                         index: int) -> bool:
+        if index >= len(colliders):
+            colliders.append(collider)
+            return True
+        if colliders[index] != collider:
+            colliders[index] = collider
+            return True
+        return False
+
+    def update_room(self,
+                    object_type: Literal['all', 'collider', 'entrance', 'actor', 'camera', 'cut', 'trigger'] = 'all'):
+        if self.current_room is not None:
+            # push changes back to the room module
+            changed = False
+            i_rect = 0
+            i_tri = 0
+            i_circle = 0
+            room = self.rooms[self.current_room]
+
+            if object_type in ['all', 'collider']:
+                for i, collider in enumerate(self.viewport.colliders):
+                    match collider:
+                        case RectangleColliderObject():
+                            collider_type = ColliderType.WALL if collider.is_wall else ColliderType.RECTANGLE
+                            collider_changed = self._update_collider(room.layout.rectangle_colliders,
+                                                                     collider.as_collider(), i_rect)
+                            i_rect += 1
+                        case TriangleColliderObject():
+                            collider_type = ColliderType.TRIANGLE
+                            collider_changed = self._update_collider(room.layout.triangle_colliders,
+                                                                     collider.as_collider(), i_tri)
+                            i_tri += 1
+                        case CircleColliderObject():
+                            collider_type = ColliderType.CIRCLE
+                            collider_changed = self._update_collider(room.layout.circle_colliders,
+                                                                     collider.as_collider(), i_circle)
+                            i_circle += 1
+                        case _:
+                            raise ValueError(f'Unexpected collider {collider}')
+
+                    if i >= len(room.layout.colliders):
+                        collider_changed = True
+                        room.layout.colliders.append(Collider(collider_type, 0, collider_type.unknown))
+                    elif room.layout.colliders[i].type != collider_type:
+                        collider_changed = True
+                        room.layout.colliders[i].type = collider_type
+                        room.layout.colliders[i].unknown = collider_type.unknown
+
+                    if collider_changed:
+                        changed = True
+                        iid = f'collider_{i}_{self.current_room}'
+                        self.tree.item(iid, text=f'* #{i}')
+                # if we have fewer colliders than we started with, delete the rest
+                num_colliders = len(self.viewport.colliders)
+                if num_colliders < len(room.layout.colliders):
+                    changed = True
+                    del room.layout.colliders[num_colliders:]
+
+            if object_type in ['all', 'entrance']:
+                entrance_set_id = self.viewport.current_entrance_set
+                entrance_set = room.entrances[entrance_set_id]
+                for i, entrance in enumerate(self.viewport.entrances):
+                    raw_entrance = entrance.as_entrance()
+                    if entrance_set.entrances[i] != raw_entrance:
+                        changed = True
+                        entrance_set.entrances[i] = raw_entrance
+                        iid = f'entrance-set_{entrance_set_id}_entrance_{i}_{self.current_room}'
+                        self.tree.item(iid, text=f'* #{i}')
+
+            if object_type in ['all', 'actor']:
+                actor_layout_id = self.viewport.current_layout
+                set_index = 0
+                layout_index = actor_layout_id
+                for layout_set in room.actor_layouts:
+                    if layout_index >= len(layout_set.layouts):
+                        layout_index -= len(layout_set.layouts)
+                        set_index += 1
+                    else:
+                        break
+
+                layout = room.actor_layouts[set_index].layouts[layout_index]
+                for i, actor in enumerate(self.viewport.actors):
+                    instance = actor.as_actor_instance()
+                    if layout.actors[i] != instance:
+                        changed = True
+                        layout.actors[i] = instance
+                        iid = f'layout_{actor_layout_id}_actor_{i}_{self.current_room}'
+                        self.tree.item(iid, text=f'* #{i}: {actor.model.name}' if actor.model else '* None')
+
+            if object_type in ['all', 'camera']:
+                for i, camera in enumerate(self.viewport.cameras):
+                    raw_camera = camera.as_camera()
+                    camera_changed = False
+                    if i >= len(room.layout.cameras):
+                        camera_changed = True
+                        room.layout.cameras.append(raw_camera)
+                    elif room.layout.cameras[i] != raw_camera:
+                        camera_changed = True
+                        room.layout.cameras[i] = raw_camera
+
+                    if camera_changed:
+                        changed = True
+                        iid = f'camera_{i}_{self.current_room}'
+                        self.tree.item(iid, text=f'* #{i}')
+
+                num_cameras = len(self.viewport.cameras)
+                if num_cameras < len(room.layout.cameras):
+                    changed = True
+                    del room.layout.cameras[num_cameras:]
+
+            if object_type in ['all', 'cut']:
+                for i, cut in enumerate(self.viewport.cuts):
+                    raw_cut = cut.as_camera_cut()
+                    cut_changed = False
+                    if i >= len(room.layout.cuts):
+                        cut_changed = True
+                        room.layout.cuts.append(raw_cut)
+                    elif room.layout.cuts[i] != raw_cut:
+                        room.layout.cuts[i] = raw_cut
+
+                    if cut_changed:
+                        changed = True
+                        iid = f'cut_{i}_{self.current_room}'
+                        self.tree.item(iid, text=f'* #{i}')
+
+                num_cuts = len(self.viewport.cuts)
+                if num_cuts < len(room.layout.cuts):
+                    changed = True
+                    del room.layout.cuts[num_cuts:]
+
+            if object_type in ['all', 'trigger']:
+                # we don't support adding triggers, because although the interactables would support it, we can't
+                # guarantee the triggers would
+                for i, trigger in enumerate(self.viewport.triggers):
+                    interactable, raw_trigger = trigger.as_interactable()
+                    trigger_changed = False
+                    if room.layout.interactables[i] != interactable:
+                        trigger_changed = True
+                        room.layout.interactables[i] = interactable
+                    if raw_trigger is not None and room.triggers.triggers[i] != raw_trigger:
+                        trigger_changed = True
+                        room.triggers.triggers[i] = raw_trigger
+
+                    if trigger_changed:
+                        changed = True
+                        iid = f'trigger_{i}_{self.current_room}'
+                        self.tree.item(iid, text=f'* #{i}')
+
+                num_triggers = len(self.viewport.triggers)
+                if num_triggers < len(room.layout.interactables):
+                    changed = True
+                    del room.layout.interactables[num_triggers:]
+                if num_triggers < len(room.triggers.triggers):
+                    changed = True
+                    del room.triggers.triggers[num_triggers:]
+
+            room.validate_for_write()
+
+            if changed:
+                self.changed_room_ids.add(self.current_room)
+                iid = f'room_{self.current_room}'
+                self.tree.item(iid, text=f'* #{room.module_id:02X}: {room.name}')
+
     def set_room(self, room_id: int):
         if self.current_room != room_id:
+            self.update_room()
+
             self.current_room = room_id
             self.viewport.set_room(self.rooms[room_id], room_id)
 
@@ -714,6 +884,7 @@ class RoomTab(Tab):
             set_id = int(pieces[1])
             room_id = int(pieces[-1])
             self.set_room(room_id)
+            self.update_room('entrance')
             self.viewport.set_entrance_set(set_id)
             if pieces[2] == 'entrance':
                 entrance_id = int(pieces[3])
@@ -726,6 +897,7 @@ class RoomTab(Tab):
             layout_id = int(pieces[1])
             room_id = int(pieces[-1])
             self.set_room(room_id)
+            self.update_room('actor')
             self.viewport.set_actor_layout(layout_id)
             if pieces[2] == 'actor':
                 actor_id = int(pieces[3])
@@ -737,3 +909,7 @@ class RoomTab(Tab):
         self.viewport.set_active(is_active)
         if is_active:
             self.resize_3d()
+
+    @property
+    def has_unsaved_changes(self) -> bool:
+        return len(self.changed_room_ids) > 0

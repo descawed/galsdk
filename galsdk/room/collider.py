@@ -60,8 +60,11 @@ class RectangleColliderObject(RoomObject):
         self.height = value
 
     def as_collider(self) -> RectangleCollider:
-        return RectangleCollider(self.position.game_x, self.position.game_z, self.width.game_units,
-                                 self.height.game_units, self.unknown)
+        width = self.width.game_units
+        height = self.height.game_units
+        x = self.position.game_x - width // 2
+        z = self.position.game_z - height // 2
+        return RectangleCollider(x, z, width, height, self.unknown)
 
 
 class WallColliderObject(RectangleColliderObject):

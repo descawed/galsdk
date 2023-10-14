@@ -17,5 +17,8 @@ class TriggerObject(RectangleColliderObject):
         self.id = interactable.id
 
     def as_interactable(self) -> tuple[Interactable, Trigger | None]:
-        return Interactable(self.id, self.position.game_x, self.position.game_z, self.width.game_units,
-                            self.height.game_units), self.trigger
+        width = self.width.game_units
+        height = self.height.game_units
+        x = self.position.game_x - width // 2
+        z = self.position.game_z - height // 2
+        return Interactable(self.id, x, z, width, height), self.trigger

@@ -13,7 +13,8 @@ class ActorEditor(ttk.Frame):
         super().__init__(*args, **kwargs)
         self.actor = actor
         self.actor_models = actor_models
-        self.actor_names = [model.name for model in self.actor_models]
+        self.actor_names = ['None']
+        self.actor_names.extend(model.name for model in self.actor_models)
         self.on_update_type = on_update_type
 
         validator = (self.register(validate_int), '%P')
@@ -24,7 +25,7 @@ class ActorEditor(ttk.Frame):
         id_label = ttk.Label(self, text='ID:', anchor=tk.W)
         id_input = ttk.Entry(self, textvariable=self.id_var, validate='all', validatecommand=validator)
 
-        self.type_var = tk.StringVar(self, self.actor_names[self.actor.type])
+        self.type_var = tk.StringVar(self, self.actor_names[self.actor.type + 1])
         self.type_var.trace_add('write', self.on_change_type)
         type_label = ttk.Label(self, text='Type:', anchor=tk.W)
         type_select = ttk.OptionMenu(self, self.type_var, self.type_var.get(), *self.actor_names)
@@ -77,10 +78,11 @@ class ActorEditor(ttk.Frame):
         self.actor.update_position()
 
     def on_change_type(self, *_):
-        type_id = self.actor_names.index(self.type_var.get())
+        name = self.type_var.get()
+        type_id = self.actor_names.index(name) - 1
         if type_id != self.actor.type:
             self.actor.type = type_id
-            self.actor.model = self.actor_models[type_id]
+            self.actor.model = None if type_id < 0 else self.actor_models[type_id]
             self.actor.update_model()
             self.actor.update_texture()
             self.on_update_type(self.actor)

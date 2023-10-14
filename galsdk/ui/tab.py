@@ -17,3 +17,10 @@ class Tab(ttk.Frame):
     @property
     def should_appear(self) -> bool:
         return True
+
+    @property
+    def has_unsaved_changes(self) -> bool:
+        return False
+
+    def save(self):
+        pass
