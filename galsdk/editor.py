@@ -3,6 +3,7 @@ import pathlib
 import tkinter as tk
 import tkinter.filedialog as tkfile
 import tkinter.messagebox as tkmsg
+from functools import partial
 from tkinter import ttk
 from typing import Optional
 
@@ -11,8 +12,8 @@ from panda3d.core import getModelPath
 
 from galsdk.project import Project
 from galsdk.game import GameVersion
-from galsdk.ui import ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab, StringTab,\
-    VoiceTab
+from galsdk.ui import (ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab, StringTab, Tab,
+                       VoiceTab)
 
 
 MAX_RECENT_PROJECTS = 10
@@ -39,7 +40,6 @@ class Editor(ShowBase):
         self.recent_projects = settings.get('recent', [])
 
         self.startTk()
-        self.tkRoot.title('galsdk')
 
         # top menu
         menu_bar = tk.Menu(self.tkRoot)
@@ -133,7 +133,24 @@ class Editor(ShowBase):
 
         self.tkRoot.bind('<Control-n>', self.ask_new_project)
         self.tkRoot.bind('<Control-o>', self.ask_open_project)
+        self.tkRoot.bind('<Control-s>', self.save_project)
         self.notebook.bind('<<NotebookTabChanged>>', self.set_active_tab)
+
+        self.tkRoot.protocol('WM_DELETE_WINDOW', self.exit)
+
+        self.set_title()
+
+    def set_title(self):
+        if self.project is None:
+            title = 'galsdk'
+        else:
+            project_dir = str(self.project.project_dir)
+            title = f'galsdk - {project_dir}'
+
+        if any(tab.has_unsaved_changes for tab in self.tabs):
+            title = '* ' + title
+
+        self.tkRoot.title(title)
 
     def ask_new_project(self, *_):
         image_path = tkfile.askopenfilename(filetypes=[('CD images', '*.bin *.img'), ('All files', '*.*')])
@@ -202,7 +219,12 @@ class Editor(ShowBase):
         self.default_message.pack_forget()
         self.new_project_view.pack_forget()
 
-        self.makeDefaultPipe()
+        if self.pipe is None:
+            self.makeDefaultPipe()
+        for tab in self.tabs:
+            tab.close()
+        for tab in self.notebook.tabs():
+            self.notebook.forget(tab)
 
         self.tabs = [RoomTab(self.project, self), StringTab(self.project), ActorTab(self.project, self),
                      BackgroundTab(self.project), ItemTab(self.project, self), ModelTab(self.project, self),
@@ -211,6 +233,7 @@ class Editor(ShowBase):
         for tab in self.tabs:
             if tab.should_appear:
                 self.notebook.add(tab, text=tab.name)
+                tab.on_change(self.on_tab_change)
 
         self.notebook.pack(expand=1, fill=tk.BOTH)
         self.set_active_tab()
@@ -224,17 +247,40 @@ class Editor(ShowBase):
         self.populate_recent()
         self.save_settings()
 
-        self.tkRoot.title(f'galsdk - {project_dir}')
+        self.set_title()
+
+    def on_tab_change(self, tab: Tab):
+        num_tabs = self.notebook.index('end')
+        for i in range(num_tabs):
+            text = self.notebook.tab(i, 'text')
+            if text in [tab.name, f'* {tab.name}']:
+                new_name = tab.name
+                if tab.has_unsaved_changes:
+                    new_name = '* ' + new_name
+                self.notebook.tab(i, text=new_name)
+                break
+        self.set_title()
 
     def save_project(self, *_):
         for tab in self.tabs:
             tab.save()
 
+        # remove change markers from any tabs that have them
+        num_tabs = self.notebook.index('end')
+        for i in range(num_tabs):
+            text = self.notebook.tab(i, 'text')
+            if text.startswith('* '):
+                self.notebook.tab(i, text=text[2:])
+        self.set_title()
+
     def populate_recent(self):
         self.recent_menu.delete(0, 'end')
         for path in reversed(self.recent_projects):
             path = pathlib.Path(path)
-            self.recent_menu.add_command(label=path.name, command=lambda *_: self.open_project(Project.open(str(path))))
+            # we use functools.partial to make sure the call is bound to the value of path as of this iteration, instead
+            # of its value at the end of the function
+            self.recent_menu.add_command(label=path.name,
+                                         command=partial(lambda p, *_: self.open_project(Project.open(p)), str(path)))
 
     def save_settings(self):
         with (pathlib.Path.cwd() / 'editor.json').open('w') as f:
@@ -249,6 +295,12 @@ class Editor(ShowBase):
 
     def exit(self):
         """Exit the editor application"""
+        if any(tab.has_unsaved_changes for tab in self.tabs):
+            confirm = tkmsg.askyesno('Unsaved changes',
+                                     'You have unsaved changes. Do you want to quit without saving?')
+            if not confirm:
+                return
+
         self.tkRoot.destroy()
 
 

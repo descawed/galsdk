@@ -102,3 +102,6 @@ class ItemTab(Tab):
         self.model_frame.set_active(is_active)
         if is_active:
             self.resize_3d()
+
+    def close(self):
+        self.model_frame.close()

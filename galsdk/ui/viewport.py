@@ -62,6 +62,7 @@ class Viewport(ttk.Frame):
         self.camera = None
         self.region = None
         self.wheel_listener = None
+        self.mouse_task = None
         self.aspect_ratio = width / height
         self.current_cursor = None
 
@@ -118,7 +119,7 @@ class Viewport(ttk.Frame):
         self.wheel_listener.accept('wheel_up', self.zoom, extraArgs=[1])
         self.wheel_listener.accept('wheel_down', self.zoom, extraArgs=[-1])
 
-        self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{self.name}')
+        self.mouse_task = self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{self.name}')
 
     @property
     def window(self) -> GraphicsWindow:
@@ -238,3 +239,11 @@ class Viewport(ttk.Frame):
             if cursor is not None:
                 props.setCursorFilename(cursor.filename)
             self._window.requestProperties(props)
+
+    def close(self):
+        if self.mouse_task is not None:
+            self.base.taskMgr.remove(self.mouse_task)
+            self.mouse_task = None
+        if self._window is not None:
+            self.base.graphicsEngine.removeWindow(self._window)
+            self._window = None

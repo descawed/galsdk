@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Type
+from typing import Callable, Generic, Iterable, TypeVar
 
 from galsdk import util
 from galsdk.db import Database
@@ -14,7 +14,7 @@ from galsdk.vab import VabDb
 from galsdk.xa import XaDatabase
 
 
-ARCHIVE_FORMATS: dict[str, Type[Archive]] = {
+ARCHIVE_FORMATS: dict[str, type[Archive]] = {
     'cdb': Database,
     'tda': TimDb,
     'tdb': TimDb,
@@ -32,6 +32,21 @@ class ManifestFile:
     path: Path
     is_manifest: bool = False
     format: str = None
+
+
+T = TypeVar('T', bound=FileFormat)
+
+
+@dataclass
+class FromManifest(Generic[T]):
+    manifest: Manifest
+    key: int | str
+    file: ManifestFile
+    obj: T
+
+    def save(self, **kwargs):
+        with self.file.path.open('wb') as f:
+            self.obj.write(f, **kwargs)
 
 
 class Manifest:
@@ -53,7 +68,7 @@ class Manifest:
         self.name_map = {}
         self.type = db_type
 
-    def _unpack_file(self, mf: ManifestFile, parent: Archive, i: int, sniff: bool | list[Type[FileFormat]],
+    def _unpack_file(self, mf: ManifestFile, parent: Archive, i: int, sniff: bool | list[type[FileFormat]],
                      flatten: bool, recursive: bool):
         entry = parent[i]
         if not isinstance(entry, Archive) or not recursive:
@@ -91,7 +106,7 @@ class Manifest:
             Manifest.from_archive(mf.path, f'{self.name}_{mf.name}', archive, sniff=sniff, flatten=flatten)
             mf.is_manifest = True
 
-    def unpack_archive(self, archive: Archive, extension: str = '', sniff: bool | list[Type[FileFormat]] = False,
+    def unpack_archive(self, archive: Archive, extension: str = '', sniff: bool | list[type[FileFormat]] = False,
                        flatten: bool = False, recursive: bool = True):
         if extension and extension[0] != '.':
             extension = '.' + extension
@@ -117,6 +132,19 @@ class Manifest:
             self.files.append(ManifestFile(entry['name'], path, (path / 'manifest.json').exists(), entry['format']))
         self.name_map = {mf.name: mf for mf in self.files}
         self.type = manifest['type']
+
+    def load_file(self, key: int | str, constructor: type[T] | Callable[[Path], T], **kwargs) -> FromManifest[T]:
+        """
+        Create a FileFormat instance of the given type from the file identified by key, returning a FromManifest
+        instance that tracks the file and manifest the object originated from.
+        """
+        manifest_file = self[key]
+        if isinstance(constructor, type) and issubclass(constructor, FileFormat):
+            with manifest_file.path.open('rb') as f:
+                obj = constructor.read(f, **kwargs)
+        else:
+            obj = constructor(manifest_file.path)
+        return FromManifest(self, key, manifest_file, obj)
 
     def save(self):
         """Save the current file data for this manifest"""
@@ -225,7 +253,7 @@ class Manifest:
 
     @classmethod
     def from_archive(cls, manifest_path: Path, name: str, archive: Archive, extension: str = '',
-                     sniff: bool | list[Type[FileFormat]] = False, flatten: bool = False,
+                     sniff: bool | list[type[FileFormat]] = False, flatten: bool = False,
                      recursive: bool = True) -> Manifest:
         """
         Create a new manifest at a given path from a given archive

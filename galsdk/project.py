@@ -16,7 +16,7 @@ from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
 from galsdk.game import Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_KEY_ITEMS, NUM_MED_ITEMS, NUM_MAPS, \
     MODULE_ENTRY_SIZE, GameVersion, VERSIONS, ADDRESSES
-from galsdk.manifest import Manifest
+from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
 from galsdk.model import ACTORS, ActorModel, ItemModel
 from galsdk.module import RoomModule
@@ -573,11 +573,11 @@ class Project:
                     # unmapped strings are always in Japanese
                     yield entry.name, JapaneseStringDb.read(f)
 
-    def get_stage_rooms(self, stage: Stage) -> Iterable[RoomModule]:
+    def get_stage_rooms(self, stage: Stage) -> Iterable[FromManifest[RoomModule]]:
         manifest = Manifest.load_from(self.project_dir / 'modules')
-        for manifest_file in manifest:
+        for i, manifest_file in enumerate(manifest):
             if manifest_file.name[0] == stage:
-                yield RoomModule.load_with_metadata(manifest_file.path)
+                yield manifest.load_file(i, RoomModule.load_with_metadata)
 
     def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
         manifest = Manifest.load_from(self.project_dir / 'models')

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import struct
-from dataclasses import dataclass, field
+from dataclasses import astuple, dataclass, field
 from enum import IntEnum, IntFlag
 from pathlib import Path
 from typing import Any, BinaryIO, Self, TextIO
@@ -51,11 +51,17 @@ class Entrance:
     z: int
     angle: int
 
+    def encode(self) -> bytes:
+        return struct.pack('<4hi', *astuple(self))
+
 
 @dataclass
 class EntranceSet:
     address: int = 0
     entrances: list[Entrance] = field(default_factory=list)
+
+    def encode(self) -> bytes:
+        return b''.join(entrance.encode() for entrance in self.entrances)
 
 
 @dataclass
@@ -69,6 +75,9 @@ class ActorInstance:
     orientation: int = 0
     unknown2: int = 0
 
+    def encode(self) -> bytes:
+        return struct.pack('<H4h3H', *astuple(self))
+
 
 @dataclass
 class ActorLayout:
@@ -76,11 +85,17 @@ class ActorLayout:
     unknown: bytes
     actors: list[ActorInstance]
 
+    def encode(self) -> bytes:
+        return self.name.encode().ljust(6, b'\0') + self.unknown + b''.join(actor.encode() for actor in self.actors)
+
 
 @dataclass
 class ActorLayoutSet:
     address: int = 0
     layouts: list[ActorLayout] = field(default_factory=list)
+
+    def encode(self) -> bytes:
+        return b''.join(layout.encode() for layout in self.layouts)
 
 
 @dataclass
@@ -92,11 +107,17 @@ class Trigger:
     trigger_callback: int
     unknown: int = 0
 
+    def encode(self) -> bytes:
+        return struct.pack('<I2BH2I', *astuple(self))
+
 
 @dataclass
 class TriggerSet:
     address: int = 0
     triggers: list[Trigger] = field(default_factory=list)
+
+    def encode(self) -> bytes:
+        return b''.join(trigger.encode() for trigger in self.triggers)
 
 
 @dataclass
@@ -108,6 +129,9 @@ class BackgroundMask:
     z: int
     unknown2: int
 
+    def encode(self) -> bytes:
+        return struct.pack('<2I4h', *astuple(self))
+
 
 @dataclass
 class Background:
@@ -115,11 +139,17 @@ class Background:
     mask_address: int
     masks: list[BackgroundMask]
 
+    def encode(self) -> bytes:
+        return struct.pack('<hHI', self.index, len(self.masks), self.mask_address)
+
 
 @dataclass
 class BackgroundSet:
     address: int = 0
     backgrounds: list[Background] = field(default_factory=list)
+
+    def encode(self) -> bytes:
+        return b''.join(background.encode() for background in self.backgrounds)
 
 
 @dataclass
@@ -130,6 +160,9 @@ class Collider:
     element_ptr: int
     unknown: int
 
+    def encode(self) -> bytes:
+        return struct.pack('<3I', *astuple(self))
+
 
 @dataclass
 class RectangleCollider:
@@ -138,6 +171,9 @@ class RectangleCollider:
     x_size: int
     z_size: int
     unknown: int = 0xf
+
+    def encode(self) -> bytes:
+        return struct.pack('<5i', *astuple(self))
 
 
 @dataclass
@@ -149,12 +185,18 @@ class TriangleCollider:
     x3: int
     z3: int
 
+    def encode(self) -> bytes:
+        return struct.pack('<6i', *astuple(self))
+
 
 @dataclass
 class CircleCollider:
     x: int
     z: int
     radius: int
+
+    def encode(self) -> bytes:
+        return struct.pack('<3i', *astuple(self))
 
 
 @dataclass
@@ -170,6 +212,9 @@ class Camera:
     target_z: int
     unknown: int
 
+    def encode(self) -> bytes:
+        return struct.pack('<10h', *astuple(self))
+
 
 @dataclass
 class CameraCut:
@@ -183,6 +228,9 @@ class CameraCut:
     x4: int
     z4: int
 
+    def encode(self) -> bytes:
+        return struct.pack('<h8i', *astuple(self))
+
 
 @dataclass
 class Interactable:
@@ -192,17 +240,20 @@ class Interactable:
     x_size: int
     z_size: int
 
+    def encode(self) -> bytes:
+        return struct.pack('<5h', *astuple(self))
+
 
 @dataclass
 class RoomLayout:
     address: int = 0
-    colliders: list[Collider] = field(default_factory=lambda: [])
-    rectangle_colliders: list[RectangleCollider] = field(default_factory=lambda: [])
-    triangle_colliders: list[TriangleCollider] = field(default_factory=lambda: [])
-    circle_colliders: list[CircleCollider] = field(default_factory=lambda: [])
-    cameras: list[Camera] = field(default_factory=lambda: [])
-    cuts: list[CameraCut] = field(default_factory=lambda: [])
-    interactables: list[Interactable] = field(default_factory=lambda: [])
+    colliders: list[Collider] = field(default_factory=list)
+    rectangle_colliders: list[RectangleCollider] = field(default_factory=list)
+    triangle_colliders: list[TriangleCollider] = field(default_factory=list)
+    circle_colliders: list[CircleCollider] = field(default_factory=list)
+    cameras: list[Camera] = field(default_factory=list)
+    cuts: list[CameraCut] = field(default_factory=list)
+    interactables: list[Interactable] = field(default_factory=list)
 
 
 class Undefined:
@@ -306,9 +357,16 @@ class RoomModule(FileFormat):
     ROOM_LAYOUT_SIZE = 0x2d5c
     TRIGGER_SIZE = 16
 
+    ROOM_RECT_OFFSET = 0x4b4
+    ROOM_TRI_OFFSET = 0xc84
+    ROOM_CIRCLE_OFFSET = 0x15e4
+    ROOM_CAMERA_OFFSET = 0x1a94
+    ROOM_CUT_OFFSET = 0x1b60
+    ROOM_INTERACT_OFFSET = 0x2970
+
     def __init__(self, module_id: int, layout: RoomLayout, backgrounds: list[BackgroundSet],
                  actor_layouts: list[ActorLayoutSet], triggers: TriggerSet, entrances: list[EntranceSet],
-                 load_address: int):
+                 load_address: int, raw_data: bytes):
         self.module_id = module_id
         self.layout = layout
         self.backgrounds = backgrounds
@@ -316,6 +374,7 @@ class RoomModule(FileFormat):
         self.triggers = triggers
         self.entrances = entrances
         self.load_address = load_address
+        self.raw_data = raw_data
 
     @property
     def is_empty(self) -> bool:
@@ -374,7 +433,73 @@ class RoomModule(FileFormat):
         return cls.parse(f, language, entry_point)
 
     def write(self, f: BinaryIO, **kwargs):
-        raise NotImplementedError
+        self.validate_for_write()
+
+        f.write(self.raw_data)
+
+        f.seek(0)
+        f.write(self.module_id.to_bytes(4, 'little'))
+
+        if self.layout.address > 0:
+            f.seek(self.layout.address)
+
+            f.write(len(self.layout.colliders).to_bytes(4, 'little'))
+            for collider in self.layout.colliders:
+                f.write(collider.encode())
+
+            f.seek(self.layout.address + self.ROOM_RECT_OFFSET)
+            for rect in self.layout.rectangle_colliders:
+                f.write(rect.encode())
+
+            f.seek(self.layout.address + self.ROOM_TRI_OFFSET)
+            for tri in self.layout.triangle_colliders:
+                f.write(tri.encode())
+
+            f.seek(self.layout.address + self.ROOM_CIRCLE_OFFSET)
+            for circle in self.layout.circle_colliders:
+                f.write(circle.encode())
+
+            f.seek(self.layout.address + self.ROOM_CAMERA_OFFSET)
+            f.write(len(self.layout.cameras).to_bytes(4, 'little'))
+            for camera in self.layout.cameras:
+                f.write(camera.encode())
+
+            f.seek(self.layout.address + self.ROOM_CUT_OFFSET)
+            for cut in self.layout.cuts:
+                f.write(b'\0\0')  # marker
+                f.write(cut.encode())
+            f.write(b'\xff\xff')  # end marker
+
+            f.seek(self.layout.address + self.ROOM_INTERACT_OFFSET)
+            f.write(len(self.layout.interactables).to_bytes(4, 'little'))
+            for interactable in self.layout.interactables:
+                f.write(interactable.encode())
+
+        for layout_set in self.actor_layouts:
+            if layout_set.address > 0:
+                f.seek(layout_set.address)
+                f.write(layout_set.encode())
+
+        for background_set in self.backgrounds:
+            if background_set.address > 0:
+                f.seek(background_set.address)
+                f.write(background_set.encode())
+
+                for background in background_set.backgrounds:
+                    mask_offset = background.mask_address - self.load_address
+                    if mask_offset > 0:
+                        f.seek(mask_offset)
+                        for mask in background.masks:
+                            f.write(mask.encode())
+
+        for entrance_set in self.entrances:
+            if entrance_set.address > 0:
+                f.seek(entrance_set.address)
+                f.write(entrance_set.encode())
+
+        if self.triggers.address > 0:
+            f.seek(self.triggers.address)
+            f.write(self.triggers.encode())
 
     def validate_for_write(self):
         if len(self.layout.colliders) > self.MAX_COLLIDERS:
@@ -391,8 +516,6 @@ class RoomModule(FileFormat):
 
         if len(self.layout.cameras) > self.MAX_CAMERAS:
             raise ValueError(f'Too many cameras: max {self.MAX_CAMERAS}, found {len(self.layout.cameras)}')
-        if len(self.layout.cuts) > self.MAX_CAMERAS:
-            raise ValueError(f'Too many camera cuts: max {self.MAX_CAMERAS}, found {len(self.layout.cuts)}')
 
         if len(self.layout.interactables) > self.MAX_INTERACTABLES:
             raise ValueError(f'Too many interactables: max {self.MAX_INTERACTABLES}, '
@@ -400,9 +523,9 @@ class RoomModule(FileFormat):
 
         for i, actor_layout_set in enumerate(self.actor_layouts):
             for j, actor_layout in enumerate(actor_layout_set.layouts):
-                if len(actor_layout.actors) > self.MAX_ACTORS:
-                    raise ValueError(f'Too many actors in layout set {i} layout {j}: max {self.MAX_ACTORS}, '
-                                     f'found {len(actor_layout.actors)}')
+                if len(actor_layout.actors) != self.MAX_ACTORS:
+                    raise ValueError(f'Wrong number of actors in layout set {i} layout {j}: expected {self.MAX_ACTORS},'
+                                     f' found {len(actor_layout.actors)}')
 
     def save_metadata(self, f: TextIO):
         json.dump({
@@ -513,22 +636,22 @@ class RoomModule(FileFormat):
 
         # these are fixed-size arrays (size = MAX_REGIONS), which is why we manually calculate the offset after
         # reading the elements that are actually present
-        offset = address + 0x4b4
+        offset = address + cls.ROOM_RECT_OFFSET
         for _ in range(num_rects):
             room_layout.rectangle_colliders.append(RectangleCollider(*struct.unpack_from('<5i', data, offset)))
             offset += 20
 
-        offset = address + 0xc84
+        offset = address + cls.ROOM_TRI_OFFSET
         for _ in range(num_tris):
             room_layout.triangle_colliders.append(TriangleCollider(*struct.unpack_from('<6i', data, offset)))
             offset += 24
 
-        offset = address + 0x15e4
+        offset = address + cls.ROOM_CIRCLE_OFFSET
         for _ in range(num_circles):
             room_layout.circle_colliders.append(CircleCollider(*struct.unpack_from('<3i', data, offset)))
             offset += 12
 
-        offset = address + 0x1a94
+        offset = address + cls.ROOM_CAMERA_OFFSET
         num_cameras = int.from_bytes(data[offset:offset + 4], 'little')
         if num_cameras > cls.MAX_CAMERAS or (num_cameras == 0 and not known_good):
             raise ValueError('Invalid number of cameras')
@@ -538,7 +661,7 @@ class RoomModule(FileFormat):
             room_layout.cameras.append(Camera(*struct.unpack_from('<10h', data, offset)))
             offset += 20
 
-        offset = address + 0x1b60
+        offset = address + cls.ROOM_CUT_OFFSET
         while True:
             marker = int.from_bytes(data[offset:offset + 2], 'little', signed=True)
             if marker < 0:
@@ -547,7 +670,7 @@ class RoomModule(FileFormat):
             room_layout.cuts.append(CameraCut(*struct.unpack_from('<h8i', data, offset + 2)))
             offset += 0x24
 
-        offset = address + 0x2970
+        offset = address + cls.ROOM_INTERACT_OFFSET
         num_interactables = int.from_bytes(data[offset:offset + 4], 'little')
         if num_interactables > cls.MAX_COLLIDERS:
             raise ValueError('Invalid number of interactables')
@@ -808,7 +931,7 @@ class RoomModule(FileFormat):
             offset = address - load_address
             entrance_sets.append(cls.parse_entrances(data, offset, room_addresses.num_entrances, room_addresses))
 
-        return cls(module_id, room_layout, backgrounds, actor_layouts, triggers, entrance_sets, load_address)
+        return cls(module_id, room_layout, backgrounds, actor_layouts, triggers, entrance_sets, load_address, data)
 
     @classmethod
     def parse(cls, f: BinaryIO, language: str, entry_point: int) -> RoomModule:
@@ -820,7 +943,8 @@ class RoomModule(FileFormat):
 
         if (entry_point - load_address) >= len(data):
             # this is a stub; return a dummy module
-            return cls(module_id, RoomLayout(), [], [], TriggerSet(), [], load_address)
+            return cls(module_id, RoomLayout(), [], [], TriggerSet(), [], load_address,
+                       data)
 
         game_state = addresses['GameState']
         regs: list[Undefined | int] = [UNDEFINED] * 32
@@ -908,7 +1032,8 @@ class RoomModule(FileFormat):
                 except (IndexError, ValueError, struct.error):
                     pass
 
-        return cls(module_id, room_layout, [backgrounds], actor_layouts, triggers, [], load_address)
+        return cls(module_id, room_layout, [backgrounds], actor_layouts, triggers, [], load_address,
+                   data)
 
 
 def dump_info(module_path: str, language: str | None, force: bool, json_path: str | None, entry_point: int = None):

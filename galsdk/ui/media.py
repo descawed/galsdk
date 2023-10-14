@@ -144,3 +144,10 @@ class MediaPlayer(ttk.Frame):
             self.window.set_active(is_active)
             if is_active:
                 self.resize_panda()
+
+    def close(self):
+        if self.player is not None:
+            self.player.stop()
+        if self._window is not None:
+            self.base.graphicsEngine.removeWindow(self._window)
+            self._window = None

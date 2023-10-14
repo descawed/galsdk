@@ -65,6 +65,7 @@ class RoomViewport(Viewport):
         self.selected_item = None
         self.camera_target = None
         self.camera_target_model = None
+        self.camera_task = None
 
         self.colliders = []
         self.collider_node = self.render_target.attachNewNode('room_viewport_colliders')
@@ -120,9 +121,8 @@ class RoomViewport(Viewport):
         self.entrances = []
         self.actor_layouts = []
         self.actors = []
-        for animation in self.actor_animations:
-            if animation:
-                animation.remove()
+        for animation in filter(None, self.actor_animations):
+            animation.remove()
         self.actor_animations = []
         self.current_entrance_set = -1
         self.current_layout = -1
@@ -309,9 +309,8 @@ class RoomViewport(Viewport):
             for actor in self.actors:
                 actor.remove_from_scene()
             self.actors = []
-            for animation in self.actor_animations:
-                if animation:
-                    animation.remove()
+            for animation in filter(None, self.actor_animations):
+                animation.remove()
             self.actor_animations = []
 
         layout = self.actor_layouts[index]
@@ -427,7 +426,7 @@ class RoomViewport(Viewport):
         self.horizontal_node_path = self.render_target.attachNewNode(CollisionNode('room_viewport_horizontal'))
         self.horizontal_node_path.node().addSolid(self.horizontal_plane)
 
-        self.base.taskMgr.add(self.move_camera, 'room_viewport_move')
+        self.camera_task = self.base.taskMgr.add(self.move_camera, 'room_viewport_move')
 
     def watch_mouse(self, _) -> int:
         if not self.has_focus:
@@ -488,7 +487,7 @@ class RoomViewport(Viewport):
 
     def set_active(self, is_active: bool):
         super().set_active(is_active)
-        for animation in self.actor_animations:
+        for animation in filter(None, self.actor_animations):
             if is_active:
                 animation.play()
             else:
@@ -497,6 +496,13 @@ class RoomViewport(Viewport):
     def resize(self, width: int, height: int, keep_aspect_ratio: bool = False):
         super().resize(width, height, keep_aspect_ratio)
         self.update_camera_view()
+
+    def close(self):
+        if self.camera_task is not None:
+            self.base.taskMgr.remove(self.camera_task)
+            self.camera_task = None
+        self.clear()
+        super().close()
 
 
 class RoomTab(Tab):
@@ -533,7 +539,7 @@ class RoomTab(Tab):
                 room_id = len(self.rooms)
                 self.rooms.append(room)
                 iid = f'room_{room_id}'
-                self.tree.insert(stage, tk.END, text=f'#{room.module_id:02X}: {room.name}', iid=iid)
+                self.tree.insert(stage, tk.END, text=f'#{room.obj.module_id:02X}: {room.obj.name}', iid=iid)
 
                 actor_iid = f'actors_{room_id}'
                 self.tree.insert(iid, tk.END, text='Actors', iid=actor_iid, open=True)
@@ -581,10 +587,11 @@ class RoomTab(Tab):
         layout_id, actor_id = self.viewport.update_actor(actor)
         iid = f'layout_{layout_id}_actor_{actor_id}_{self.current_room}'
         if actor.model:
-            text = f'#{actor_id}: {actor.model.name}'
+            text = f'#{actor.id}: {actor.model.name}'
         else:
             text = 'None'
         self.tree.item(iid, text=text)
+        self.update_room('actor')
 
     def select_view(self, *_):
         view_name = self.view_var.get()
@@ -620,7 +627,7 @@ class RoomTab(Tab):
             i_rect = 0
             i_tri = 0
             i_circle = 0
-            room = self.rooms[self.current_room]
+            room = self.rooms[self.current_room].obj
 
             if object_type in ['all', 'collider']:
                 for i, collider in enumerate(self.viewport.colliders):
@@ -690,7 +697,7 @@ class RoomTab(Tab):
                         changed = True
                         layout.actors[i] = instance
                         iid = f'layout_{actor_layout_id}_actor_{i}_{self.current_room}'
-                        self.tree.item(iid, text=f'* #{i}: {actor.model.name}' if actor.model else '* None')
+                        self.tree.item(iid, text=f'* #{actor.id}: {actor.model.name}' if actor.model else '* None')
 
             if object_type in ['all', 'camera']:
                 for i, camera in enumerate(self.viewport.cameras):
@@ -765,13 +772,14 @@ class RoomTab(Tab):
                 self.changed_room_ids.add(self.current_room)
                 iid = f'room_{self.current_room}'
                 self.tree.item(iid, text=f'* #{room.module_id:02X}: {room.name}')
+                self.notify_change()
 
     def set_room(self, room_id: int):
         if self.current_room != room_id:
             self.update_room()
 
             self.current_room = room_id
-            self.viewport.set_room(self.rooms[room_id], room_id)
+            self.viewport.set_room(self.rooms[room_id].obj, room_id)
 
             # update selectable views
             self.view_var.set('None')
@@ -879,6 +887,7 @@ class RoomTab(Tab):
             self.viewport.select(obj)
             if camera_view is not None:
                 self.viewport.set_camera_view(camera_view)
+            self.update_room()
         elif iid.startswith('entrance-set_'):
             pieces = iid.split('_')
             set_id = int(pieces[1])
@@ -909,7 +918,25 @@ class RoomTab(Tab):
         self.viewport.set_active(is_active)
         if is_active:
             self.resize_3d()
+        self.update_room()
 
     @property
     def has_unsaved_changes(self) -> bool:
         return len(self.changed_room_ids) > 0
+
+    def clear_change_markers(self, iid=None):
+        for child in self.tree.get_children(iid):
+            name = self.tree.item(child, 'text')
+            if name.startswith('* '):
+                self.tree.item(child, text=name[2:])
+            self.clear_change_markers(child)
+
+    def save(self):
+        self.update_room()  # make sure we've pushed all changes back to the room modules
+        for room_id in self.changed_room_ids:
+            self.rooms[room_id].save()
+        self.changed_room_ids.clear()
+        self.clear_change_markers()
+
+    def close(self):
+        self.viewport.close()
