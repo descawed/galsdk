@@ -13,7 +13,8 @@ from PIL import Image
 
 from galsdk import util
 from galsdk.animation import AnimationDb
-from galsdk.module import RoomModule, ColliderType
+from galsdk.model import ActorModel
+from galsdk.module import ActorInstance, ColliderType, RoomModule
 from galsdk.project import Project
 from galsdk.game import Stage
 from galsdk.room import (CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,
@@ -119,7 +120,8 @@ class RoomViewport(Viewport):
         self.actor_layouts = []
         self.actors = []
         for animation in self.actor_animations:
-            animation.remove()
+            if animation:
+                animation.remove()
         self.actor_animations = []
         self.current_entrance_set = -1
         self.current_layout = -1
@@ -194,6 +196,13 @@ class RoomViewport(Viewport):
                 distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
                 self.background.node_path.setPos(0, distance, 0)
                 self.background.node_path.setHpr(0, 90, 0)
+
+    def update_actor(self, actor: ActorObject) -> tuple[int, int]:
+        actor_id = self.actors.index(actor)
+        if animation := self.actor_animations[actor_id]:
+            animation.remove()
+        self.actor_animations[actor_id] = self.start_actor_animation(actor.as_actor_instance())[1]
+        return self.current_layout, actor_id
 
     def set_bg(self):
         if self.background:
@@ -274,6 +283,22 @@ class RoomViewport(Viewport):
         else:
             self.selected_item = None
 
+    def start_actor_animation(self, instance: ActorInstance) -> tuple[ActorModel | None, ActiveAnimation | None]:
+        if instance.type >= 0:
+            model = self.actor_models[instance.type]
+            if model.anim_index is not None:
+                anim_set = self.get_anim_db(model.anim_index)
+                # FIXME: this is a hack because it relies on the fact that get_panda3d_model caches its result, so
+                #  ActorObject will get the same NodePath
+                animation = ActiveAnimation(self.base, f'room{self.name}_anim{instance.id}',
+                                            model.get_panda3d_model(), anim_set[0])
+                animation.play()
+                return model, animation
+            else:
+                return model, None
+
+        return None, None
+
     def set_actor_layout(self, index: int):
         if self.current_layout == index:
             return
@@ -284,23 +309,14 @@ class RoomViewport(Viewport):
                 actor.remove_from_scene()
             self.actors = []
             for animation in self.actor_animations:
-                animation.remove()
+                if animation:
+                    animation.remove()
             self.actor_animations = []
 
         layout = self.actor_layouts[index]
         for actor_instance in layout.actors:
-            if actor_instance.type >= 0:
-                model = self.actor_models[actor_instance.type]
-                if model.anim_index is not None:
-                    anim_set = self.get_anim_db(model.anim_index)
-                    # FIXME: this is a hack because it relies on the fact that get_panda3d_model caches its result, so
-                    #  ActorObject will get the same NodePath
-                    animation = ActiveAnimation(self.base, f'room{self.name}_anim{actor_instance.id}',
-                                                model.get_panda3d_model(), anim_set[0])
-                    animation.play()
-                    self.actor_animations.append(animation)
-            else:
-                model = None
+            model, animation = self.start_actor_animation(actor_instance)
+            self.actor_animations.append(animation)
             actor = ActorObject(f'layout_{self.current_layout}_actor_{len(self.actors)}_{self.room_id}', model,
                                 actor_instance)
             actor.add_to_scene(self.actor_node)
@@ -559,6 +575,15 @@ class RoomTab(Tab):
         self.tree.selection_set(identifier)
         self.tree.see(identifier)
 
+    def on_update_actor(self, actor: ActorObject):
+        layout_id, actor_id = self.viewport.update_actor(actor)
+        iid = f'layout_{layout_id}_actor_{actor_id}_{self.current_room}'
+        if actor.model:
+            text = f'#{actor_id}: {actor.model.name}'
+        else:
+            text = 'None'
+        self.tree.item(iid, text=text)
+
     def select_view(self, *_):
         view_name = self.view_var.get()
         if view_name == 'None':
@@ -705,7 +730,7 @@ class RoomTab(Tab):
             if pieces[2] == 'actor':
                 actor_id = int(pieces[3])
                 actor = self.viewport.actors[actor_id]
-                self.set_detail_widget(ActorEditor(actor, self.viewport.actor_models, self))
+                self.set_detail_widget(ActorEditor(actor, self.viewport.actor_models, self.on_update_actor, self))
                 self.viewport.select(actor)
 
     def set_active(self, is_active: bool):

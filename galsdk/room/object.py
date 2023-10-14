@@ -34,6 +34,8 @@ class RoomObject(ABC):
         if model := self.get_model():
             if self.original_model is not model:
                 self.original_model = model
+                if self.model_node:
+                    self.model_node.removeNode()
                 # because we frequently reuse the same model (i.e. same NodePath) for different instances of the same
                 # character, we need to make separate instances of the model for each RoomObject, otherwise we'll have
                 # problems when a room includes more than one of the same type of NPC

@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
+from typing import Callable
 
 from galsdk.model import ActorModel
 from galsdk.room import ActorObject
@@ -7,11 +8,13 @@ from galsdk.ui.room.util import validate_int, validate_float
 
 
 class ActorEditor(ttk.Frame):
-    def __init__(self, actor: ActorObject, actor_models: list[ActorModel], *args, **kwargs):
+    def __init__(self, actor: ActorObject, actor_models: list[ActorModel],
+                 on_update_type: Callable[[ActorObject], None], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.actor = actor
         self.actor_models = actor_models
         self.actor_names = [model.name for model in self.actor_models]
+        self.on_update_type = on_update_type
 
         validator = (self.register(validate_int), '%P')
         float_validator = (self.register(validate_float), '%P')
@@ -80,3 +83,4 @@ class ActorEditor(ttk.Frame):
             self.actor.model = self.actor_models[type_id]
             self.actor.update_model()
             self.actor.update_texture()
+            self.on_update_type(self.actor)
