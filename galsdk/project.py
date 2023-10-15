@@ -8,7 +8,7 @@ import shutil
 import struct
 import tempfile
 from dataclasses import asdict, dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Iterable
 
 from galsdk.db import Database
@@ -59,9 +59,11 @@ class Project:
 
     def __init__(self, project_dir: Path, version: GameVersion, actor_graphics: list[ActorGraphics] = None,
                  module_sets: list[list[dict[str, int]]] = None, x_scales: list[int] = None,
-                 option_menu: list[ComponentInstance] = None, last_export_date: datetime.datetime = None):
+                 option_menu: list[ComponentInstance] = None, last_export_date: datetime.datetime = None,
+                 create_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
+        self.create_date = create_date or datetime.datetime.utcnow()
         self.last_export_date = last_export_date or datetime.datetime.utcnow()
         self.actor_graphics = actor_graphics or []
         self.module_sets = module_sets or []
@@ -489,12 +491,14 @@ class Project:
         with (project_path / 'project.json').open() as f:
             project_info = json.load(f)
         version = GameVersion(**project_info['version'])
+        create_date = datetime.datetime.fromisoformat(project_info['create_date'])
         last_export_date = datetime.datetime.fromisoformat(project_info['last_export_date'])
         actor_graphics = [ActorGraphics(**actor) for actor in project_info['actor_graphics']]
         module_sets = project_info.get('module_sets', [])
         x_scales = project_info.get('x_scales', [])
         option_menu = [ComponentInstance(**instance) for instance in project_info.get('option_menu', [])]
-        return cls(project_path, version, actor_graphics, module_sets, x_scales, option_menu, last_export_date)
+        return cls(project_path, version, actor_graphics, module_sets, x_scales, option_menu, last_export_date,
+                   create_date)
 
     @property
     def all_actor_models(self) -> set[int]:
@@ -509,6 +513,7 @@ class Project:
         with (self.project_dir / 'project.json').open('w') as f:
             json.dump({
                 'version': asdict(self.version),
+                'create_date': self.create_date.isoformat(),
                 'last_export_date': self.last_export_date.isoformat(),
                 'actor_graphics': [asdict(instance) for instance in self.actor_graphics],
                 'module_sets': self.module_sets,
@@ -530,14 +535,19 @@ class Project:
             yield Movie(path)
 
     @classmethod
-    def _get_voice_from_dir(cls, voice_dir: Path) -> Iterable[XaAudio]:
+    def _get_voice_manifests(cls, voice_dir: Path) -> Iterable[Manifest]:
         if manifest := Manifest.try_load_from(voice_dir):
-            for f in manifest:
-                yield XaAudio(f.path)
+            yield manifest
         else:
             for sub_path in voice_dir.iterdir():
                 if sub_path.is_dir():
-                    yield from cls._get_voice_from_dir(sub_path)
+                    yield from cls._get_voice_manifests(sub_path)
+
+    @classmethod
+    def _get_voice_from_dir(cls, voice_dir: Path) -> Iterable[XaAudio]:
+        for manifest in cls._get_voice_manifests(voice_dir):
+            for f in manifest:
+                yield XaAudio(f.path)
 
     def get_voice_audio(self) -> Iterable[XaAudio]:
         return self._get_voice_from_dir(self.project_dir / 'voice')
@@ -678,3 +688,90 @@ class Project:
         inventory_menu_file = menu_manifest['Inventory']
         with inventory_menu_file.path.open('rb') as f:
             yield 'Inventory', Menu.read(f)
+
+    @property
+    def default_export_image(self) -> Path:
+        return self.project_dir / 'export' / 'output.bin'
+
+    def get_files_modified(self, mtime: float) -> tuple[list[Path], list[PurePath]]:
+        """
+        Get a list of project files that have been modified since the given timestamp, along with a list of the files in
+        the disc image that would be modified if the project were to be exported.
+        """
+        input_files = []
+        output_files = []
+
+        anim_manifest = self.get_animations()
+        anim_files = list(anim_manifest.get_files_modified_since(mtime))
+        if anim_files:
+            output_files.append(PurePath('T4/MOT.CDB'))
+        input_files.extend(anim_file.path.relative_to(self.project_dir) for anim_file in anim_files)
+
+        for art_manifest in self.get_art_manifests():
+            art_files = list(art_manifest.get_files_modified_since(mtime))
+            if art_files:
+                output_files.append(PurePath(f'T4/{art_manifest.name}.CDB'))
+            input_files.extend(art_file.path.relative_to(self.project_dir) for art_file in art_files)
+
+        boot_dir = self.project_dir / 'boot'
+        exe_path = boot_dir / self.version.exe_name
+        if exe_path.stat().st_mtime > mtime:
+            input_files.append(exe_path.relative_to(self.project_dir))
+            if self.version.region == Region.NTSC_J:
+                output_files.append(PurePath(f'T4/{exe_path.name}'))
+            else:
+                output_files.append(PurePath(exe_path.name))
+        system_path = boot_dir / 'SYSTEM.CNF'
+        if system_path.stat().st_mtime > mtime:
+            input_files.append(system_path.relative_to(self.project_dir))
+            output_files.append(PurePath(system_path.name))
+
+        msg_manifest = Manifest.load_from(self.project_dir / 'messages')
+        msg_files = list(msg_manifest.get_files_modified_since(mtime))
+        if msg_files:
+            output_files.append(PurePath(f'T4/{msg_manifest.name}.CDB'))
+        input_files.extend(msg_file.path.relative_to(self.project_dir) for msg_file in msg_files)
+
+        model_manifest = Manifest.load_from(self.project_dir / 'models')
+        model_files = list(model_manifest.get_files_modified_since(mtime))
+        if model_files:
+            output_files.append(PurePath('T4/MODEL.CDB'))
+        input_files.extend(model_file.path.relative_to(self.project_dir) for model_file in model_files)
+
+        module_manifest = Manifest.load_from(self.project_dir / 'modules')
+        module_files = list(module_manifest.get_files_modified_since(mtime))
+        if module_files:
+            output_files.append(PurePath('T4/MODULE.BIN'))
+        input_files.extend(module_file.path.relative_to(self.project_dir) for module_file in module_files)
+
+        sound_manifest = Manifest.load_from(self.project_dir / 'sound')
+        sound_files = list(sound_manifest.get_files_modified_since(mtime))
+        if sound_files:
+            output_files.append(PurePath('T4/SOUND.CDB'))
+        input_files.extend(sound_file.path.relative_to(self.project_dir) for sound_file in sound_files)
+
+        for stage in Stage:
+            stage: Stage
+
+            bg_manifest = self.get_stage_backgrounds(stage)
+            bg_files = list(bg_manifest.get_files_modified_since(mtime))
+            if bg_files:
+                output_files.append(PurePath(f'T4/BGTIM_{stage}.CDB'))
+            input_files.extend(bg_file.path.relative_to(self.project_dir) for bg_file in bg_files)
+
+            for movie in self.get_stage_movies(stage):
+                if movie.path.stat().st_mtime > mtime:
+                    suffix = f'_{stage}' if stage != Stage.A else ''
+                    output_files.append(PurePath(f'T4/MOV{suffix}/{movie.path.name}'))
+                    input_files.append(movie.path.relative_to(self.project_dir))
+
+        for manifest in self._get_voice_manifests(self.project_dir / 'voice'):
+            voice_files = list(manifest.get_files_modified_since(mtime))
+            if voice_files:
+                if self.version.region == Region.NTSC_J:
+                    output_files.append(PurePath(f'T4/XA/{manifest.name}.BIN'))
+                else:
+                    output_files.append(PurePath(f'T4/{manifest.name}.MXA'))
+            input_files.extend(voice_file.path.relative_to(self.project_dir) for voice_file in voice_files)
+
+        return input_files, output_files

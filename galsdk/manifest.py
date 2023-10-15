@@ -206,6 +206,20 @@ class Manifest:
             raise TypeError('The given key does not correspond to a manifest')
         return Manifest.load_from(mf.path)
 
+    def get_files_modified_since(self, mtime: float) -> Iterable[ManifestFile]:
+        for mf in self.files:
+            if mf.is_manifest:
+                sub_manifest = Manifest.load_from(mf.path)
+                yield from sub_manifest.get_files_modified_since(mtime)
+            else:
+                if mf.path.stat().st_mtime > mtime:
+                    yield mf
+
+    def is_modified_since(self, mtime: float) -> bool:
+        for _ in self.get_files_modified_since(mtime):
+            return True
+        return False
+
     def rename(self, key: int | str, name: str, on_disk: bool = True, ext: str = None):
         """Rename a file in the manifest by index or name"""
         mf = self.files[key] if isinstance(key, int) else self.name_map[key]

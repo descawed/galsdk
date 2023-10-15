@@ -14,6 +14,7 @@ from galsdk.project import Project
 from galsdk.game import GameVersion
 from galsdk.ui import (ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab, StringTab, Tab,
                        VoiceTab)
+from galsdk.ui.export import ExportDialog
 
 
 MAX_RECENT_PROJECTS = 10
@@ -45,20 +46,21 @@ class Editor(ShowBase):
         menu_bar = tk.Menu(self.tkRoot)
         self.tkRoot.config(menu=menu_bar)
 
-        file_menu = tk.Menu(menu_bar, tearoff=False)
+        self.file_menu = tk.Menu(menu_bar, tearoff=False)
 
-        self.recent_menu = tk.Menu(file_menu, tearoff=False)
+        self.recent_menu = tk.Menu(self.file_menu, tearoff=False)
         self.populate_recent()
 
-        file_menu.add_command(label='New Project...', underline=0, command=self.ask_new_project)
-        file_menu.add_command(label='Open Project...', underline=0, command=self.ask_open_project)
-        file_menu.add_cascade(label='Recent', menu=self.recent_menu, underline=0)
-        file_menu.add_separator()
-        file_menu.add_command(label='Save', underline=0, command=self.save_project)
-        file_menu.add_separator()
-        file_menu.add_command(label='Exit', underline=1, command=self.exit)
+        self.file_menu.add_command(label='New Project...', underline=0, command=self.ask_new_project)
+        self.file_menu.add_command(label='Open Project...', underline=0, command=self.ask_open_project)
+        self.file_menu.add_cascade(label='Recent', menu=self.recent_menu, underline=0)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label='Export...', underline=0, command=self.export_project, state=tk.DISABLED)
+        self.file_menu.add_command(label='Save', underline=0, command=self.save_project, state=tk.DISABLED)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label='Exit', underline=1, command=self.exit)
 
-        menu_bar.add_cascade(label='File', menu=file_menu, underline=0)
+        menu_bar.add_cascade(label='File', menu=self.file_menu, underline=0)
 
         # tabs for open project (will be populated later)
         self.tabs = []
@@ -249,6 +251,9 @@ class Editor(ShowBase):
 
         self.set_title()
 
+        self.file_menu.entryconfigure(4, state=tk.NORMAL)
+        self.file_menu.entryconfigure(5, state=tk.NORMAL)
+
     def on_tab_change(self, tab: Tab):
         num_tabs = self.notebook.index('end')
         for i in range(num_tabs):
@@ -262,6 +267,9 @@ class Editor(ShowBase):
         self.set_title()
 
     def save_project(self, *_):
+        if not self.project:
+            return
+
         for tab in self.tabs:
             tab.save()
 
@@ -272,6 +280,13 @@ class Editor(ShowBase):
             if text.startswith('* '):
                 self.notebook.tab(i, text=text[2:])
         self.set_title()
+
+    def export_project(self, *_):
+        if not self.project:
+            return
+
+        dialog = ExportDialog(self.tkRoot, self.project)
+        dialog.grab_set()
 
     def populate_recent(self):
         self.recent_menu.delete(0, 'end')
