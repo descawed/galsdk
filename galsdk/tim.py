@@ -146,6 +146,8 @@ class TimDb(Archive[Tim]):
         results = []
         stream_end = len(data)
         with io.BytesIO(data) as f:
+            # a single data stream can contain multiple compressed TIMs one after another, so decompress repeatedly
+            # until we reach the end of the data
             while f.tell() < stream_end:
                 offset = f.tell()
                 output = bytearray()
@@ -162,10 +164,11 @@ class TimDb(Archive[Tim]):
                         # we select an index into the dictionary and/or a number of entries to update
                         byte = f.read(1)[0]
                         if byte < 0x80:
-                            # if byte < 0x80, the loop below will iterate from index:index+byte
+                            # if byte < 0x80, populate `count` contiguous indexes in the dictionary starting from the
+                            # current index
                             count = byte + 1
                         else:
-                            # otherwise, we update our dictionary index and perform only a single loop
+                            # otherwise, we update our dictionary index and populate only that index
                             index += byte - 0x7f
                             count = 1
 
@@ -189,6 +192,7 @@ class TimDb(Archive[Tim]):
                             if values[0] == index:
                                 output.append(values[0])
                             else:
+                                # push in reverse order so they'll be popped in the right order
                                 stack.append(values[1])
                                 stack.append(values[0])
                             i += 1
@@ -471,8 +475,8 @@ def unpack(db_path: str, target: str, fmt: str, indexes: Container[int] = None):
             if db is None:
                 raise ValueError(f'{db_path} does not appear to be a TIM database')
         else:
-            db = TimDb(fmt=TimDb.Format.from_extension(fmt))
-            db.read(f)
+            db = TimDb()
+            db.read(f, fmt=TimDb.Format.from_extension(fmt))
     for i, tim in enumerate(db):
         if indexes and i not in indexes:
             continue

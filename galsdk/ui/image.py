@@ -74,9 +74,12 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
 
     def handle_right_click(self, event: tk.Event):
         iid = self.tree.identify_row(event.y)
-        if iid in self.exportable_ids:
+        if iid in self.exportable_ids and iid != self.export_iid:
             self.export_iid = iid
             self.export_menu.post(event.x_root, event.y_root)
+        else:
+            self.export_iid = None
+            self.export_menu.unpost()
 
     def on_node_open(self, event: tk.Event):
         """Event handler when a tree node is opened; by default does nothing"""

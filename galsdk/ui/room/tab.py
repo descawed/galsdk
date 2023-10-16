@@ -802,12 +802,20 @@ class RoomTab(Tab):
         iid = self.tree.identify_row(event.y)
         for group in self.visibility:
             if iid.startswith(f'{group}_'):
+                if self.menu_item == iid:
+                    self.menu_item = None
+                    self.group_menu.unpost()
+                    break
                 room_id = int(iid.split('_')[1])
                 if self.current_room != room_id:
                     self.tree.selection_set(iid)
                 self.group_menu.entryconfigure(1, label='Hide' if self.visibility[group] else 'Show')
                 self.group_menu.post(event.x_root, event.y_root)
                 self.menu_item = iid
+                break
+        else:
+            self.menu_item = None
+            self.group_menu.unpost()
 
     def set_detail_widget(self, widget: ttk.Frame | None):
         if self.detail_widget:
