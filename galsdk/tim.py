@@ -475,8 +475,7 @@ def unpack(db_path: str, target: str, fmt: str, indexes: Container[int] = None):
             if db is None:
                 raise ValueError(f'{db_path} does not appear to be a TIM database')
         else:
-            db = TimDb()
-            db.read(f, fmt=TimDb.Format.from_extension(fmt))
+            db = TimDb.read(f, fmt=TimDb.Format.from_extension(fmt))
     for i, tim in enumerate(db):
         if indexes and i not in indexes:
             continue
