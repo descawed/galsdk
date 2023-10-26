@@ -25,6 +25,7 @@ class Database(Archive[bytes]):
         :param extended: If True, file sizes will be recorded with byte precision. Otherwise, files will be padded with
             null bytes to the nearest sector boundary.
         """
+        super().__init__()
         self.extended = extended
         self.files = []
 
@@ -36,9 +37,17 @@ class Database(Archive[bytes]):
     def supports_nesting(self) -> bool:
         return False
 
+    @property
+    def metadata(self) -> dict[str, bool]:
+        return {'extended': True}
+
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+        return cls(metadata['extended'])
+
     @classmethod
     def import_explicit(cls, paths: Iterable[Path], fmt: str = None) -> Self:
-        is_extended = fmt == 'extended'
+        is_extended = fmt in ['extended', 'cdx', 'bin']
         db = cls(is_extended)
         for path in paths:
             db.append_file(path)
@@ -145,6 +154,9 @@ class Database(Archive[bytes]):
         :param data: The data of the file to be added to the database
         """
         self.files.append(data)
+
+    def append_raw(self, item: bytes):
+        return self.append(item)
 
     def append_file(self, path: Path):
         """

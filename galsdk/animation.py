@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import functools
+import io
 import struct
 from dataclasses import dataclass
 from enum import IntFlag
@@ -155,6 +157,7 @@ class AnimationDb(Archive[Animation | None]):
     DEFAULT_HEADER = b'\0' * 0x48
 
     def __init__(self, animations: list[Animation | None] = None, header: bytes = DEFAULT_HEADER):
+        super().__init__()
         self.header = header
         self.animations = animations or []
 
@@ -165,6 +168,14 @@ class AnimationDb(Archive[Animation | None]):
     @property
     def suggested_extension(self) -> str:
         return '.ADB'
+
+    @property
+    def metadata(self) -> dict[str, str]:
+        return {'header': base64.b64encode(self.header).decode()}
+
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+        return cls(None, base64.b64decode(metadata['header']))
 
     def __getitem__(self, item: int) -> Animation | None:
         return self.animations[item]
@@ -183,6 +194,10 @@ class AnimationDb(Archive[Animation | None]):
 
     def append(self, item: Animation | None):
         self.animations.append(item)
+
+    def append_raw(self, item: bytes):
+        with io.BytesIO(item) as f:
+            self.append(Animation.read(f))
 
     def unpack_one(self, path: Path, index: int) -> Path:
         if animation := self.animations[index]:

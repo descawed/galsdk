@@ -288,7 +288,7 @@ class DictionaryCompressor:
             right_len = len(right)
 
             left_index, left_partial_match, left_symmetrical, left_repeating = self.check_half(left, indexes, is_odd)
-            right_index, right_partial_match, right_symmetrical, right_repeating = self.check_half(left, indexes,
+            right_index, right_partial_match, right_symmetrical, right_repeating = self.check_half(right, indexes,
                                                                                                    is_odd)
             partial_match = left_partial_match or right_partial_match
 

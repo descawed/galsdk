@@ -181,7 +181,7 @@ class Project:
             project_art_dir.mkdir(exist_ok=True)
             Manifest.from_archive(project_art_dir, art_db_path.stem, art_db,
                                   sniff=[LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Credits],
-                                  flatten=True)
+                                  flatten=True, original_path=art_db_path)
 
         display_db_path = game_data / 'DISPLAY.CDB'
         with display_db_path.open('rb') as f:
@@ -198,14 +198,14 @@ class Project:
             message_db_path = game_data / 'MES.CDB'
             with message_db_path.open('rb') as f:
                 message_db = Database.read(f)
-            message_manifest = Manifest.from_archive(message_dir, 'MES', message_db)
+            message_manifest = Manifest.from_archive(message_dir, 'MES', message_db, original_path=message_db_path)
             message_manifest.rename(0, 'Debug')
             message_manifest.save()
         else:
             ge_db_path = game_data / 'GE.CDB'
             with ge_db_path.open('rb') as f:
                 ge_db = Database.read(f)
-            ge_manifest = Manifest.from_archive(message_dir, 'GE', ge_db)
+            ge_manifest = Manifest.from_archive(message_dir, 'GE', ge_db, original_path=ge_db_path)
             ge_manifest.rename(0, 'GE')
             ge_manifest.save()
             message_manifest = display_manifest
@@ -251,7 +251,7 @@ class Project:
             with bg_db_path.open('rb') as f:
                 bg_db = Database.read(f)
             fmt = '.TMM' if version.region == Region.NTSC_J else '.TDB'
-            Manifest.from_archive(bg_dir, f'BGTIM_{stage}', bg_db, fmt, recursive=False)
+            Manifest.from_archive(bg_dir, f'BGTIM_{stage}', bg_db, fmt, recursive=False, original_path=bg_db_path)
 
             stage_info_path = stage_dir / 'stage.json'
             stage_info = {
@@ -266,7 +266,7 @@ class Project:
         model_dir.mkdir(exist_ok=True)
         with model_db_path.open('rb') as f:
             model_db = Database.read(f)
-        Manifest.from_archive(model_dir, 'MODEL', model_db, sniff=[ActorModel, ItemModel])
+        Manifest.from_archive(model_dir, 'MODEL', model_db, sniff=[ActorModel, ItemModel], original_path=model_db_path)
         # only actors without a manually-assigned model index are in the list
         num_actors = sum(1 if actor.model_index is None else 0 for actor in ACTORS)
         actor_models = list(
@@ -284,7 +284,8 @@ class Project:
         anim_dir.mkdir(exist_ok=True)
         with anim_db_path.open('rb') as f:
             anim_db = Database.read(f)
-        with Manifest.from_archive(anim_dir, 'MOT', anim_db, recursive=False) as anim_manifest:
+        with Manifest.from_archive(anim_dir, 'MOT', anim_db, recursive=False,
+                                   original_path=anim_db_path) as anim_manifest:
             renamed_indexes = set()
             for i, anim_index in enumerate(actor_animations):
                 if anim_index not in renamed_indexes:
@@ -298,7 +299,7 @@ class Project:
         module_db_path = game_data / 'MODULE.BIN'
         with module_db_path.open('rb') as f:
             module_db = Database.read(f)
-        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db)
+        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db, original_path=model_db_path)
 
         module_set_addr = addresses['MapModules']
         module_set_addrs = struct.unpack(f'<{NUM_MAPS}I',
@@ -425,7 +426,7 @@ class Project:
         sound_db_path = game_data / 'SOUND.CDB'
         with sound_db_path.open('rb') as f:
             sound_db = Database.read(f)
-        Manifest.from_archive(sound_dir, 'SOUND', sound_db, sniff=[VabDb])
+        Manifest.from_archive(sound_dir, 'SOUND', sound_db, sniff=[VabDb], original_path=sound_db_path)
 
         voice_dir = project_path / 'voice'
         voice_dir.mkdir(exist_ok=True)

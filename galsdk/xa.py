@@ -51,6 +51,7 @@ class XaDatabase(Archive[bytes]):
     MAGIC = b'\x41\x89'
 
     def __init__(self, regions: list[XaRegion] = None, data: ByteString = None):
+        super().__init__()
         self.regions = regions or []
         if data is not None:
             self.set_data(data)
@@ -97,6 +98,9 @@ class XaDatabase(Archive[bytes]):
             yield region.data
 
     def append(self, item: bytes | Self):
+        raise NotImplementedError
+
+    def append_raw(self, item: bytes):
         raise NotImplementedError
 
     @classmethod

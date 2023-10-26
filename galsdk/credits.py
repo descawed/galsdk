@@ -1,6 +1,7 @@
+import base64
 import io
 import struct
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import BinaryIO, Self, Iterable
 
@@ -42,13 +43,39 @@ class BitReader:
 
 
 class Credits(Archive[Tim]):
-    def __init__(self, control: list[CreditControl], images: list[TimFormat]):
+    def __init__(self, control: list[CreditControl], images: list[TimFormat] = None):
+        super().__init__()
         self.control = control
-        self.images = images
+        self.images = images or []
 
     @property
     def supports_nesting(self) -> bool:
         return False
+
+    @property
+    def metadata(self) -> dict[str, list[dict[str, int | list[list[bytes]] | list[tuple[int, int, int, int]]]]]:
+        metadata = {'control': []}
+        for control in self.control:
+            cd = asdict(control)
+            for row in cd['data']:
+                for i in range(len(row)):
+                    row[i] = base64.b64encode(row[i]).decode()
+            metadata['control'].append(cd)
+        return metadata
+
+    # PyCharm thinks that all the values of this dictionary are strings, even though it says right there that they can
+    # be other stuff
+    # noinspection PyTypeChecker
+    # noinspection PyUnresolvedReferences
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+        control = []
+        for cd in metadata['control']:
+            for row in cd['data']:
+                for i in range(len(row)):
+                    row[i] = base64.b64decode(row[i])
+            control.append(CreditControl(cd['unknown'], cd['rects'], cd['data']))
+        return cls(control)
 
     def __getitem__(self, item: int) -> Tim:
         return self.images[item]
@@ -66,6 +93,9 @@ class Credits(Archive[Tim]):
         return len(self.images)
 
     def append(self, item: Tim):
+        raise NotImplementedError
+
+    def append_raw(self, item: bytes):
         raise NotImplementedError
 
     @classmethod

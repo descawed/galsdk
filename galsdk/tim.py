@@ -133,6 +133,7 @@ class TimDb(Archive[Tim]):
 
     def __init__(self, fmt: Format = Format.DEFAULT):
         """Create a new, empty TIM database"""
+        super().__init__()
         self.images = []
         self.offsets = {}
         self.format = fmt
@@ -182,7 +183,8 @@ class TimDb(Archive[Tim]):
             data = util.read_some(f, size)
             with io.BytesIO(data) as buf:
                 if fmt == cls.Format.COMPRESSED_DB:
-                    sub_db = cls.read(buf, fmt=cls.Format.COMPRESSED_STREAM)
+                    # make sure the sub-DB hangs on to its raw data for the benefit of manifests
+                    sub_db = cls.read_save_raw(buf, fmt=cls.Format.COMPRESSED_STREAM)
                     db.append(sub_db, offset)
                 else:
                     db.append(TimFormat.read(buf), offset)
@@ -265,6 +267,11 @@ class TimDb(Archive[Tim]):
             self.offsets[offset] = len(self.images)
         self.images.append(image)
 
+    def append_raw(self, item: bytes, offset: int = None):
+        with io.BytesIO(item) as f:
+            tim = Tim.read(f)
+        return self.append(tim, offset)
+
     @property
     def suggested_extension(self) -> str:
         return self.format.extension
@@ -272,6 +279,14 @@ class TimDb(Archive[Tim]):
     @property
     def supports_nesting(self) -> bool:
         return True
+
+    @property
+    def metadata(self) -> dict[str, str]:
+        return {'fmt': self.format.extension}
+
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+        return cls(cls.Format.from_extension(metadata['fmt']))
 
     @classmethod
     def sniff(cls, f: BinaryIO, *, formats_to_check: list[Format] = None,
@@ -283,7 +298,7 @@ class TimDb(Archive[Tim]):
         for fmt in formats_to_check:
             f.seek(0)
             try:
-                db = cls.read(f, fmt=fmt)
+                db = cls.read_save_raw(f, fmt=fmt)
                 if fmt == cls.Format.STREAM and len(db) == 1 and not allow_single_element_stream:
                     continue
                 return db
@@ -297,7 +312,10 @@ class TimDb(Archive[Tim]):
         if isinstance(item, TimDb):
             new_path = path.with_suffix(item.suggested_extension)
             with new_path.open('wb') as f:
-                item.write(f, fmt=self.Format.from_extension(item.suggested_extension))
+                if raw_data := item.raw_data:
+                    f.write(raw_data)
+                else:
+                    item.write(f, fmt=self.Format.from_extension(item.suggested_extension))
             return new_path
 
         new_path = path.with_suffix('.TIM')

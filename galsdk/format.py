@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import BinaryIO, Generic, Iterable, Self, TypeVar
 
+from galsdk.util import KeepReader
+
 
 class FileFormat(ABC):
     @classmethod
@@ -35,6 +37,12 @@ class FileFormat(ABC):
     def read(cls, f: BinaryIO, **kwargs) -> Self:
         pass
 
+    @classmethod
+    def read_with_raw(cls, f: BinaryIO, **kwargs) -> tuple[Self, bytes]:
+        keeper = KeepReader(f)
+        obj = cls.read(keeper, **kwargs)
+        return obj, keeper.buffer
+
     @abstractmethod
     def write(self, f: BinaryIO, **kwargs):
         pass
@@ -53,6 +61,9 @@ T = TypeVar('T')
 
 
 class Archive(FileFormat, Generic[T]):
+    def __init__(self, raw_data: bytes = None):
+        self.raw_data = raw_data
+
     @property
     @abstractmethod
     def supports_nesting(self) -> bool:
@@ -62,6 +73,14 @@ class Archive(FileFormat, Generic[T]):
     def is_ready(self) -> bool:
         """Is this archive ready to be unpacked?"""
         return True
+
+    @property
+    def metadata(self) -> dict[str, bool | int | float | str | list | tuple | dict]:
+        return {}
+
+    @classmethod
+    def from_metadata(cls, _metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+        return cls()
 
     @abstractmethod
     def __getitem__(self, item: int) -> T | Self:
@@ -86,6 +105,23 @@ class Archive(FileFormat, Generic[T]):
     @abstractmethod
     def append(self, item: T | Self):
         pass
+
+    @abstractmethod
+    def append_raw(self, item: bytes):
+        pass
+
+    @classmethod
+    def read_save_raw(cls, f: BinaryIO, **kwargs) -> Self:
+        obj, raw_data = cls.read_with_raw(f, **kwargs)
+        obj.raw_data = raw_data
+        return obj
+
+    @classmethod
+    def sniff(cls, f: BinaryIO) -> Self | None:
+        try:
+            return cls.read_save_raw(f)
+        except Exception:
+            return None
 
     def iter_flat(self) -> Iterable[T]:
         for item in self:
