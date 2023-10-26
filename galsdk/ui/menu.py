@@ -6,7 +6,6 @@ from PIL.Image import Image
 from galsdk.ui.image import ImageViewerTab
 from galsdk.project import Project
 from psx.exe import Region
-from psx.tim import Tim
 
 
 class MenuTab(ImageViewerTab):

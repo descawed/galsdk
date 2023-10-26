@@ -8,8 +8,7 @@ from typing import BinaryIO, Self, Iterable
 
 from PIL import Image
 
-from galsdk.format import Archive
-from galsdk.tim import TimFormat
+from galsdk.format import FileFormat
 from galsdk.util import int_from_bytes
 from psx.tim import BitsPerPixel, Tim
 
@@ -88,7 +87,7 @@ class ComponentInstance:
     draw: int = 0
 
 
-class Menu(Archive[Image.Image]):
+class Menu(FileFormat):
     def __init__(self, images: list[MenuImage], clut_settings: list[ClutInfo], components: list[Component],
                  tiles: list[Tile], clut_data: list[bytes], layouts: list[Layout], x_scales: list[int] = None,
                  instances: list[ComponentInstance] = None, unused: int = 0):
@@ -121,15 +120,6 @@ class Menu(Archive[Image.Image]):
 
         return image
 
-    @property
-    def supports_nesting(self) -> bool:
-        return False
-
-    @property
-    def is_ready(self) -> bool:
-        # don't unpack because we won't have enough info to put ourselves back together
-        return False
-
     def __getitem__(self, item: int) -> Image.Image:
         tile_info = self.tiles[item]
         x = tile_info.x_offset * self.x_scales[tile_info.x_scale_index]
@@ -150,25 +140,12 @@ class Menu(Archive[Image.Image]):
         image = tim.to_image().crop((x, y, x + tile_info.width, y + tile_info.height))
         return image
 
-    def __setitem__(self, key: int, value: Image.Image):
-        raise NotImplementedError('Menus do not currently support editing')
-
-    def __delitem__(self, key: int):
-        raise NotImplementedError('Menus do not currently support editing')
-
     def __iter__(self) -> Iterable[Image.Image]:
         for i in range(len(self.tiles)):
             yield self[i]
 
     def __len__(self) -> int:
         return len(self.tiles)
-
-    def append(self, item: Image.Image):
-        raise NotImplementedError('Menus do not currently support editing')
-
-    @classmethod
-    def import_explicit(cls, paths: Iterable[Path], fmt: str = None) -> Self:
-        raise NotImplementedError('Menus do not currently support editing')
 
     def unpack_one(self, path: Path, index: int) -> Path:
         self[index].save(path)
@@ -213,7 +190,7 @@ class Menu(Archive[Image.Image]):
                 case MenuElement.TILE:
                     count = int_from_bytes(f.read(2))
                     for _ in range(count):
-                        width, height, layout1, layout2, layout3, layout4, x_scale_index, image_index, x_offset,\
+                        width, height, layout1, layout2, layout3, layout4, x_scale_index, image_index, x_offset, \
                             y_offset, clut_index, unused, unknown = struct.unpack('<6H6BH', f.read(20))
                         tiles.append(Tile(width, height, (layout1, layout2, layout3, layout4), x_scale_index,
                                           image_index, x_offset, y_offset, clut_index, unused, unknown))
@@ -274,6 +251,10 @@ class Menu(Archive[Image.Image]):
 
         f.write(MenuElement.PRE_END.to_bytes(2, 'little'))
         f.write(MenuElement.END.to_bytes(2, 'little'))
+
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
+        raise NotImplementedError('Menus do not currently support editing')
 
     def export(self, path: Path, fmt: str = None) -> Path:
         if fmt == 'render':

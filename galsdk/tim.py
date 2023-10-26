@@ -10,6 +10,7 @@ from typing import BinaryIO, Container, Iterable, Self
 from PIL import Image
 
 from galsdk import util
+from galsdk.compress import dictionary as dictcmp
 from galsdk.format import Archive, FileFormat
 from psx.tim import Tim
 
@@ -137,94 +138,6 @@ class TimDb(Archive[Tim]):
         self.format = fmt
 
     @classmethod
-    def decompress(cls, data: bytes) -> list[tuple[int, bytes]]:
-        # not sure what this compression algorithm is, if it even is a well-known algorithm. it seems to take advantage
-        # of the fact that the data being compressed doesn't contain all possible byte values, so it maps the unused
-        # values to sequences of two values, which are recursively expanded. initially, all values are mapped to
-        # themselves, so they would be output literally. the first part of the data encodes the mapped dictionary
-        # sequences. the second part (starting from stream_len) is the actual compressed data.
-        results = []
-        stream_end = len(data)
-        with io.BytesIO(data) as f:
-            # a single data stream can contain multiple compressed TIMs one after another, so decompress repeatedly
-            # until we reach the end of the data
-            while f.tell() < stream_end:
-                offset = f.tell()
-                output = bytearray()
-                data_len = util.int_from_bytes(f.read(4))
-                if data_len == 0:
-                    break
-                if data_len > stream_end - f.tell():
-                    raise EOFError('EOF encountered while decompressing TIM')
-                data_end = f.tell() + data_len
-                while f.tell() < data_end:
-                    dictionary = [(i, None) for i in range(0x100)]
-                    index = 0
-                    while index != 0x100:
-                        # we select an index into the dictionary and/or a number of entries to update
-                        byte = f.read(1)[0]
-                        if byte < 0x80:
-                            # if byte < 0x80, populate `count` contiguous indexes in the dictionary starting from the
-                            # current index
-                            count = byte + 1
-                        else:
-                            # otherwise, we update our dictionary index and populate only that index
-                            index += byte - 0x7f
-                            count = 1
-
-                        for _ in range(count):
-                            if index == 0x100:
-                                break
-                            byte = f.read(1)[0]
-                            dictionary[index] = (byte, None)
-                            if byte != index:
-                                dictionary[index] = (byte, f.read(1)[0])
-                            index += 1
-
-                    stream_len = util.int_from_bytes(f.read(2), 'big')
-                    end = f.tell() + stream_len
-                    while f.tell() != end:
-                        stack = [f.read(1)[0]]
-                        i = 0
-                        while len(stack) > 0:
-                            index = stack.pop()
-                            values = dictionary[index]
-                            if values[0] == index:
-                                output.append(values[0])
-                            else:
-                                # push in reverse order so they'll be popped in the right order
-                                stack.append(values[1])
-                                stack.append(values[0])
-                            i += 1
-                            if i > cls.MAX_ITERATIONS:
-                                raise RuntimeError('The decompression routine appears to be stuck in an infinite loop')
-                results.append((offset, bytes(output)))
-                # data is padded out to a multiple of 4 with '0' characters
-                padding_needed = (4 - data_len & 3) & 3
-                if padding_needed > 0:
-                    padding = f.read(padding_needed)
-                    if not all(c in [0, 0x30] for c in padding):
-                        raise ValueError('Expected padding bytes')
-
-        return results
-
-    @staticmethod
-    def compress(data: bytes) -> bytes:
-        # the game only contains decompression code, not compression code, so I'm not totally sure how this should work.
-        # I've played around with a few different attempts at a compressor, and they kind of work, but none of them
-        # produce output that's even close to matching the original files. for now, we'll just fake it with an "empty"
-        # dictionary followed by uncompressed data.
-        output = len(data).to_bytes(2, 'big') + data
-        # hard-coded empty dictionary (advance to index 0x80, store value 0x80, advance to index 0x100)
-        output = b'\xff\x80\xfe' + output
-        data_len = len(output)
-        padding_needed = (4 - data_len & 3) & 3
-        if padding_needed > 0:
-            output += b'0' * padding_needed
-        output = data_len.to_bytes(4, 'little') + output
-        return output
-
-    @classmethod
     def read(cls, f: BinaryIO, *, fmt: Format = Format.DEFAULT, **kwargs) -> Self:
         """
         Read a TIM database file
@@ -234,7 +147,7 @@ class TimDb(Archive[Tim]):
         """
         db = cls(fmt)
         if fmt == cls.Format.COMPRESSED_STREAM:
-            for offset, data in cls.decompress(f.read()):
+            for offset, data in dictcmp.decompress(f.read()):
                 db.append(TimFormat.read_bytes(data), offset)
             return db
         file_size = f.seek(0, 2)
@@ -293,7 +206,7 @@ class TimDb(Archive[Tim]):
                 image.write(buf)
                 data = buf.getvalue()
                 if fmt.is_compressed and isinstance(image, Tim):
-                    data = self.compress(data)
+                    data = dictcmp.compress(data)
                 raw_tims.append(data)
 
         if not fmt.is_stream:
