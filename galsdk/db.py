@@ -39,7 +39,7 @@ class Database(Archive[bytes]):
 
     @property
     def metadata(self) -> dict[str, bool]:
-        return {'extended': True}
+        return {'extended': self.extended}
 
     @classmethod
     def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
