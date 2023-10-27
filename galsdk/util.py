@@ -1,8 +1,170 @@
+import os
 import shutil
 from pathlib import Path
 from typing import BinaryIO, Literal, TextIO, overload
 
+from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, StringStream, \
+    PNMImage, Texture
+from PIL.Image import Image
+import io
 import numpy as np
+
+
+class KeepReader(BinaryIO):
+    """
+    A BinaryIO stream that keeps a copy of the data read, in the same order as the original file
+    """
+
+    def __init__(self, source: BinaryIO):
+        self.source = source
+        self.start = source.tell()  # we have to have this for absolute seeks to work
+        self.current = 0
+        self.buf = bytearray()
+
+    def _add_data(self, data: bytes):
+        end = self.current + len(data)
+        # because of the possibility of seeking, we won't always be appending at the end
+        if end > len(self.buf):
+            self.buf.extend(bytes(end - len(self.buf)))
+        self.buf[self.current:end] = data
+        self.current = end
+
+    @property
+    def buffer(self) -> bytes:
+        return bytes(self.buf)
+
+    def __enter__(self):
+        self.source.__enter__()
+
+    def close(self):
+        self.source.close()
+
+    def fileno(self):
+        return self.source.fileno()
+
+    def flush(self):
+        self.source.flush()
+
+    def isatty(self):
+        return self.source.isatty()
+
+    def read(self, __n=-1):
+        data = self.source.read(__n)
+        self._add_data(data)
+        return data
+
+    def readable(self):
+        return self.source.readable()
+
+    def readline(self, __limit=-1):
+        data = self.source.readline(__limit)
+        self._add_data(data)
+        return data
+
+    def readlines(self, __hint=-1):
+        data = self.source.readlines(__hint)
+        for line in data:
+            self._add_data(line)
+        return data
+
+    def seek(self, __offset, __whence=os.SEEK_SET):
+        abs_offset = self.source.seek(__offset, __whence)
+        rel_offset = abs_offset - self.start
+        if rel_offset < 0:
+            raise EOFError('KeepReader sought to before the start of the buffer')
+        if rel_offset > self.current:
+            # reset to before the seek and read the data that was skipped
+            self.source.seek(self.start + self.current)
+            self.read(rel_offset - self.current)
+        else:
+            self.current = rel_offset
+        return abs_offset
+
+    def seekable(self):
+        return self.source.seekable()
+
+    def tell(self):
+        return self.source.tell()
+
+    def truncate(self, __size=None):
+        return self.source.truncate(__size)
+
+    def writable(self):
+        return self.source.writable()
+
+    def write(self, __s):
+        return self.source.write(__s)
+
+    def writelines(self, __lines):
+        self.source.writelines(__lines)
+
+    def __next__(self):
+        return self.source.__next__()
+
+    def __iter__(self):
+        return self.source.__iter__()
+
+    def __exit__(self, __t, __value, __traceback):
+        return self.source.__exit__(__t, __value, __traceback)
+
+
+def make_triangle(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float]) -> Geom:
+    vdata = GeomVertexData('', GeomVertexFormat.getV3(), Geom.UHStatic)
+    vdata.setNumRows(3)
+
+    vertex = GeomVertexWriter(vdata, 'vertex')
+    vertex.addData3(p1[0], p1[1], 0)
+    vertex.addData3(p2[0], p2[1], 0)
+    vertex.addData3(p3[0], p3[1], 0)
+
+    primitive = GeomTriangles(Geom.UHStatic)
+    primitive.addVertices(0, 1, 2)
+    primitive.closePrimitive()
+
+    geom = Geom(vdata)
+    geom.addPrimitive(primitive)
+    return geom
+
+
+def make_quad(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float],
+              p4: tuple[float, float], use_texture: bool = False) -> Geom:
+    vertex_format = GeomVertexFormat.getV3t2() if use_texture else GeomVertexFormat.getV3()
+    vdata = GeomVertexData('', vertex_format, Geom.UHStatic)
+    vdata.setNumRows(4)
+
+    vertex = GeomVertexWriter(vdata, 'vertex')
+    vertex.addData3(p1[0], p1[1], 0)
+    vertex.addData3(p2[0], p2[1], 0)
+    vertex.addData3(p3[0], p3[1], 0)
+    vertex.addData3(p4[0], p4[1], 0)
+
+    if use_texture:
+        texcoord = GeomVertexWriter(vdata, 'texcoord')
+        texcoord.addData2(0, 0)
+        texcoord.addData2(1, 0)
+        texcoord.addData2(1, 1)
+        texcoord.addData2(0, 1)
+
+    primitive = GeomTriangles(Geom.UHStatic)
+    primitive.addVertices(0, 1, 2)
+    primitive.addVertices(2, 3, 0)
+    primitive.closePrimitive()
+
+    geom = Geom(vdata)
+    geom.addPrimitive(primitive)
+    return geom
+
+
+def create_texture_from_image(image: Image) -> Texture:
+    buffer = io.BytesIO()
+    image.save(buffer, format='png')
+
+    panda_image = PNMImage()
+    panda_image.read(StringStream(buffer.getvalue()))
+
+    texture = Texture()
+    texture.load(panda_image)
+    return texture
 
 
 def int_from_bytes(b: bytes, endianness: Literal['little', 'big'] = 'little', *, signed: bool = False):

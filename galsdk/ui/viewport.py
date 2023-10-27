@@ -1,9 +1,31 @@
-import tkinter as tk
+import sys
+from enum import Enum
+from pathlib import Path
 from tkinter import ttk
 
 from direct.showbase.ShowBase import DirectObject, ShowBase
 from direct.task import Task
-from panda3d.core import GraphicsWindow, MouseButton, NativeWindowHandle, NodePath, TransparencyAttrib, WindowProperties
+from panda3d.core import (Filename, GraphicsWindow, MouseButton, NativeWindowHandle, NodePath, TransparencyAttrib,
+                          WindowProperties)
+
+
+CURSOR_EXT = 'xmc' if sys.platform == 'linux' else 'ico'
+
+
+class Cursor(str, Enum):
+    CENTER = 'center'
+    VERTICAL = 'vertical'
+    HORIZONTAL = 'horizontal'
+    DIAGONAL_FORWARD = 'diagonal_forward'
+    DIAGONAL_BACKWARD = 'diagonal_backward'
+
+    def __str__(self) -> str:
+        return self.value
+
+    @property
+    def filename(self):
+        return Filename.fromOsSpecific(str(Path.cwd() / 'assets' / f'arrows_{self.value}.{CURSOR_EXT}'),
+                                       Filename.TGeneral)
 
 
 class Viewport(ttk.Frame):
@@ -28,6 +50,8 @@ class Viewport(ttk.Frame):
         self.base = base
         self.last_x = 0
         self.last_y = 0
+        self.was_mouse1_down_last_frame = False
+        self.was_mouse2_down_last_frame = False
         self.was_dragging_last_frame = False
         self.was_panning_last_frame = False
         self.target = None
@@ -38,7 +62,9 @@ class Viewport(ttk.Frame):
         self.camera = None
         self.region = None
         self.wheel_listener = None
+        self.mouse_task = None
         self.aspect_ratio = width / height
+        self.current_cursor = None
 
         self.render_target = NodePath(f'viewport_render_{name}')
         self.render_target.setTransparency(TransparencyAttrib.M_alpha)
@@ -73,6 +99,8 @@ class Viewport(ttk.Frame):
             props = WindowProperties()
             props.setOrigin(x, y)
             props.setSize(new_width, new_height)
+            if self.current_cursor is not None:
+                props.setCursorFilename(self.current_cursor.filename)
             self._window.requestProperties(props)
             self.configure(width=width, height=height)
             if not keep_aspect_ratio:
@@ -80,6 +108,18 @@ class Viewport(ttk.Frame):
                 lens = self.camera.node().getLens()
                 lens.setFilmSize(width, height)
                 lens.setFocalLength(self.FOCAL_LENGTH)
+
+    def setup_window(self):
+        # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality
+        self.region = self._window.makeDisplayRegion(0, 1, 0, 1)
+        self.base.setupMouse(self._window)
+        self.base.mouseWatcherNode.setDisplayRegion(self.region)
+
+        self.wheel_listener = DirectObject.DirectObject()
+        self.wheel_listener.accept('wheel_up', self.zoom, extraArgs=[1])
+        self.wheel_listener.accept('wheel_down', self.zoom, extraArgs=[-1])
+
+        self.mouse_task = self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{self.name}')
 
     @property
     def window(self) -> GraphicsWindow:
@@ -92,27 +132,24 @@ class Viewport(ttk.Frame):
             props.setParentWindow(NativeWindowHandle.makeInt(self.winfo_id()))
             props.setOrigin(0, 0)
             props.setSize(width, height)
+            if self.current_cursor is not None:
+                props.setCursorFilename(self.current_cursor.filename)
             self._window = self.base.open_window(props)
 
             self.camera = self.base.makeCamera(self._window)
             self.camera.reparentTo(self.render_target)
             self.camera.setPos(0, self.DEFAULT_ZOOM, 2)
 
-            # tkinter input events don't fire on the model_frame, so we have to use panda's input functionality
-            self.region = self.window.makeDisplayRegion(0, 1, 0, 1)
-            self.base.setupMouse(self._window)
-            self.base.mouseWatcherNode.setDisplayRegion(self.region)
-
-            self.wheel_listener = DirectObject.DirectObject()
-            self.wheel_listener.accept('wheel_up', self.zoom, extraArgs=[1])
-            self.wheel_listener.accept('wheel_down', self.zoom, extraArgs=[-1])
-
-            self.base.taskMgr.add(self.watch_mouse, f'viewport_input_{self.name}')
+            self.setup_window()
 
         return self._window
 
+    @property
+    def has_focus(self) -> bool:
+        return self.base.mouseWatcherNode.hasMouse() and self.window.isActive()
+
     def zoom(self, direction: int):
-        if not self.base.mouseWatcherNode.hasMouse() or not self.window.is_active():
+        if not self.has_focus:
             return
 
         if self.target:
@@ -151,7 +188,7 @@ class Viewport(ttk.Frame):
         self.target_orbit = None
 
     def watch_mouse(self, _) -> int:
-        if not self.base.mouseWatcherNode.hasMouse() or not self.window.is_active():
+        if not self.has_focus:
             return Task.cont
 
         # rotate the model with left click, pan with middle click
@@ -175,7 +212,9 @@ class Viewport(ttk.Frame):
             self.last_x = mouse_x
             self.last_y = mouse_y
 
+        self.was_mouse1_down_last_frame = is_dragging
         self.was_dragging_last_frame = is_dragging
+        self.was_mouse2_down_last_frame = is_panning
         self.was_panning_last_frame = is_panning
 
         return Task.cont
@@ -184,7 +223,27 @@ class Viewport(ttk.Frame):
         # we need to defer creation of the window until we're visible because on Linux with X, the parent window
         # (i.e. the X window corresponding to this widget) isn't ready until then
         if self._window is not None or is_active:
-            self.window.set_active(is_active)
+            self.window.setActive(is_active)
             if is_active:
                 self.base.setupMouse(self.window)
                 self.base.mouseWatcherNode.setDisplayRegion(self.region)
+
+    def set_cursor(self, cursor: Cursor | None):
+        if self.current_cursor is not cursor:
+            self.current_cursor = cursor
+            old_props = self._window.getProperties()
+            origin = old_props.getOrigin()
+            props = WindowProperties()
+            props.setOrigin(origin.getX(), origin.getY())
+            props.setSize(old_props.getXSize(), old_props.getYSize())
+            if cursor is not None:
+                props.setCursorFilename(cursor.filename)
+            self._window.requestProperties(props)
+
+    def close(self):
+        if self.mouse_task is not None:
+            self.base.taskMgr.remove(self.mouse_task)
+            self.mouse_task = None
+        if self._window is not None:
+            self.base.graphicsEngine.removeWindow(self._window)
+            self._window = None

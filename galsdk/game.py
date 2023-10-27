@@ -90,6 +90,10 @@ class GameVersion:
     disc: int
     is_demo: bool = False
 
+    @property
+    def exe_name(self) -> str:
+        return self.id[:4] + '_' + self.id[5:8] + '.' + self.id[8:]
+
 
 VERSIONS = [
     GameVersion('SLUS-00986', Region.NTSC_U, 'en-US', 1),
@@ -116,6 +120,24 @@ VERSIONS = [
     GameVersion('SLES-12330', Region.PAL, 'de', 2),
     GameVersion('SLES-22330', Region.PAL, 'de', 3),
 ]
+
+LANG_DISC_MAP = {
+    ('en-US', 1): VERSIONS[0],
+    ('en-US', 2): VERSIONS[1],
+    ('en-US', 3): VERSIONS[2],
+    ('ja', 1): VERSIONS[4],
+    ('ja', 2): VERSIONS[5],
+    ('ja', 3): VERSIONS[6],
+    ('en-GB', 1): VERSIONS[7],
+    ('en-GB', 2): VERSIONS[8],
+    ('en-GB', 3): VERSIONS[9],
+    ('fr', 1): VERSIONS[11],
+    ('fr', 2): VERSIONS[12],
+    ('fr', 3): VERSIONS[13],
+    ('de', 1): VERSIONS[14],
+    ('de', 2): VERSIONS[15],
+    ('de', 3): VERSIONS[16],
+}
 
 REGION_ADDRESSES = {
     'en-US': {

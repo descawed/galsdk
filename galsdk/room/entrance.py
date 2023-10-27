@@ -19,3 +19,7 @@ class EntranceObject(RoomObject):
 
     def get_model(self) -> NodePath | None:
         return None
+
+    def as_entrance(self) -> Entrance:
+        return Entrance(self.room_index, self.position.game_x, self.position.game_y, self.position.game_z,
+                        int(self.angle * 4096 / 360))

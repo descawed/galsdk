@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Type
+from typing import Callable, Generic, Iterable, TypeVar
 
 from galsdk import util
 from galsdk.db import Database
@@ -14,8 +16,9 @@ from galsdk.vab import VabDb
 from galsdk.xa import XaDatabase
 
 
-ARCHIVE_FORMATS: dict[str, Type[Archive]] = {
+ARCHIVE_FORMATS: dict[str, type[Archive]] = {
     'cdb': Database,
+    'bin': Database,
     'tda': TimDb,
     'tdb': TimDb,
     'tdc': TimDb,
@@ -34,12 +37,28 @@ class ManifestFile:
     format: str = None
 
 
+T = TypeVar('T', bound=FileFormat)
+
+
+@dataclass
+class FromManifest(Generic[T]):
+    manifest: Manifest
+    key: int | str
+    file: ManifestFile
+    obj: T
+
+    def save(self, **kwargs):
+        with self.file.path.open('wb') as f:
+            self.obj.write(f, **kwargs)
+
+
 class Manifest:
     """A manifest records an ordered list of files that belong to an archive"""
 
     files: list[ManifestFile]
 
-    def __init__(self, path: Path, name: str = None, db_type: str = 'cdb'):
+    def __init__(self, path: Path, name: str = None, db_type: str = 'cdb', original: Path = None,
+                 metadata: dict[str, bool | int | float | str | list | tuple | dict] = None):
         """
         Create a new empty manifest at the given path with the given name
 
@@ -48,12 +67,14 @@ class Manifest:
         """
         self.path = path
         self.path.mkdir(exist_ok=True)
+        self.original = original
         self.name = name
         self.files = []
         self.name_map = {}
         self.type = db_type
+        self.metadata = metadata or {}
 
-    def _unpack_file(self, mf: ManifestFile, parent: Archive, i: int, sniff: bool | list[Type[FileFormat]],
+    def _unpack_file(self, mf: ManifestFile, parent: Archive, i: int, sniff: bool | list[type[FileFormat]],
                      flatten: bool, recursive: bool):
         entry = parent[i]
         if not isinstance(entry, Archive) or not recursive:
@@ -91,11 +112,20 @@ class Manifest:
             Manifest.from_archive(mf.path, f'{self.name}_{mf.name}', archive, sniff=sniff, flatten=flatten)
             mf.is_manifest = True
 
-    def unpack_archive(self, archive: Archive, extension: str = '', sniff: bool | list[Type[FileFormat]] = False,
-                       flatten: bool = False, recursive: bool = True):
+    def unpack_archive(self, archive: Archive, extension: str = '', sniff: bool | list[type[FileFormat]] = False,
+                       flatten: bool = False, recursive: bool = True, original_path: Path = None):
         if extension and extension[0] != '.':
             extension = '.' + extension
         self.type = archive.suggested_extension[1:].lower()
+        self.metadata = archive.metadata
+        save_path = self.path / 'original.bin'
+        if original_path is not None:
+            shutil.copy(original_path, save_path)
+        elif raw_data := archive.raw_data:
+            save_path.write_bytes(raw_data)
+        else:
+            save_path = None
+        self.original = save_path
         for i, entry in enumerate(archive):
             name = f'{i:03}'
             filename = f'{name}{extension}'
@@ -105,6 +135,31 @@ class Manifest:
             self.files.append(mf)
             self.name_map[mf.name] = mf
             self._unpack_file(mf, archive, i, sniff, flatten, recursive)
+
+    def pack_archive(self, mtime: float = 0.) -> bytes:
+        if not self.is_modified_since(mtime) and self.original:
+            # nothing has changed, we can just serve the original file
+            return self.original.read_bytes()
+
+        archive = ARCHIVE_FORMATS[self.type].from_metadata(self.metadata)
+        for mf in self.files:
+            if mf.is_manifest:
+                sub_manifest = Manifest.load_from(mf.path)
+                data = sub_manifest.pack_archive(mtime)
+            else:
+                data = mf.path.read_bytes()
+            archive.append_raw(data)
+
+        if not self.original:
+            self.original = self.path / 'original.bin'
+            self.save()
+
+        # we use r+b because we want the original file to be overwritten in place, leaving any extra bytes at the end of
+        # the file or the ends of headers. that will minimize the diff with the original file.
+        with self.original.open('r+b') as f:
+            archive.write(f)
+            # TODO: should we truncate here? might be necessary for stream formats
+        return self.original.read_bytes()
 
     def load(self):
         """Load the last saved manifest data for this path"""
@@ -117,6 +172,21 @@ class Manifest:
             self.files.append(ManifestFile(entry['name'], path, (path / 'manifest.json').exists(), entry['format']))
         self.name_map = {mf.name: mf for mf in self.files}
         self.type = manifest['type']
+        self.metadata = manifest['metadata']
+        self.original = (self.path / manifest['original']) if manifest['original'] else None
+
+    def load_file(self, key: int | str, constructor: type[T] | Callable[[Path], T], **kwargs) -> FromManifest[T]:
+        """
+        Create a FileFormat instance of the given type from the file identified by key, returning a FromManifest
+        instance that tracks the file and manifest the object originated from.
+        """
+        manifest_file = self[key]
+        if isinstance(constructor, type) and issubclass(constructor, FileFormat):
+            with manifest_file.path.open('rb') as f:
+                obj = constructor.read(f, **kwargs)
+        else:
+            obj = constructor(manifest_file.path)
+        return FromManifest(self, key, manifest_file, obj)
 
     def save(self):
         """Save the current file data for this manifest"""
@@ -125,6 +195,8 @@ class Manifest:
                 'name': self.name,
                 'files': [{'name': mf.name, 'path': mf.path.name, 'format': mf.format} for mf in self.files],
                 'type': self.type,
+                'metadata': self.metadata,
+                'original': str(self.original.relative_to(self.path)) if self.original is not None else None,
             }, f)
 
     def __getitem__(self, item: int | str) -> ManifestFile:
@@ -178,6 +250,20 @@ class Manifest:
             raise TypeError('The given key does not correspond to a manifest')
         return Manifest.load_from(mf.path)
 
+    def get_files_modified_since(self, mtime: float) -> Iterable[ManifestFile]:
+        for mf in self.files:
+            if mf.is_manifest:
+                sub_manifest = Manifest.load_from(mf.path)
+                yield from sub_manifest.get_files_modified_since(mtime)
+            else:
+                if mf.path.stat().st_mtime > mtime:
+                    yield mf
+
+    def is_modified_since(self, mtime: float) -> bool:
+        for _ in self.get_files_modified_since(mtime):
+            return True
+        return False
+
     def rename(self, key: int | str, name: str, on_disk: bool = True, ext: str = None):
         """Rename a file in the manifest by index or name"""
         mf = self.files[key] if isinstance(key, int) else self.name_map[key]
@@ -225,8 +311,8 @@ class Manifest:
 
     @classmethod
     def from_archive(cls, manifest_path: Path, name: str, archive: Archive, extension: str = '',
-                     sniff: bool | list[Type[FileFormat]] = False, flatten: bool = False,
-                     recursive: bool = True) -> Manifest:
+                     sniff: bool | list[type[FileFormat]] = False, flatten: bool = False,
+                     recursive: bool = True, original_path: Path = None) -> Manifest:
         """
         Create a new manifest at a given path from a given archive
 
@@ -240,9 +326,10 @@ class Manifest:
             parameter is true.
         :param flatten: When recursively unpacking, do not make sub-manifests for archives with a single entry.
         :param recursive: If the archive contains nested archives, unpack them recursively
+        :param original_path: The path to the original file the archive was read from, which will be copied and saved
         :return: The new manifest
         """
         manifest = cls(manifest_path, name)
-        manifest.unpack_archive(archive, extension, sniff, flatten, recursive)
+        manifest.unpack_archive(archive, extension, sniff, flatten, recursive, original_path)
         manifest.save()
         return manifest

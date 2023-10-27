@@ -47,6 +47,10 @@ class ModelViewer(Viewport):
         else:
             self.clear_target()
 
+    def close(self):
+        self.stop_animation()
+        super().close()
+
 
 class ModelViewerTab(Tab, metaclass=ABCMeta):
     """Tab for viewing arbitrary 3D models from the game"""
@@ -193,3 +197,6 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         self.model_frame.set_active(is_active)
         if is_active:
             self.resize_3d()
+
+    def close(self):
+        self.model_frame.close()

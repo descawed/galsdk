@@ -1,4 +1,5 @@
 import math
+import os
 import os.path
 from pathlib import Path
 from typing import BinaryIO, Container, Iterable, Self
@@ -25,6 +26,7 @@ class Database(Archive[bytes]):
         :param extended: If True, file sizes will be recorded with byte precision. Otherwise, files will be padded with
             null bytes to the nearest sector boundary.
         """
+        super().__init__()
         self.extended = extended
         self.files = []
 
@@ -36,9 +38,17 @@ class Database(Archive[bytes]):
     def supports_nesting(self) -> bool:
         return False
 
+    @property
+    def metadata(self) -> dict[str, bool]:
+        return {'extended': self.extended}
+
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+        return cls(metadata['extended'])
+
     @classmethod
     def import_explicit(cls, paths: Iterable[Path], fmt: str = None) -> Self:
-        is_extended = fmt == 'extended'
+        is_extended = fmt in ['extended', 'cdx', 'bin']
         db = cls(is_extended)
         for path in paths:
             db.append_file(path)
@@ -111,7 +121,11 @@ class Database(Archive[bytes]):
         bytes_remaining = self.SECTOR_SIZE - f.tell()
         if bytes_remaining < 0:
             raise OverflowError('Too many files')
-        f.write(b'\0' * bytes_remaining)
+        if f.readable():
+            # if we're writing over an existing file, just seek ahead
+            f.seek(bytes_remaining, os.SEEK_CUR)
+        else:
+            f.write(b'\0' * bytes_remaining)
         for data in self.files:
             f.write(data)
             bytes_over = len(data) % self.SECTOR_SIZE
@@ -145,6 +159,9 @@ class Database(Archive[bytes]):
         :param data: The data of the file to be added to the database
         """
         self.files.append(data)
+
+    def append_raw(self, item: bytes):
+        return self.append(item)
 
     def append_file(self, path: Path):
         """

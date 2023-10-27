@@ -1,7 +1,9 @@
+import json
 import pathlib
 import tkinter as tk
 import tkinter.filedialog as tkfile
 import tkinter.messagebox as tkmsg
+from functools import partial
 from tkinter import ttk
 from typing import Optional
 
@@ -10,8 +12,12 @@ from panda3d.core import getModelPath
 
 from galsdk.project import Project
 from galsdk.game import GameVersion
-from galsdk.ui import ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab, StringTab,\
-    VoiceTab
+from galsdk.ui import (ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab, StringTab, Tab,
+                       VoiceTab)
+from galsdk.ui.export import ExportDialog
+
+
+MAX_RECENT_PROJECTS = 10
 
 
 class Editor(ShowBase):
@@ -23,23 +29,39 @@ class Editor(ShowBase):
         super().__init__(windowType='none')
         self.project = None
 
-        getModelPath().appendDirectory(pathlib.Path.cwd() / 'assets')
+        cwd = pathlib.Path.cwd()
+        getModelPath().appendDirectory(cwd / 'assets')
+
+        settings_path = cwd / 'editor.json'
+        if settings_path.exists():
+            with settings_path.open() as f:
+                settings = json.load(f)
+        else:
+            settings = {}
+        self.recent_projects = settings.get('recent', [])
+        self.saved_geometry = settings.get('geometry')
 
         self.startTk()
-        self.tkRoot.title('galsdk')
 
         # top menu
         menu_bar = tk.Menu(self.tkRoot)
         self.tkRoot.config(menu=menu_bar)
 
-        file_menu = tk.Menu(menu_bar, tearoff=False)
+        self.file_menu = tk.Menu(menu_bar, tearoff=False)
 
-        file_menu.add_command(label='New Project...', underline=0, command=self.ask_new_project)
-        file_menu.add_command(label='Open Project...', underline=0, command=self.ask_open_project)
-        file_menu.add_separator()
-        file_menu.add_command(label='Exit', underline=1, command=self.exit)
+        self.recent_menu = tk.Menu(self.file_menu, tearoff=False)
+        self.populate_recent()
 
-        menu_bar.add_cascade(label='File', menu=file_menu, underline=0)
+        self.file_menu.add_command(label='New Project...', underline=0, command=self.ask_new_project)
+        self.file_menu.add_command(label='Open Project...', underline=0, command=self.ask_open_project)
+        self.file_menu.add_cascade(label='Recent', menu=self.recent_menu, underline=0)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label='Export...', underline=0, command=self.export_project, state=tk.DISABLED)
+        self.file_menu.add_command(label='Save', underline=0, command=self.save_project, state=tk.DISABLED)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label='Exit', underline=1, command=self.exit)
+
+        menu_bar.add_cascade(label='File', menu=self.file_menu, underline=0)
 
         # tabs for open project (will be populated later)
         self.tabs = []
@@ -85,21 +107,21 @@ class Editor(ShowBase):
         self.new_project_view.grid_rowconfigure(7, weight=1)
         self.new_project_view.grid_columnconfigure(1, weight=1)
 
-        image_label.grid(row=0, column=0, sticky=tk.S+tk.E)
-        image_path.grid(row=0, column=1, columnspan=4, sticky=tk.S+tk.W)
-        game_id_label.grid(row=1, column=0, sticky=tk.E)
-        game_id.grid(row=1, column=1, sticky=tk.W)
-        region_label.grid(row=2, column=0, sticky=tk.E)
-        region.grid(row=2, column=1, sticky=tk.W)
-        language_label.grid(row=3, column=0, sticky=tk.E)
-        language.grid(row=3, column=1, sticky=tk.W)
-        disc_number_label.grid(row=4, column=0, sticky=tk.E)
-        disc_number.grid(row=4, column=1, sticky=tk.W)
-        demo_text_label.grid(row=5, column=0, sticky=tk.E)
-        demo_text.grid(row=5, column=1, sticky=tk.W)
-        project_label.grid(row=6, column=0, sticky=tk.E)
-        project_path.grid(row=6, column=1, columnspan=3, sticky=tk.E+tk.W)
-        browse_project_path.grid(row=6, column=4, sticky=tk.W)
+        image_label.grid(padx=5, row=0, column=0, sticky=tk.S+tk.E)
+        image_path.grid(padx=5, row=0, column=1, columnspan=4, sticky=tk.S+tk.W)
+        game_id_label.grid(padx=5, row=1, column=0, sticky=tk.E)
+        game_id.grid(padx=5, row=1, column=1, sticky=tk.W)
+        region_label.grid(padx=5, row=2, column=0, sticky=tk.E)
+        region.grid(padx=5, row=2, column=1, sticky=tk.W)
+        language_label.grid(padx=5, row=3, column=0, sticky=tk.E)
+        language.grid(padx=5, row=3, column=1, sticky=tk.W)
+        disc_number_label.grid(padx=5, row=4, column=0, sticky=tk.E)
+        disc_number.grid(padx=5, row=4, column=1, sticky=tk.W)
+        demo_text_label.grid(padx=5, row=5, column=0, sticky=tk.E)
+        demo_text.grid(padx=5, row=5, column=1, sticky=tk.W)
+        project_label.grid(padx=5, row=6, column=0, sticky=tk.E)
+        project_path.grid(padx=5, row=6, column=1, columnspan=3, sticky=tk.E+tk.W)
+        browse_project_path.grid(padx=5, row=6, column=4, sticky=tk.W)
         self.create_project_button.grid(row=7, column=0, sticky=tk.N+tk.E)
 
         rows, cols = self.new_project_view.grid_size()
@@ -114,10 +136,34 @@ class Editor(ShowBase):
 
         self.tkRoot.bind('<Control-n>', self.ask_new_project)
         self.tkRoot.bind('<Control-o>', self.ask_open_project)
+        self.tkRoot.bind('<Control-s>', self.save_project)
         self.notebook.bind('<<NotebookTabChanged>>', self.set_active_tab)
+
+        self.tkRoot.protocol('WM_DELETE_WINDOW', self.exit)
+
+        self.set_title()
+        if self.saved_geometry:
+            x = self.saved_geometry['x']
+            y = self.saved_geometry['y']
+            self.tkRoot.geometry(f'550x75+{x}+{y}')
+
+    def set_title(self):
+        if self.project is None:
+            title = 'galsdk'
+        else:
+            project_dir = str(self.project.project_dir)
+            title = f'galsdk - {project_dir}'
+
+        if any(tab.has_unsaved_changes for tab in self.tabs):
+            title = '* ' + title
+
+        self.tkRoot.title(title)
 
     def ask_new_project(self, *_):
         image_path = tkfile.askopenfilename(filetypes=[('CD images', '*.bin *.img'), ('All files', '*.*')])
+        if not image_path:
+            return
+
         try:
             # TODO: this is slow because we read the whole CD image. find a better way
             version = Project.detect_cd_version(image_path)
@@ -129,13 +175,16 @@ class Editor(ShowBase):
 
     def ask_open_project(self, *_):
         project_dir = tkfile.askdirectory()
+        if not project_dir:
+            return
+
         try:
-            self.project = Project.open(project_dir)
+            project = Project.open(project_dir)
         except Exception as e:
             tkmsg.showerror('Failed to open project', str(e))
             return
 
-        self.open_project()
+        self.open_project(project)
 
     def ask_project_dir(self):
         project_dir = tkfile.askdirectory(mustexist=False)
@@ -164,18 +213,26 @@ class Editor(ShowBase):
         image_path = self.image_path_var.get()
         project_path = self.project_path_var.get()
         try:
-            self.project = Project.create_from_cd(image_path, project_path)
+            project = Project.create_from_cd(image_path, project_path)
         except Exception as e:
             tkmsg.showerror('Failed to create project', str(e))
             return
 
-        self.open_project()
+        self.open_project(project)
 
-    def open_project(self):
+    def open_project(self, project: Project):
+        first_open = self.project is None
+        self.project = project
+
         self.default_message.pack_forget()
         self.new_project_view.pack_forget()
 
-        self.makeDefaultPipe()
+        if self.pipe is None:
+            self.makeDefaultPipe()
+        for tab in self.tabs:
+            tab.close()
+        for tab in self.notebook.tabs():
+            self.notebook.forget(tab)
 
         self.tabs = [RoomTab(self.project, self), StringTab(self.project), ActorTab(self.project, self),
                      BackgroundTab(self.project), ItemTab(self.project, self), ModelTab(self.project, self),
@@ -184,9 +241,88 @@ class Editor(ShowBase):
         for tab in self.tabs:
             if tab.should_appear:
                 self.notebook.add(tab, text=tab.name)
+                tab.on_change(self.on_tab_change)
 
         self.notebook.pack(expand=1, fill=tk.BOTH)
+
+        if self.saved_geometry and first_open:
+            x = self.saved_geometry['x']
+            y = self.saved_geometry['y']
+            width = self.saved_geometry['width']
+            height = self.saved_geometry['height']
+            self.tkRoot.geometry(f'{width}x{height}+{x}+{y}')
+
         self.set_active_tab()
+
+        project_dir = str(self.project.project_dir)
+        if project_dir in self.recent_projects:
+            self.recent_projects.remove(project_dir)
+        self.recent_projects.append(project_dir)
+        if len(self.recent_projects) > MAX_RECENT_PROJECTS:
+            del self.recent_projects[:-MAX_RECENT_PROJECTS]
+        self.populate_recent()
+        self.save_settings()
+
+        self.set_title()
+
+        self.file_menu.entryconfigure(4, state=tk.NORMAL)
+        self.file_menu.entryconfigure(5, state=tk.NORMAL)
+
+    def on_tab_change(self, tab: Tab):
+        num_tabs = self.notebook.index('end')
+        for i in range(num_tabs):
+            text = self.notebook.tab(i, 'text')
+            if text in [tab.name, f'* {tab.name}']:
+                new_name = tab.name
+                if tab.has_unsaved_changes:
+                    new_name = '* ' + new_name
+                self.notebook.tab(i, text=new_name)
+                break
+        self.set_title()
+
+    def save_project(self, *_):
+        if not self.project:
+            return
+
+        for tab in self.tabs:
+            tab.save()
+
+        # remove change markers from any tabs that have them
+        num_tabs = self.notebook.index('end')
+        for i in range(num_tabs):
+            text = self.notebook.tab(i, 'text')
+            if text.startswith('* '):
+                self.notebook.tab(i, text=text[2:])
+        self.set_title()
+
+    def export_project(self, *_):
+        if not self.project:
+            return
+
+        x = self.tkRoot.winfo_rootx()
+        y = self.tkRoot.winfo_rooty()
+        width = self.tkRoot.winfo_width()
+        dialog_width = min(1000, int(width*0.9))
+        dialog_x = x + width // 2 - dialog_width // 2
+        dialog = ExportDialog(self.tkRoot, self.project)
+        dialog.geometry(f'{dialog_width}x1000+{dialog_x}+{y}')
+        dialog.grab_set()
+
+    def populate_recent(self):
+        self.recent_menu.delete(0, 'end')
+        for path in reversed(self.recent_projects):
+            path = pathlib.Path(path)
+            # we use functools.partial to make sure the call is bound to the value of path as of this iteration, instead
+            # of its value at the end of the function
+            self.recent_menu.add_command(label=path.name,
+                                         command=partial(lambda p, *_: self.open_project(Project.open(p)), str(path)))
+
+    def save_settings(self):
+        with (pathlib.Path.cwd() / 'editor.json').open('w') as f:
+            json.dump({
+                'recent': self.recent_projects,
+                'geometry': self.saved_geometry,
+            }, f)
 
     def set_active_tab(self, _=None):
         tab_index = self.notebook.index(self.notebook.select())
@@ -195,7 +331,22 @@ class Editor(ShowBase):
 
     def exit(self):
         """Exit the editor application"""
-        self.destroy()
+        if any(tab.has_unsaved_changes for tab in self.tabs):
+            confirm = tkmsg.askyesno('Unsaved changes',
+                                     'You have unsaved changes. Do you want to quit without saving?')
+            if not confirm:
+                return
+
+        if self.project:
+            # if a project is open, save the current window position and size
+            width = self.tkRoot.winfo_width()
+            height = self.tkRoot.winfo_height()
+            x = self.tkRoot.winfo_rootx()
+            y = self.tkRoot.winfo_rooty()
+            self.saved_geometry = {'width': width, 'height': height, 'x': x, 'y': y}
+            self.save_settings()
+
+        self.tkRoot.destroy()
 
 
 if __name__ == '__main__':

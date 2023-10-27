@@ -8,11 +8,21 @@ from galsdk.format import Archive
 
 
 class VabDb(Archive[bytes]):
-    def __init__(self, vhs: list[bytes], seqs: list[bytes], vbs: list[bytes], use_alt_order: bool = False):
-        self.vhs = vhs
-        self.seqs = seqs
-        self.vbs = vbs
+    def __init__(self, vhs: list[bytes] = None, seqs: list[bytes] = None, vbs: list[bytes] = None,
+                 use_alt_order: bool = False):
+        super().__init__()
+        self.vhs = vhs or []
+        self.seqs = seqs or []
+        self.vbs = vbs or []
         self.use_alt_order = use_alt_order
+
+    @property
+    def metadata(self) -> dict[str, bool | int | float | str | list | tuple | dict]:
+        return {'use_alt_order': self.use_alt_order}
+
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+        return cls(use_alt_order=metadata['use_alt_order'])
 
     @property
     def files_with_type(self) -> Iterable[tuple[str, Iterable[bytes]]]:
@@ -190,7 +200,15 @@ class VabDb(Archive[bytes]):
         f.write(data)
 
     def append(self, item: bytes | Self):
-        raise NotImplementedError
+        if item[:4] == b'pBAV':
+            self.vhs.append(item)
+        elif item[:4] == b'pQES':
+            self.seqs.append(item)
+        else:
+            self.vbs.append(item)
+
+    def append_raw(self, item: bytes):
+        return self.append(item)
 
     @property
     def suggested_extension(self) -> str:

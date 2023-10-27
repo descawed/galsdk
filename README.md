@@ -3,8 +3,8 @@ Editor and utilities for the PSX game Galerians (1999). Requires Python 3.11.
 
 ## Editor
 The editor is a GUI application for exploring the game's files. Run it from the repo's root directory with
-`python -m galsdk.editor`. "Editor" is currently a bit of a misnomer because it lacks the ability to save changes
-(although that is planned for the future), so it's mainly a viewer. It's a bit janky, but it has a few useful features.
+`python -m galsdk.editor`. At the moment, only room changes can actually be saved and exported. Support for editing
+other files will be added in the future.
 
 ### Projects
 A project is a folder where the editor extracts game files and their metadata. Before you can view anything in the
@@ -16,14 +16,16 @@ After selecting the appropriate BIN image, the GUI will display some information
 contains. Choose a directory for the project to be created in with the Browse button and then click Create Project. Wait
 a minute for it to finish extracting the game files and you'll be taken to the project view.
 
-To open an existing project, use File > Open Project (or ctrl-O) and select the project directory.
+To open an existing project, use File > Open Project (or ctrl-O) and select the project directory. To export your
+changes to a playable CD image, use File > Export (make sure to save first).
 
 ### Tabs
 - **Room** - This is probably the most useful feature of the editor. From this tab, you can view the layout of all the
     rooms in each of the game's 4 stages. When first clicking on a room, you will be shown an overhead view of the
     floor layout. A room consists of a few different types of objects which are listed below. You can right-click on the
     category name within the room to show an option to toggle display of that type of object on or off. Clicking on an
-    object will highlight it in the 3D view.
+    object will highlight it in the 3D view. You can also select objects by clicking on them in the 3D view. Clicking on
+    a camera will show the view from that camera, with the camera's target point displayed as an X.
   - **Actors** - This shows the actors (characters) present in the room. Rooms may have multiple actor layouts for
     different scenarios, although most only have one. The game has a hard-coded limit of four actors per room, the first
     of which is always the player. Therefore, each layout has a fixed list of four actor slots, although slots may be

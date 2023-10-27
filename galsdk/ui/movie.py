@@ -62,3 +62,6 @@ class MovieTab(Tab):
 
     def set_active(self, is_active: bool):
         self.player.set_active(is_active)
+
+    def close(self):
+        self.player.close()

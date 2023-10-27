@@ -1,5 +1,6 @@
 from panda3d.core import GeomNode, NodePath
 
+from galsdk import util
 from galsdk.coords import Line2d, Point, Triangle2d
 from galsdk.module import CameraCut
 from galsdk.room.object import RoomObject
@@ -41,7 +42,7 @@ class CameraCutObject(RoomObject):
         self.node_path.setTwoSided(True)
 
     def get_model(self) -> NodePath:
-        geom = self._make_quad(
+        geom = util.make_quad(
             (self.p1.panda_x - self.position.panda_x, self.p1.panda_y - self.position.panda_y),
             (self.p2.panda_x - self.position.panda_x, self.p2.panda_y - self.position.panda_y),
             (self.p4.panda_x - self.position.panda_x, self.p4.panda_y - self.position.panda_y),
@@ -51,3 +52,7 @@ class CameraCutObject(RoomObject):
         node = GeomNode('cut_quad')
         node.addGeom(geom)
         return NodePath(node)
+
+    def as_camera_cut(self) -> CameraCut:
+        return CameraCut(self.camera_id, self.p1.game_x, self.p1.game_z, self.p2.game_x, self.p2.game_z,
+                         self.p3.game_x, self.p3.game_z, self.p4.game_x, self.p4.game_z)

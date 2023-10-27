@@ -16,7 +16,7 @@ def sample_cd(request):
 
 def test_patch_data(tmp_path, sample_cd):
     data = b'this is the patch data'
-    patch = Patch(r'cdrom:\TEST.TXT', False, data)
+    patch = Patch(r'cdrom:\TEST.TXT', data)
     sample_cd.patch([patch])
     path = tmp_path / 'output.bin'
     with path.open('w+b') as f:
@@ -74,7 +74,7 @@ def test_patch_raw(tmp_path, sample_cd):
           b'\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\r\x1f5\0\0\0\0\0\0\0\0\0\0\0\0\0' \
           b'\0\x9e\xa1\x8ear\xe3b#\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\xb9\0\xd2\0\xa5\0g\0\xa9\0\0\0\0\0\0\0\0\0\0\0\0\0' \
           b'\0\0\0\0\0\0\x1f5\x1bHpSt.\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0B\0!\0V\0\x94\0\xa1\0\0\0\0\0'
-    patch = Patch(r'cdrom:\TEST.TXT', True, raw)
+    patch = Patch(r'cdrom:\TEST.TXT', raw, True)
     sample_cd.patch([patch])
     path = tmp_path / 'output.bin'
     with path.open('w+b') as f:

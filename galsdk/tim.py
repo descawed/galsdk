@@ -10,6 +10,7 @@ from typing import BinaryIO, Container, Iterable, Self
 from PIL import Image
 
 from galsdk import util
+from galsdk.compress import dictionary as dictcmp
 from galsdk.format import Archive, FileFormat
 from psx.tim import Tim
 
@@ -132,93 +133,10 @@ class TimDb(Archive[Tim]):
 
     def __init__(self, fmt: Format = Format.DEFAULT):
         """Create a new, empty TIM database"""
+        super().__init__()
         self.images = []
         self.offsets = {}
         self.format = fmt
-
-    @classmethod
-    def decompress(cls, data: bytes) -> list[tuple[int, bytes]]:
-        # not sure what this compression algorithm is, if it even is a well-known algorithm. it seems to take advantage
-        # of the fact that the data being compressed doesn't contain all possible byte values, so it maps the unused
-        # values to sequences of two values, which are recursively expanded. initially, all values are mapped to
-        # themselves, so they would be output literally. the first part of the data encodes the mapped dictionary
-        # sequences. the second part (starting from stream_len) is the actual compressed data.
-        results = []
-        stream_end = len(data)
-        with io.BytesIO(data) as f:
-            while f.tell() < stream_end:
-                offset = f.tell()
-                output = bytearray()
-                data_len = util.int_from_bytes(f.read(4))
-                if data_len == 0:
-                    break
-                if data_len > stream_end - f.tell():
-                    raise EOFError('EOF encountered while decompressing TIM')
-                data_end = f.tell() + data_len
-                while f.tell() < data_end:
-                    dictionary = [(i, None) for i in range(0x100)]
-                    index = 0
-                    while index != 0x100:
-                        # we select an index into the dictionary and/or a number of entries to update
-                        byte = f.read(1)[0]
-                        if byte < 0x80:
-                            # if byte < 0x80, the loop below will iterate from index:index+byte
-                            count = byte + 1
-                        else:
-                            # otherwise, we update our dictionary index and perform only a single loop
-                            index += byte - 0x7f
-                            count = 1
-
-                        for _ in range(count):
-                            if index == 0x100:
-                                break
-                            byte = f.read(1)[0]
-                            dictionary[index] = (byte, None)
-                            if byte != index:
-                                dictionary[index] = (byte, f.read(1)[0])
-                            index += 1
-
-                    stream_len = util.int_from_bytes(f.read(2), 'big')
-                    end = f.tell() + stream_len
-                    while f.tell() != end:
-                        stack = [f.read(1)[0]]
-                        i = 0
-                        while len(stack) > 0:
-                            index = stack.pop()
-                            values = dictionary[index]
-                            if values[0] == index:
-                                output.append(values[0])
-                            else:
-                                stack.append(values[1])
-                                stack.append(values[0])
-                            i += 1
-                            if i > cls.MAX_ITERATIONS:
-                                raise RuntimeError('The decompression routine appears to be stuck in an infinite loop')
-                results.append((offset, bytes(output)))
-                # data is padded out to a multiple of 4 with '0' characters
-                padding_needed = (4 - data_len & 3) & 3
-                if padding_needed > 0:
-                    padding = f.read(padding_needed)
-                    if not all(c in [0, 0x30] for c in padding):
-                        raise ValueError('Expected padding bytes')
-
-        return results
-
-    @staticmethod
-    def compress(data: bytes) -> bytes:
-        # the game only contains decompression code, not compression code, so I'm not totally sure how this should work.
-        # I've played around with a few different attempts at a compressor, and they kind of work, but none of them
-        # produce output that's even close to matching the original files. for now, we'll just fake it with an "empty"
-        # dictionary followed by uncompressed data.
-        output = len(data).to_bytes(2, 'big') + data
-        # hard-coded empty dictionary (advance to index 0x80, store value 0x80, advance to index 0x100)
-        output = b'\xff\x80\xfe' + output
-        data_len = len(output)
-        padding_needed = (4 - data_len & 3) & 3
-        if padding_needed > 0:
-            output += b'0' * padding_needed
-        output = data_len.to_bytes(4, 'little') + output
-        return output
 
     @classmethod
     def read(cls, f: BinaryIO, *, fmt: Format = Format.DEFAULT, **kwargs) -> Self:
@@ -230,7 +148,7 @@ class TimDb(Archive[Tim]):
         """
         db = cls(fmt)
         if fmt == cls.Format.COMPRESSED_STREAM:
-            for offset, data in cls.decompress(f.read()):
+            for offset, data in dictcmp.decompress(f.read()):
                 db.append(TimFormat.read_bytes(data), offset)
             return db
         file_size = f.seek(0, 2)
@@ -265,7 +183,8 @@ class TimDb(Archive[Tim]):
             data = util.read_some(f, size)
             with io.BytesIO(data) as buf:
                 if fmt == cls.Format.COMPRESSED_DB:
-                    sub_db = cls.read(buf, fmt=cls.Format.COMPRESSED_STREAM)
+                    # make sure the sub-DB hangs on to its raw data for the benefit of manifests
+                    sub_db = cls.read_save_raw(buf, fmt=cls.Format.COMPRESSED_STREAM)
                     db.append(sub_db, offset)
                 else:
                     db.append(TimFormat.read(buf), offset)
@@ -285,12 +204,13 @@ class TimDb(Archive[Tim]):
         raw_tims = []
         self.offsets = {}
         for image in self.images:
-            with io.BytesIO() as buf:
-                image.write(buf)
-                data = buf.getvalue()
-                if fmt.is_compressed and isinstance(image, Tim):
-                    data = self.compress(data)
-                raw_tims.append(data)
+            if not isinstance(image, TimDb) or not (data := image.raw_data):
+                with io.BytesIO() as buf:
+                    image.write(buf)
+                    data = buf.getvalue()
+            if fmt.is_compressed and isinstance(image, Tim):
+                data = dictcmp.compress(data)
+            raw_tims.append(data)
 
         if not fmt.is_stream:
             f.write(len(self.images).to_bytes(4, 'little'))
@@ -348,6 +268,14 @@ class TimDb(Archive[Tim]):
             self.offsets[offset] = len(self.images)
         self.images.append(image)
 
+    def append_raw(self, item: bytes, offset: int = None):
+        with io.BytesIO(item) as f:
+            element = self.sniff(f)
+        if element is None:
+            with io.BytesIO(item) as f:
+                element = Tim.read(f)
+        return self.append(element, offset)
+
     @property
     def suggested_extension(self) -> str:
         return self.format.extension
@@ -355,6 +283,14 @@ class TimDb(Archive[Tim]):
     @property
     def supports_nesting(self) -> bool:
         return True
+
+    @property
+    def metadata(self) -> dict[str, str]:
+        return {'fmt': self.format.extension}
+
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+        return cls(cls.Format.from_extension(metadata['fmt']))
 
     @classmethod
     def sniff(cls, f: BinaryIO, *, formats_to_check: list[Format] = None,
@@ -366,7 +302,7 @@ class TimDb(Archive[Tim]):
         for fmt in formats_to_check:
             f.seek(0)
             try:
-                db = cls.read(f, fmt=fmt)
+                db = cls.read_save_raw(f, fmt=fmt)
                 if fmt == cls.Format.STREAM and len(db) == 1 and not allow_single_element_stream:
                     continue
                 return db
@@ -380,7 +316,10 @@ class TimDb(Archive[Tim]):
         if isinstance(item, TimDb):
             new_path = path.with_suffix(item.suggested_extension)
             with new_path.open('wb') as f:
-                item.write(f, fmt=self.Format.from_extension(item.suggested_extension))
+                if raw_data := item.raw_data:
+                    f.write(raw_data)
+                else:
+                    item.write(f, fmt=self.Format.from_extension(item.suggested_extension))
             return new_path
 
         new_path = path.with_suffix('.TIM')
@@ -471,8 +410,7 @@ def unpack(db_path: str, target: str, fmt: str, indexes: Container[int] = None):
             if db is None:
                 raise ValueError(f'{db_path} does not appear to be a TIM database')
         else:
-            db = TimDb(fmt=TimDb.Format.from_extension(fmt))
-            db.read(f)
+            db = TimDb.read(f, fmt=TimDb.Format.from_extension(fmt))
     for i, tim in enumerate(db):
         if indexes and i not in indexes:
             continue

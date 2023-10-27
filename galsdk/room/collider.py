@@ -1,6 +1,7 @@
 from panda3d.core import GeomNode, NodePath, SamplerState, Texture
 from PIL import Image, ImageDraw
 
+from galsdk import util
 from galsdk.coords import Dimension, Point, Triangle2d
 from galsdk.module import CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room.object import RoomObject
@@ -16,12 +17,14 @@ class RectangleColliderObject(RoomObject):
         super().__init__(name, Point(center_x, 0, center_z), 0.)
         self.width = Dimension(bounds.x_size, True)
         self.height = Dimension(bounds.z_size)
+        self.unknown = bounds.unknown
         self.color = COLLIDER_COLOR
+        self.is_wall = False
 
     def get_model(self) -> NodePath:
         half_x = (self.width / 2).panda_units
         half_z = (self.height / 2).panda_units
-        geom = self._make_quad((-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
+        geom = util.make_quad((-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
         node = GeomNode('rectangle_collider_quad')
         node.addGeom(geom)
         return NodePath(node)
@@ -56,11 +59,19 @@ class RectangleColliderObject(RoomObject):
         self.position.y = center_z
         self.height = value
 
+    def as_collider(self) -> RectangleCollider:
+        width = self.width.game_units
+        height = self.height.game_units
+        x = self.position.game_x - width // 2
+        z = self.position.game_z - height // 2
+        return RectangleCollider(x, z, width, height, self.unknown)
+
 
 class WallColliderObject(RectangleColliderObject):
     def __init__(self, name: str, bounds: RectangleCollider):
         super().__init__(name, bounds)
         self.color = (0.75, 0., 0., 0.9)
+        self.is_wall = True
 
 
 class TriangleColliderObject(RoomObject):
@@ -98,7 +109,7 @@ class TriangleColliderObject(RoomObject):
         self.triangle.p3 = value
 
     def get_model(self) -> NodePath:
-        geom = self._make_triangle(
+        geom = util.make_triangle(
             (self.p1.panda_x - self.position.panda_x, self.p1.panda_y - self.position.panda_y),
             (self.p2.panda_x - self.position.panda_x, self.p2.panda_y - self.position.panda_y),
             (self.p3.panda_x - self.position.panda_x, self.p3.panda_y - self.position.panda_y),
@@ -116,6 +127,12 @@ class TriangleColliderObject(RoomObject):
         centroid = self.triangle.centroid
         self.position.x = centroid.x
         self.position.y = centroid.y
+
+    def as_collider(self) -> TriangleCollider:
+        return TriangleCollider(self.triangle.p1.game_x, self.triangle.p1.game_z,
+                                self.triangle.p2.game_x, self.triangle.p2.game_z,
+                                self.triangle.p3.game_x, self.triangle.p3.game_z,
+                                )
 
 
 class CircleColliderObject(RoomObject):
@@ -136,7 +153,7 @@ class CircleColliderObject(RoomObject):
         draw = ImageDraw.Draw(image)
         draw.ellipse([(0, 0), (width - 1, height - 1)], tuple(int(c * 255) for c in color))
 
-        texture = cls._create_texture_from_image(image)
+        texture = util.create_texture_from_image(image)
         # prevents artifacts around the edge of the circle
         texture.setMagfilter(SamplerState.FT_nearest)
         texture.setMinfilter(SamplerState.FT_nearest)
@@ -149,10 +166,13 @@ class CircleColliderObject(RoomObject):
 
     def get_model(self) -> NodePath:
         radius = self.radius.panda_units
-        geom = self._make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
+        geom = util.make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
         node = GeomNode('circle_collider_quad')
         node.addGeom(geom)
         return NodePath(node)
 
     def get_texture(self) -> Texture | None:
         return self.create_texture(500, 500, self.color)
+
+    def as_collider(self) -> CircleCollider:
+        return CircleCollider(self.position.game_x, self.position.game_z, self.radius.game_units)

@@ -12,6 +12,8 @@ class ActorObject(RoomObject):
         self.model = model
         self.id = instance.id
         self.type = instance.type
+        self.unknown1 = instance.unknown1
+        self.unknown2 = instance.unknown2
 
     @property
     def actor_name(self) -> str:
@@ -22,3 +24,7 @@ class ActorObject(RoomObject):
 
     def get_texture(self) -> Texture | None:
         return self.model.get_panda3d_texture() if self.model else None
+
+    def as_actor_instance(self) -> ActorInstance:
+        return ActorInstance(self.id, self.type, self.position.game_x, self.position.game_y, self.position.game_z,
+                             self.unknown1, int(self.angle * 4096 / 360), self.unknown2)
