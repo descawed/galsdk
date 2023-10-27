@@ -17,8 +17,8 @@ class Patch:
     """New or updated data to be patched into a file on the CD."""
 
     path: str
-    is_data_raw_sectors: bool
     data: ByteString
+    is_data_raw_sectors: bool = False
 
 
 @dataclass
@@ -312,7 +312,7 @@ def patch_cd(image_path: str, cd_path: str, input_path: str, raw: bool):
         cd = PsxCd(f)
     with open(input_path, 'rb') as f:
         data = f.read()
-    patch = Patch(cd_path, raw, data)
+    patch = Patch(cd_path, data, raw)
     cd.patch([patch])
     with open(image_path, 'wb') as f:
         cd.write(f)

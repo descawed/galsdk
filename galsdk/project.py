@@ -26,7 +26,7 @@ from galsdk.tim import TimDb, TimFormat
 from galsdk.vab import VabDb
 from galsdk.xa import XaAudio, XaDatabase, XaRegion
 from psx import Region
-from psx.cd import PsxCd
+from psx.cd import Patch, PsxCd
 from psx.config import Config
 from psx.exe import Exe
 
@@ -67,8 +67,8 @@ class Project:
         self.last_export_date = last_export_date or datetime.datetime.utcnow()
         self.actor_graphics = actor_graphics or []
         self.module_sets = module_sets or []
-        self.x_scales = x_scales
-        self.option_menu = option_menu
+        self.x_scales = x_scales or []
+        self.option_menu = option_menu or []
         self.addresses = ADDRESSES[self.version.id]
 
     @classmethod
@@ -299,7 +299,7 @@ class Project:
         module_db_path = game_data / 'MODULE.BIN'
         with module_db_path.open('rb') as f:
             module_db = Database.read(f)
-        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db, original_path=model_db_path)
+        module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db, original_path=module_db_path)
 
         module_set_addr = addresses['MapModules']
         module_set_addrs = struct.unpack(f'<{NUM_MAPS}I',
@@ -776,3 +776,71 @@ class Project:
             input_files.extend(voice_file.path.relative_to(self.project_dir) for voice_file in voice_files)
 
         return input_files, output_files
+
+    def export(self, base_image: Path, output_image: Path, mtime: float):
+        patches = []
+
+        anim_manifest = self.get_animations()
+        if anim_manifest.is_modified_since(mtime):
+            patches.append(Patch(r'\T4\MOT.CDB;1', anim_manifest.pack_archive(mtime)))
+
+        for art_manifest in self.get_art_manifests():
+            if art_manifest.is_modified_since(mtime):
+                patches.append(Patch(rf'\T4\{art_manifest.name}.CDB;1', art_manifest.pack_archive(mtime)))
+
+        boot_dir = self.project_dir / 'boot'
+        exe_path = boot_dir / self.version.exe_name
+        if exe_path.stat().st_mtime > mtime:
+            data = exe_path.read_bytes()
+            if self.version.region == Region.NTSC_J:
+                patches.append(Patch(rf'\T4\{exe_path.name};1', data))
+            else:
+                patches.append(Patch(rf'\{exe_path.name};1', data))
+        system_path = boot_dir / 'SYSTEM.CNF'
+        if system_path.stat().st_mtime > mtime:
+            patches.append(Patch(r'\SYSTEM.CNF;1', system_path.read_bytes()))
+
+        msg_manifest = Manifest.load_from(self.project_dir / 'messages')
+        if msg_manifest.is_modified_since(mtime):
+            patches.append(Patch(rf'\T4\{msg_manifest.name}.CDB;1', msg_manifest.pack_archive(mtime)))
+
+        model_manifest = Manifest.load_from(self.project_dir / 'models')
+        if model_manifest.is_modified_since(mtime):
+            patches.append(Patch(r'\T4\MODEL.CDB;1', model_manifest.pack_archive(mtime)))
+
+        module_manifest = Manifest.load_from(self.project_dir / 'modules')
+        if module_manifest.is_modified_since(mtime):
+            patches.append(Patch(r'\T4\MODULE.BIN;1', module_manifest.pack_archive(mtime)))
+
+        sound_manifest = Manifest.load_from(self.project_dir / 'sound')
+        if sound_manifest.is_modified_since(mtime):
+            patches.append(Patch(r'\T4\SOUND.CDB;1', sound_manifest.pack_archive(mtime)))
+
+        for stage in Stage:
+            stage: Stage
+
+            bg_manifest = self.get_stage_backgrounds(stage)
+            if bg_manifest.is_modified_since(mtime):
+                patches.append(Patch(rf'\T4\{bg_manifest.name}.CDB;1', bg_manifest.pack_archive(mtime)))
+
+            for movie in self.get_stage_movies(stage):
+                if movie.path.stat().st_mtime > mtime:
+                    suffix = f'_{stage}' if stage != Stage.A else ''
+                    patches.append(Patch(rf'\T4\MOV{suffix}\{movie.path.name};1', movie.path.read_bytes(), True))
+
+        for voice_manifest in self._get_voice_manifests(self.project_dir / 'voice'):
+            if voice_manifest.is_modified_since(mtime):
+                raise NotImplementedError('Exporting voice audio is not currently supported')
+
+        with base_image.open('rb') as f:
+            cd = PsxCd(f)
+        cd.patch(patches)
+        # we use this temporary buffer so that, if the write were to fail, we wouldn't have already wiped the output
+        # image
+        with io.BytesIO() as f:
+            cd.write(f)
+            cd_data = f.getvalue()
+        output_image.write_bytes(cd_data)
+
+        self.last_export_date = datetime.datetime.utcnow()
+        self.save()

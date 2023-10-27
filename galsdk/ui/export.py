@@ -43,7 +43,7 @@ class ExportDialog(tk.Toplevel):
         self.output_tree = ttk.Treeview(output_frame, selectmode='none', show='tree')
         output_scroll = ttk.Scrollbar(output_frame, command=self.output_tree.yview, orient='vertical')
 
-        self.export_button = ttk.Button(self, text='Export')
+        self.export_button = ttk.Button(self, text='Export', command=self.export)
         status_label = ttk.Label(self, textvariable=self.status_var)
 
         base_label.grid(padx=5, pady=5, row=0, column=0, sticky=tk.NE)
@@ -112,22 +112,28 @@ class ExportDialog(tk.Toplevel):
         self.export_button.configure(state=tk.DISABLED if statuses else tk.NORMAL)
         self.status_var.set(' '.join(statuses))
 
-    def update_modifications(self, *_):
-        self.input_tree.delete(*self.input_tree.get_children())
-        self.output_tree.delete(*self.output_tree.get_children())
-
+    def get_modified_timestamp(self) -> float | None:
         date_select = self.date_var.get()
         if date_select == 'base':
             base_path = Path(self.base_var.get())
             if not base_path.exists():
                 self.update_export_status()
                 tkmsg.showerror('Invalid base image', f'Path {base_path} does not exist', parent=self)
-                return
+                return None
             mtime = base_path.stat().st_mtime
         elif date_select == 'create':
             mtime = self.project.create_date.timestamp()
         else:
             mtime = self.project.last_export_date.timestamp()
+        return mtime
+
+    def update_modifications(self, *_):
+        self.input_tree.delete(*self.input_tree.get_children())
+        self.output_tree.delete(*self.output_tree.get_children())
+
+        mtime = self.get_modified_timestamp()
+        if mtime is None:
+            return
 
         input_files, output_files = self.project.get_files_modified(mtime)
 
@@ -143,3 +149,18 @@ class ExportDialog(tk.Toplevel):
                     prefix = iid
 
         self.update_export_status()
+
+    def export(self, *_):
+        mtime = self.get_modified_timestamp()
+        if mtime is None:
+            return
+
+        base_path = Path(self.base_var.get())
+        output_path = Path(self.output_var.get())
+        try:
+            self.project.export(base_path, output_path, mtime)
+        except Exception as e:
+            tkmsg.showerror('Failed to export project', str(e), parent=self)
+        else:
+            tkmsg.showinfo('Success', 'Export completed successfully', parent=self)
+            self.destroy()

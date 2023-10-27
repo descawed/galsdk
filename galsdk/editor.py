@@ -39,6 +39,7 @@ class Editor(ShowBase):
         else:
             settings = {}
         self.recent_projects = settings.get('recent', [])
+        self.saved_geometry = settings.get('geometry')
 
         self.startTk()
 
@@ -141,6 +142,10 @@ class Editor(ShowBase):
         self.tkRoot.protocol('WM_DELETE_WINDOW', self.exit)
 
         self.set_title()
+        if self.saved_geometry:
+            x = self.saved_geometry['x']
+            y = self.saved_geometry['y']
+            self.tkRoot.geometry(f'550x75+{x}+{y}')
 
     def set_title(self):
         if self.project is None:
@@ -216,6 +221,7 @@ class Editor(ShowBase):
         self.open_project(project)
 
     def open_project(self, project: Project):
+        first_open = self.project is None
         self.project = project
 
         self.default_message.pack_forget()
@@ -238,6 +244,14 @@ class Editor(ShowBase):
                 tab.on_change(self.on_tab_change)
 
         self.notebook.pack(expand=1, fill=tk.BOTH)
+
+        if self.saved_geometry and first_open:
+            x = self.saved_geometry['x']
+            y = self.saved_geometry['y']
+            width = self.saved_geometry['width']
+            height = self.saved_geometry['height']
+            self.tkRoot.geometry(f'{width}x{height}+{x}+{y}')
+
         self.set_active_tab()
 
         project_dir = str(self.project.project_dir)
@@ -285,7 +299,13 @@ class Editor(ShowBase):
         if not self.project:
             return
 
+        x = self.tkRoot.winfo_rootx()
+        y = self.tkRoot.winfo_rooty()
+        width = self.tkRoot.winfo_width()
+        dialog_width = min(1000, int(width*0.9))
+        dialog_x = x + width // 2 - dialog_width // 2
         dialog = ExportDialog(self.tkRoot, self.project)
+        dialog.geometry(f'{dialog_width}x1000+{dialog_x}+{y}')
         dialog.grab_set()
 
     def populate_recent(self):
@@ -301,6 +321,7 @@ class Editor(ShowBase):
         with (pathlib.Path.cwd() / 'editor.json').open('w') as f:
             json.dump({
                 'recent': self.recent_projects,
+                'geometry': self.saved_geometry,
             }, f)
 
     def set_active_tab(self, _=None):
@@ -315,6 +336,15 @@ class Editor(ShowBase):
                                      'You have unsaved changes. Do you want to quit without saving?')
             if not confirm:
                 return
+
+        if self.project:
+            # if a project is open, save the current window position and size
+            width = self.tkRoot.winfo_width()
+            height = self.tkRoot.winfo_height()
+            x = self.tkRoot.winfo_rootx()
+            y = self.tkRoot.winfo_rooty()
+            self.saved_geometry = {'width': width, 'height': height, 'x': x, 'y': y}
+            self.save_settings()
 
         self.tkRoot.destroy()
 

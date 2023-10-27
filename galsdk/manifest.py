@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import shutil
 from dataclasses import dataclass
@@ -134,6 +135,31 @@ class Manifest:
             self.files.append(mf)
             self.name_map[mf.name] = mf
             self._unpack_file(mf, archive, i, sniff, flatten, recursive)
+
+    def pack_archive(self, mtime: float = 0.) -> bytes:
+        if not self.is_modified_since(mtime) and self.original:
+            # nothing has changed, we can just serve the original file
+            return self.original.read_bytes()
+
+        archive = ARCHIVE_FORMATS[self.type].from_metadata(self.metadata)
+        for mf in self.files:
+            if mf.is_manifest:
+                sub_manifest = Manifest.load_from(mf.path)
+                data = sub_manifest.pack_archive(mtime)
+            else:
+                data = mf.path.read_bytes()
+            archive.append_raw(data)
+
+        if not self.original:
+            self.original = self.path / 'original.bin'
+            self.save()
+
+        # we use r+b because we want the original file to be overwritten in place, leaving any extra bytes at the end of
+        # the file or the ends of headers. that will minimize the diff with the original file.
+        with self.original.open('r+b') as f:
+            archive.write(f)
+            # TODO: should we truncate here? might be necessary for stream formats
+        return self.original.read_bytes()
 
     def load(self):
         """Load the last saved manifest data for this path"""

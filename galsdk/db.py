@@ -1,4 +1,5 @@
 import math
+import os
 import os.path
 from pathlib import Path
 from typing import BinaryIO, Container, Iterable, Self
@@ -120,7 +121,11 @@ class Database(Archive[bytes]):
         bytes_remaining = self.SECTOR_SIZE - f.tell()
         if bytes_remaining < 0:
             raise OverflowError('Too many files')
-        f.write(b'\0' * bytes_remaining)
+        if f.readable():
+            # if we're writing over an existing file, just seek ahead
+            f.seek(bytes_remaining, os.SEEK_CUR)
+        else:
+            f.write(b'\0' * bytes_remaining)
         for data in self.files:
             f.write(data)
             bytes_over = len(data) % self.SECTOR_SIZE

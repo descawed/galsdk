@@ -204,12 +204,13 @@ class TimDb(Archive[Tim]):
         raw_tims = []
         self.offsets = {}
         for image in self.images:
-            with io.BytesIO() as buf:
-                image.write(buf)
-                data = buf.getvalue()
-                if fmt.is_compressed and isinstance(image, Tim):
-                    data = dictcmp.compress(data)
-                raw_tims.append(data)
+            if not isinstance(image, TimDb) or not (data := image.raw_data):
+                with io.BytesIO() as buf:
+                    image.write(buf)
+                    data = buf.getvalue()
+            if fmt.is_compressed and isinstance(image, Tim):
+                data = dictcmp.compress(data)
+            raw_tims.append(data)
 
         if not fmt.is_stream:
             f.write(len(self.images).to_bytes(4, 'little'))
@@ -269,8 +270,11 @@ class TimDb(Archive[Tim]):
 
     def append_raw(self, item: bytes, offset: int = None):
         with io.BytesIO(item) as f:
-            tim = Tim.read(f)
-        return self.append(tim, offset)
+            element = self.sniff(f)
+        if element is None:
+            with io.BytesIO(item) as f:
+                element = Tim.read(f)
+        return self.append(element, offset)
 
     @property
     def suggested_extension(self) -> str:
