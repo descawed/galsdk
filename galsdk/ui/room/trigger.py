@@ -12,7 +12,7 @@ from galsdk.ui.room.util import validate_int
 class TriggerEditor(ttk.Frame):
     MAX_MESSAGE_LEN = 20
 
-    def __init__(self, trigger: TriggerObject, messages: dict[int, str], maps: list[list[str]],
+    def __init__(self, trigger: TriggerObject, messages: dict[int, str], maps: list[list[str]], movies: list[str],
                  functions: dict[int, list[FunctionCall]], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.trigger = trigger
@@ -27,6 +27,7 @@ class TriggerEditor(ttk.Frame):
             self.messages[msg_id] = new_msg
             self.message_to_id[new_msg] = msg_id
         self.maps = maps
+        self.movies = movies
         self.functions = functions
         self.call_vars = {}
         self.arg_vars = {}
@@ -192,6 +193,9 @@ class TriggerEditor(ttk.Frame):
                     case ArgumentType.STAGE:
                         var, label, select = self.make_option_select(arg_value, 'Stage', stages, frame, var)
                         getter = self.string_value_getter(var, stages)
+                    case ArgumentType.MOVIE:
+                        var, label, select = self.make_option_select(arg_value, 'Movie', self.movies, frame, var)
+                        getter = self.string_value_getter(var, self.movies)
                     case _:
                         continue  # don't care about these arguments
 

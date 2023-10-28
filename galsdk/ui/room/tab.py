@@ -517,6 +517,7 @@ class RoomTab(Tab):
         self.menu_item = None
         self.rooms = []
         self.rooms_by_index = {}
+        self.movies = self.project.get_movie_list()
         self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True, 'actors': True,
                            'entrances': True}
 
@@ -886,8 +887,8 @@ class RoomTab(Tab):
                 case 'trigger':
                     obj = self.viewport.triggers[object_id]
                     room = self.rooms[self.current_room].obj
-                    editor = TriggerEditor(obj, self.strings[room.name[0]], self.room_names_by_map, room.functions,
-                                           self)
+                    editor = TriggerEditor(obj, self.strings[room.name[0]], self.room_names_by_map, self.movies,
+                                           room.functions, self)
                 case 'cut':
                     obj = self.viewport.cuts[object_id]
                     editor = CameraCutEditor(obj, self)

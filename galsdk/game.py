@@ -97,6 +97,7 @@ MAP_NAMES = [
 NUM_KEY_ITEMS = len(KEY_ITEM_NAMES)
 NUM_MED_ITEMS = len(MED_ITEM_NAMES)
 NUM_MAPS = len(MAP_NAMES)
+NUM_MOVIES = 65
 MODULE_ENTRY_SIZE = 8
 
 
@@ -186,6 +187,13 @@ KNOWN_FUNCTIONS = {
         ArgumentType.GAME_STATE,
         ArgumentType.INTEGER,  # index in ITEMTIM.CDB
     ]),
+    'SaveMenu': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,
+        ArgumentType.MESSAGE,
+        ArgumentType.INTEGER,
+        # unsupported 5th argument
+    ]),
 }
 
 
@@ -264,6 +272,7 @@ REGION_ADDRESSES = {
         'MenuXScaleStart': 0x801917A4,
         'MenuXScaleStop': 0x801917B0,
         'GameState': 0x801AF308,
+        'Movies': 0x80191F78,
         'SetRoomLayout': 0x8012E980,
         'SetCollisionObjects': 0x80121194,
         'GetStateFlag': 0x80128600,
@@ -280,6 +289,7 @@ REGION_ADDRESSES = {
         'PickUpKeyItem': 0x8011E7C4,
         'PlayMovie': 0x8011FE44,
         'ShowItemTim': 0x8015EA7C,
+        'SaveMenu': 0x80125928,
     },
     'ja': {
         'FontPages': 0x8019144C,
@@ -296,6 +306,7 @@ REGION_ADDRESSES = {
         'XaDef3': 0x801938D0,
         'XaDefEnd': 0x8019392C,
         'GameState': 0x801AF910,
+        'Movies': 0x80191C9C,
         'SetRoomLayout': 0x8012F400,
         'SetCollisionObjects': 0x80123A70,
         'GetStateFlag': 0x8012A688,
@@ -311,6 +322,7 @@ REGION_ADDRESSES = {
         'PickUpMedItem': 0x80120EE4,
         'PlayMovie': 0x801225F4,
         'ShowItemTim': 0x8015FAA8,
+        'SaveMenu': 0x80128174,
     },
 }
 

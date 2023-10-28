@@ -14,7 +14,7 @@ from typing import Iterable
 from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
-from galsdk.game import Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_KEY_ITEMS, NUM_MED_ITEMS, NUM_MAPS, \
+from galsdk.game import Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_KEY_ITEMS, NUM_MED_ITEMS, NUM_MAPS, NUM_MOVIES, \
     MODULE_ENTRY_SIZE, GameVersion, VERSIONS, ADDRESSES
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
@@ -596,6 +596,27 @@ class Project:
 
         maps = self._get_maps(addresses['MapModules'], exe)
         return [[entry['index'] for entry in map_] for map_ in maps]
+
+    def get_movie_list(self) -> list[str]:
+        addresses = ADDRESSES[self.version.id]
+        exe_path = self.project_dir / 'boot' / self.version.exe_name
+        with exe_path.open('rb') as f:
+            exe = Exe.read(f)
+
+        num_movies = NUM_MOVIES
+        if self.version.region != Region.NTSC_J:
+            num_movies += 1  # +1 for the Crave logo
+            layout = '<28s3I'
+        else:
+            layout = '<28s4I'
+        movie_size = struct.calcsize(layout)
+        address = addresses['Movies']
+        movies = []
+        for _ in range(num_movies):
+            unpacked = struct.unpack(layout, exe[address:address+movie_size])
+            address += movie_size
+            movies.append(unpacked[0].rstrip(b'\0').decode())
+        return movies
 
     def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
         manifest = Manifest.load_from(self.project_dir / 'models')
