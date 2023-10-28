@@ -58,11 +58,13 @@ changes to a playable CD image, use File > Export (make sure to save first).
     the final game; these appear to be related to a cut feature where it would have been possible to combine scanning
     with an item. If the player enters the trigger area and fulfills the associated condition, the game will call the
     "Enabled" callback (if present) to determine if the trigger is enabled. If the trigger is enabled, the game will
-    then call the "Callback" function to perform the action associated with the trigger. The final important piece of
-    information attached to triggers is the actor flags. If one of the actor flags is set, the trigger area bounds are
-    ignored and the trigger will instead fire when the player activates/scans/etc. the flagged actor. The trigger will
-    only fire if the actor is dead unless the "Allow living actor" flag is set. Note that there is no flag for Actor 0
-    because Actor 0 is always the player.
+    then call the "Callback" function to perform the action associated with the trigger. If either callback contains
+    calls to any common game functions, such as checking a flag or picking up an item, those will be shown in an
+    "Actions" box below the callback. There you can modify the arguments, or disable the call by unchecking the box next
+    to its name. The final important piece of information attached to triggers is the actor flags. If one of the actor
+    flags is set, the trigger area bounds are ignored and the trigger will instead fire when the player
+    activates/scans/etc. the flagged actor. The trigger will only fire if the actor is dead unless the "Allow living
+    actor" flag is set. Note that there is no flag for Actor 0 because Actor 0 is always the player.
 - **String** - This tab shows the game's message strings. "Messages" exclusively means the messages that appear at the
   bottom of the screen, e.g. when inspecting objects; all other text consists of standalone images. Each stage of the
   game has a separate message file, so this tab groups messages by stage. Some versions of the game also include
@@ -83,19 +85,18 @@ changes to a playable CD image, use File > Export (make sure to save first).
     common characters (digits, punctuation, latin characters, and kana) and a second image consisting of kanji
     characters which differs from stage to stage. The strings don't use a common encoding (e.g. Shift-JIS or UTF-8) but
     are just a series of indexes into the two font images. This has a couple implications. The first is that I only have
-    a transcription of the kanji used by Stage A, so when viewing strings for the other stages, the text box will just
-    contain the character code in angle brackets (e.g. \<2054>) instead of the actual character. If anyone feels like
-    transcribing the kanji for the other three stages, I would appreciate it! The second implication is that, on any
-    given stage, you can only use kanji that are present in that stage's kanji image. With that out of the way, we can
-    discuss control codes. Control codes and their arguments are represented by numbers in angle brackets just like
-    unknown characters. They are as follows:
-    - \<32769> - New line. Erases the currently displayed text before showing the next line.
-    - \<32770> - Wait for the user to press the activate button before continuing.
-    - \<32771>\<n> - Wait until the game fires event number n before continuing.
-    - \<32772> - Erases the currently displayed text and left-aligns the next message. This appears to be a working
+    a transcription of the kanji used by Stage A, so when viewing strings for the other stages, kanji characters will
+    display as k: followed by the kanji index in angle brackets (e.g. \<k:26>). If anyone feels like transcribing the
+    kanji for the other three stages, I would appreciate it! The second implication is that, on any given stage, you can
+    only use kanji that are present in that stage's kanji image. With that out of the way, we can discuss control codes.
+    Control codes and their arguments are shown in angle brackets just like unknown characters. They are as follows:
+    - \<r> - New line. Erases the currently displayed text before showing the next line.
+    - \<w> - Wait for the user to press the activate button before continuing.
+    - \<p>\<n> - Wait until the game fires event number n before continuing.
+    - \<l> - Erases the currently displayed text and left-aligns the next message. This appears to be a working
       equivalent of the English version's $l code.
-    - \<32773> - Display a yes/no prompt.
-    - \<32774>\<n> - Change text color. n is the index of the CLUT to use in the font TIM file. Valid indexes are 0
+    - \<y> - Display a yes/no prompt.
+    - \<c>\<n> - Change text color. n is the index of the CLUT to use in the font TIM file. Valid indexes are 0
       (white), 1 (red), and 4 (yellow).
 - **Actor** - This tab allows you to view the 3D model for each actor in the game. The number preceding the actor name
   in the list is the actor ID. Note that this is not the same ID shown in the actor section of the Room tab, which

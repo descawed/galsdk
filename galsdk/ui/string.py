@@ -39,7 +39,7 @@ class StringTab(Tab):
         for i, (name, string_db) in enumerate(project.get_unmapped_strings()):
             iid = f'unmapped_{i}'
             self.tree.insert('', tk.END, text=name, iid=iid, open=False)
-            for j, (raw, string) in enumerate(string_db.iter_both()):
+            for j, (raw, string) in string_db.iter_both_ids():
                 string_id = len(self.strings)
                 self.strings.append(GameString(raw, string, 0, string_db))
                 preview = f'{j}: {string}'
@@ -52,7 +52,7 @@ class StringTab(Tab):
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
 
             string_db = project.get_stage_strings(stage)
-            for j, (raw, string) in enumerate(string_db.iter_both()):
+            for j, (raw, string) in string_db.iter_both_ids():
                 string_id = len(self.strings)
                 self.strings.append(GameString(raw, string, i, string_db))
                 preview = f'{j}: {string}'

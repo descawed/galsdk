@@ -516,13 +516,9 @@ class RoomTab(Tab):
         self.detail_widget = None
         self.menu_item = None
         self.rooms = []
+        self.rooms_by_index = {}
         self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True, 'actors': True,
                            'entrances': True}
-
-        key_items = list(self.project.get_items(True))
-        self.item_names = [f'Unused #{i}' for i in range(len(key_items))]
-        for item in key_items:
-            self.item_names[item.id] = item.name
 
         self.group_menu = tk.Menu(self, tearoff=False)
         self.group_menu.add_command(label='Hide', command=self.toggle_current_group)
@@ -530,16 +526,20 @@ class RoomTab(Tab):
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
+        self.strings = {}
 
         for stage in Stage:
             stage: Stage
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
 
+            self.strings[stage] = dict(self.project.get_stage_strings(stage).iter_ids())
+
             for room in self.project.get_stage_rooms(stage):
                 room_id = len(self.rooms)
                 self.rooms.append(room)
+                self.rooms_by_index[room.key] = room
                 iid = f'room_{room_id}'
-                self.tree.insert(stage, tk.END, text=f'#{room.obj.module_id:02X}: {room.obj.name}', iid=iid)
+                self.tree.insert(stage, tk.END, text=f'#{room.obj.module_id:02X}: {room.file.name}', iid=iid)
 
                 actor_iid = f'actors_{room_id}'
                 self.tree.insert(iid, tk.END, text='Actors', iid=actor_iid, open=True)
@@ -553,6 +553,9 @@ class RoomTab(Tab):
                 self.tree.insert(iid, tk.END, text='Cuts', iid=cut_iid)
                 trigger_iid = f'triggers_{room_id}'
                 self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
+
+        maps = self.project.get_room_indexes_by_map()
+        self.room_names_by_map = [[self.rooms_by_index[index].file.name for index in map_] for map_ in maps]
 
         self.viewport = RoomViewport(self.base, 1024, 768, self.project, self)
         self.viewport.on_select(self.on_viewport_select)
@@ -627,7 +630,8 @@ class RoomTab(Tab):
             i_rect = 0
             i_tri = 0
             i_circle = 0
-            room = self.rooms[self.current_room].obj
+            from_manifest = self.rooms[self.current_room]
+            room = from_manifest.obj
 
             if object_type in ['all', 'collider']:
                 for i, collider in enumerate(self.viewport.colliders):
@@ -668,7 +672,7 @@ class RoomTab(Tab):
                     changed = True
                     del room.layout.colliders[num_colliders:]
 
-            if object_type in ['all', 'entrance']:
+            if object_type in ['all', 'entrance'] and room.entrances:
                 entrance_set_id = self.viewport.current_entrance_set
                 entrance_set = room.entrances[entrance_set_id]
                 for i, entrance in enumerate(self.viewport.entrances):
@@ -771,7 +775,7 @@ class RoomTab(Tab):
             if changed:
                 self.changed_room_ids.add(self.current_room)
                 iid = f'room_{self.current_room}'
-                self.tree.item(iid, text=f'* #{room.module_id:02X}: {room.name}')
+                self.tree.item(iid, text=f'* #{room.module_id:02X}: {from_manifest.file.name}')
                 self.notify_change()
 
     def set_room(self, room_id: int):
@@ -881,7 +885,9 @@ class RoomTab(Tab):
                     obj = collider.object
                 case 'trigger':
                     obj = self.viewport.triggers[object_id]
-                    editor = TriggerEditor(obj, self.item_names, self)
+                    room = self.rooms[self.current_room].obj
+                    editor = TriggerEditor(obj, self.strings[room.name[0]], self.room_names_by_map, room.functions,
+                                           self)
                 case 'cut':
                     obj = self.viewport.cuts[object_id]
                     editor = CameraCutEditor(obj, self)

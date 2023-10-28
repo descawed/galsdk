@@ -1,71 +1,88 @@
 import tkinter as tk
 from tkinter import ttk
+from typing import Callable
 
 from galsdk.coords import Dimension
-from galsdk.module import TriggerType, TriggerFlag
+from galsdk.game import KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType, Stage
+from galsdk.module import FunctionCall, TriggerType, TriggerFlag
 from galsdk.room import TriggerObject
 from galsdk.ui.room.util import validate_int
 
 
 class TriggerEditor(ttk.Frame):
-    def __init__(self, trigger: TriggerObject, item_names: list[str], *args, **kwargs):
+    MAX_MESSAGE_LEN = 20
+
+    def __init__(self, trigger: TriggerObject, messages: dict[int, str], maps: list[list[str]],
+                 functions: dict[int, list[FunctionCall]], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.trigger = trigger
         self.conditions = ['Always', 'Not attacking', 'On activate', 'On scan (hard-coded item)', 'On scan',
                            'On scan with item', 'On use item']
-        self.item_names = item_names
+        self.messages = {}
+        self.message_to_id = {}
+        for msg_id, msg in messages.items():
+            new_msg = f'{msg_id}: {msg}'
+            if len(new_msg) > self.MAX_MESSAGE_LEN:
+                new_msg = new_msg[:self.MAX_MESSAGE_LEN - 3] + '...'
+            self.messages[msg_id] = new_msg
+            self.message_to_id[new_msg] = msg_id
+        self.maps = maps
+        self.functions = functions
+        self.call_vars = {}
+        self.arg_vars = {}
+        self.arg_tracers = set()
+        self.map_room_links = []
 
-        validator = (self.register(validate_int), '%P')
-        hex_validator = (self.register(lambda s: validate_int(s, 16)), '%P')
+        self.validator = (self.register(validate_int), '%P')
+        self.hex_validator = (self.register(lambda s: validate_int(s, 16)), '%P')
 
         self.id_var = tk.StringVar(self, str(self.trigger.id))
         id_label = ttk.Label(self, text='ID:', anchor=tk.W)
-        id_input = ttk.Entry(self, textvariable=self.id_var, validate='all', validatecommand=validator)
+        id_input = ttk.Entry(self, textvariable=self.id_var, validate='all', validatecommand=self.validator)
 
         self.x_var = tk.StringVar(self, str(self.trigger.x_pos.game_units))
         x_label = ttk.Label(self, text='X:', anchor=tk.W)
-        x_input = ttk.Entry(self, textvariable=self.x_var, validate='all', validatecommand=validator)
+        x_input = ttk.Entry(self, textvariable=self.x_var, validate='all', validatecommand=self.validator)
 
         self.z_var = tk.StringVar(self, str(self.trigger.z_pos.game_units))
         z_label = ttk.Label(self, text='Z:', anchor=tk.W)
-        z_input = ttk.Entry(self, textvariable=self.z_var, validate='all', validatecommand=validator)
+        z_input = ttk.Entry(self, textvariable=self.z_var, validate='all', validatecommand=self.validator)
 
         self.width_var = tk.StringVar(self, str(self.trigger.width.game_units))
         self.height_var = tk.StringVar(self, str(self.trigger.height.game_units))
 
         width_label = ttk.Label(self, text='W:', anchor=tk.W)
-        width_input = ttk.Entry(self, textvariable=self.width_var, validate='all', validatecommand=validator)
+        width_input = ttk.Entry(self, textvariable=self.width_var, validate='all', validatecommand=self.validator)
         height_label = ttk.Label(self, text='H:', anchor=tk.W)
-        height_input = ttk.Entry(self, textvariable=self.height_var, validate='all', validatecommand=validator)
+        height_input = ttk.Entry(self, textvariable=self.height_var, validate='all', validatecommand=self.validator)
 
         if self.trigger.trigger:
             state = tk.NORMAL
-            value = self.trigger.trigger.enabled_callback
+            self.last_enabled_callback = self.trigger.trigger.enabled_callback
         else:
             state = tk.DISABLED
-            value = 0
-        self.enabled_var = tk.StringVar(self, f'{value:08X}')
+            self.last_enabled_callback = 0
+        self.enabled_var = tk.StringVar(self, f'{self.last_enabled_callback:08X}')
         enabled_label = ttk.Label(self, text='Enabled:', anchor=tk.W)
-        enabled_input = ttk.Entry(self, textvariable=self.enabled_var, validate='all', validatecommand=hex_validator,
-                                  state=state)
+        enabled_input = ttk.Entry(self, textvariable=self.enabled_var, validate='all',
+                                  validatecommand=self.hex_validator, state=state)
+
+        if self.last_enabled_callback in functions:
+            self.enabled_actions_frame = self.make_action_frame(functions[self.last_enabled_callback])
+        else:
+            self.enabled_actions_frame = None
 
         if self.trigger.trigger:
             value = self.conditions[self.trigger.trigger.type]
         else:
             value = 'Always'
         self.condition_var = tk.StringVar(self, value)
-        condition_label = ttk.Label(self, text='Condition:', anchor=tk.W)
-        condition_select = ttk.OptionMenu(self, self.condition_var, self.condition_var.get(), *self.conditions)
-        condition_select.configure(state=state)
+        self.condition_label = ttk.Label(self, text='Condition:', anchor=tk.W)
+        self.condition_select = ttk.OptionMenu(self, self.condition_var, self.condition_var.get(), *self.conditions)
+        self.condition_select.configure(state=state)
 
-        if self.trigger.trigger:
-            assert self.trigger.trigger.item_id >= 0
-            value = self.item_names[self.trigger.trigger.item_id]
-        else:
-            value = 'Unused #0'
-        self.item_var = tk.StringVar(self, value)
-        self.item_label = ttk.Label(self, text='Item:', anchor=tk.W)
-        self.item_select = ttk.OptionMenu(self, self.item_var, self.item_var.get(), *self.item_names)
+        item_id = self.trigger.trigger.item_id if self.trigger.trigger else 0
+        self.item_var, self.item_label, self.item_select = self.make_option_select(item_id, 'Item', KEY_ITEM_NAMES)
         self.item_select.configure(state=state)
 
         if self.trigger.trigger:
@@ -86,13 +103,17 @@ class TriggerEditor(ttk.Frame):
                                                      state=state)
 
         if self.trigger.trigger:
-            value = self.trigger.trigger.trigger_callback
+            self.last_trigger_callback = self.trigger.trigger.trigger_callback
         else:
-            value = 0
-        self.callback_var = tk.StringVar(self, f'{value:08X}')
+            self.last_trigger_callback = 0
+        self.callback_var = tk.StringVar(self, f'{self.last_trigger_callback:08X}')
         self.callback_label = ttk.Label(self, text='Callback:', anchor=tk.W)
         self.callback_input = ttk.Entry(self, textvariable=self.callback_var, validate='all',
-                                        validatecommand=hex_validator, state=state)
+                                        validatecommand=self.hex_validator, state=state)
+        if self.last_trigger_callback in functions:
+            self.callback_actions_frame = self.make_action_frame(functions[self.last_trigger_callback])
+        else:
+            self.callback_actions_frame = None
 
         self.id_var.trace_add('write', self.on_change_id)
         self.x_var.trace_add('write', lambda *_: self.on_change_pos('x'))
@@ -121,45 +142,236 @@ class TriggerEditor(ttk.Frame):
         height_input.grid(row=4, column=1)
         enabled_label.grid(row=5, column=0)
         enabled_input.grid(row=5, column=1)
-        condition_label.grid(row=6, column=0)
-        condition_select.grid(row=6, column=1)
         self.toggle_item()
 
         id_input.focus_force()
 
+    def make_action_frame(self, calls: list[FunctionCall]) -> ttk.Labelframe:
+        stages = list(Stage)
+        frame = ttk.Labelframe(self, text='Actions')
+        row = 0
+        for call in calls:
+            function = KNOWN_FUNCTIONS[call.name]
+            if call.call_address not in self.call_vars:
+                enabled_var = tk.BooleanVar(frame, call.is_enabled is not False)
+                if call.is_enabled is not None:
+                    enabled_var.trace_add('write', self.function_enabler(call, enabled_var))
+                self.call_vars[call.call_address] = enabled_var
+            else:
+                enabled_var = self.call_vars[call.call_address]
+
+            state = tk.DISABLED if call.is_enabled is None else tk.NORMAL
+            function_check = ttk.Checkbutton(frame, text=call.name, variable=enabled_var, state=state)
+            function_check.grid(row=row, column=0, columnspan=2)
+            row += 1
+
+            last_map_var = None
+            for i, (arg_type, (arg_address, arg_value)) in enumerate(zip(function.arguments, call.arguments)):
+                var = self.arg_vars.get(arg_address)
+
+                match arg_type:
+                    case ArgumentType.INTEGER:
+                        var, label, select = self.make_int_entry(arg_value, frame, var)
+                        getter = self.int_value_getter(var)
+                    case ArgumentType.MAP:
+                        var, label, select = self.make_option_select(arg_value, 'Map', MAP_NAMES, frame, var)
+                        getter = self.string_value_getter(var, MAP_NAMES)
+                        last_map_var = var
+                    case ArgumentType.ROOM:
+                        var, label, select = self.make_room_select(arg_value, last_map_var, frame, var)
+                        getter = self.room_value_getter(var, last_map_var)
+                    case ArgumentType.MESSAGE:
+                        var, label, select = self.make_msg_select(arg_value, frame)
+                        getter = self.msg_value_getter(var)
+                    case ArgumentType.KEY_ITEM:
+                        var, label, select = self.make_option_select(arg_value, 'Key Item', KEY_ITEM_NAMES, frame, var)
+                        getter = self.string_value_getter(var, KEY_ITEM_NAMES)
+                    case ArgumentType.MED_ITEM:
+                        var, label, select = self.make_option_select(arg_value, 'Medicine', MED_ITEM_NAMES, frame, var)
+                        getter = self.string_value_getter(var, MED_ITEM_NAMES)
+                    case ArgumentType.STAGE:
+                        var, label, select = self.make_option_select(arg_value, 'Stage', stages, frame, var)
+                        getter = self.string_value_getter(var, stages)
+                    case _:
+                        continue  # don't care about these arguments
+
+                key = (call.call_address, arg_address, i)
+                # we need this separately from self.arguments because each usage of an argument is a separate entry in
+                # a function's argument array, and we want to make sure we update all of them so we don't have
+                # conflicting information when we save our changes.
+                if key not in self.arg_tracers:
+                    var.trace_add('write', self.argument_updater(call, i, getter))
+                    self.arg_tracers.add(key)
+                self.arg_vars[arg_address] = var
+                label.grid(row=row, column=0)
+                select.grid(row=row, column=1)
+                row += 1
+
+        return frame
+
+    @staticmethod
+    def function_enabler(call: FunctionCall, var: tk.BooleanVar) -> Callable[..., None]:
+        def enabler(*_):
+            if call.is_enabled is not None:
+                call.is_enabled = var.get()
+        return enabler
+
+    @staticmethod
+    def argument_updater(call: FunctionCall, index: int, getter: Callable[[], int | None]) -> Callable[..., None]:
+        def updater(*_):
+            value = getter()
+            if value is not None:
+                addr = call.arguments[index][0]
+                call.arguments[index] = (addr, value)
+        return updater
+
+    def msg_value_getter(self, var: tk.StringVar) -> Callable[[], int]:
+        def getter() -> int:
+            return self.message_to_id[var.get()]
+        return getter
+
+    def room_value_getter(self, room_var: tk.StringVar, map_var: tk.StringVar) -> Callable[[], int]:
+        def getter() -> int:
+            map_index = MAP_NAMES.index(map_var.get())
+            return self.maps[map_index].index(room_var.get())
+        return getter
+
+    @staticmethod
+    def string_value_getter(var: tk.StringVar, values: list[str]) -> Callable[[], int]:
+        def getter() -> int:
+            return values.index(var.get())
+        return getter
+
+    @staticmethod
+    def int_value_getter(var: tk.StringVar) -> Callable[[], int | None]:
+        def getter() -> int | None:
+            try:
+                return int(var.get())
+            except ValueError:
+                return None
+
+        return getter
+    
+    def make_option_select(self, default_item: int, label: str, names: list[str], parent: tk.Widget = None,
+                           item_var: tk.StringVar = None) -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
+        assert default_item >= 0
+        if parent is None:
+            parent = self
+        if item_var is None:
+            value = names[default_item]
+            item_var = tk.StringVar(self, value)
+        item_label = ttk.Label(parent, text=f'{label}:', anchor=tk.W)
+        item_select = ttk.Combobox(parent, textvariable=item_var, values=names, state='readonly')
+        return item_var, item_label, item_select
+    
+    def make_int_entry(self, default_value: int, parent: tk.Widget, int_var: tk.StringVar = None)\
+            -> tuple[tk.StringVar, ttk.Label, ttk.Entry]:
+        if int_var is None:
+            int_var = tk.StringVar(self, str(default_value))
+        label = ttk.Label(parent, text='Integer:', anchor=tk.W)
+        entry = ttk.Entry(parent, textvariable=int_var, validate='all', validatecommand=self.validator)
+        return int_var, label, entry
+
+    def make_msg_select(self, default_msg: int, parent: tk.Widget, msg_var: tk.StringVar = None)\
+            -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
+        assert default_msg >= 0
+        if msg_var is None:
+            value = self.messages[default_msg]
+            msg_var = tk.StringVar(self, value)
+        msg_label = ttk.Label(parent, text='Message:', anchor=tk.W)
+        msg_select = ttk.Combobox(parent, textvariable=msg_var, values=list(self.messages.values()), state='readonly')
+        return msg_var, msg_label, msg_select
+
+    def make_room_select(self, default_room: int, map_var: tk.StringVar, parent: tk.Widget,
+                         room_var: tk.StringVar = None) -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
+        assert default_room >= 0
+        map_index = MAP_NAMES.index(map_var.get())
+        current_map = self.maps[map_index]
+        if room_var is None:
+            value = current_map[default_room]
+            room_var = tk.StringVar(self, value)
+        room_label = ttk.Label(parent, text='Room:', anchor=tk.W)
+        room_select = ttk.Combobox(parent, textvariable=room_var, values=current_map, state='readonly')
+        link = (map_var, room_var)
+        if link not in self.map_room_links:
+            map_var.trace_add('write', lambda *_: self.update_room_select(map_var, room_var, room_select))
+            self.map_room_links.append(link)
+        return room_var, room_label, room_select
+
+    def update_room_select(self, map_var: tk.StringVar, room_var: tk.StringVar, room_select: ttk.Combobox):
+        current_map = self.maps[MAP_NAMES.index(map_var.get())]
+        room_select['values'] = current_map
+        room_var.set(current_map[0])
+
     def toggle_item(self):
+        row = 6
+
+        if self.trigger.trigger and self.trigger.trigger.enabled_callback in self.functions:
+            self.enabled_actions_frame = self.configure_actions_frame(self.last_enabled_callback,
+                                                                      self.trigger.trigger.enabled_callback,
+                                                                      self.enabled_actions_frame)
+            self.last_enabled_callback = self.trigger.trigger.enabled_callback
+            self.enabled_actions_frame.grid(row=row, column=0, columnspan=2)
+            row += 1
+        elif self.enabled_actions_frame is not None:
+            self.enabled_actions_frame.grid_forget()
+
+        self.condition_label.grid(row=row, column=0)
+        self.condition_select.grid(row=row, column=1)
+        row += 1
+
         if self.trigger.trigger and self.trigger.trigger.type in [TriggerType.ON_SCAN_WITH_ITEM,
                                                                   TriggerType.ON_USE_ITEM]:
-            self.item_label.grid(row=7, column=0)
-            self.item_select.grid(row=7, column=1)
-            self.actor_1_checkbox.grid(row=8, column=0, columnspan=2)
-            self.actor_2_checkbox.grid(row=9, column=0, columnspan=2)
-            self.actor_3_checkbox.grid(row=10, column=0, columnspan=2)
-            self.living_actor_checkbox.grid(row=11, column=0, columnspan=2)
-            self.callback_label.grid(row=12, column=0)
-            self.callback_input.grid(row=12, column=1)
+            self.item_label.grid(row=row, column=0)
+            self.item_select.grid(row=row, column=1)
+            row += 1
         else:
             self.item_label.grid_forget()
             self.item_select.grid_forget()
-            self.actor_1_checkbox.grid(row=7, column=0, columnspan=2)
-            self.actor_2_checkbox.grid(row=8, column=0, columnspan=2)
-            self.actor_3_checkbox.grid(row=9, column=0, columnspan=2)
-            self.living_actor_checkbox.grid(row=10, column=0, columnspan=2)
-            self.callback_label.grid(row=11, column=0)
-            self.callback_input.grid(row=11, column=1)
+
+        self.actor_1_checkbox.grid(row=row, column=0, columnspan=2)
+        row += 1
+        self.actor_2_checkbox.grid(row=row, column=0, columnspan=2)
+        row += 1
+        self.actor_3_checkbox.grid(row=row, column=0, columnspan=2)
+        row += 1
+        self.living_actor_checkbox.grid(row=row, column=0, columnspan=2)
+        row += 1
+        self.callback_label.grid(row=row, column=0)
+        self.callback_input.grid(row=row, column=1)
+        row += 1
+
+        if self.trigger.trigger and self.trigger.trigger.trigger_callback in self.functions:
+            self.callback_actions_frame = self.configure_actions_frame(self.last_trigger_callback,
+                                                                       self.trigger.trigger.trigger_callback,
+                                                                       self.callback_actions_frame)
+            self.last_trigger_callback = self.trigger.trigger.trigger_callback
+            self.callback_actions_frame.grid(row=row, column=0, columnspan=2)
+            row += 1
+        elif self.callback_actions_frame is not None:
+            self.callback_actions_frame.grid_forget()
+
+    def configure_actions_frame(self, last_value: int, callback: int, frame: ttk.Labelframe | None) -> ttk.Labelframe:
+        if callback != last_value or frame is None:
+            if frame is not None:
+                frame.grid_forget()
+                frame.destroy()
+            frame = self.make_action_frame(self.functions[callback])
+        return frame
 
     def on_change_id(self, *_):
         self.trigger.id = int(self.id_var.get() or '0')
 
     def on_change_enabled(self, *_):
         self.trigger.trigger.enabled_callback = int(self.enabled_var.get() or '0', 16)
+        self.toggle_item()
 
     def on_change_condition(self, *_):
         self.trigger.trigger.type = TriggerType(self.conditions.index(self.condition_var.get()))
         self.toggle_item()
 
     def on_change_item(self, *_):
-        self.trigger.trigger.item_id = self.item_names.index(self.item_var.get())
+        self.trigger.trigger.item_id = KEY_ITEM_NAMES.index(self.item_var.get())
 
     def on_change_flag(self, flag: TriggerFlag, value: tk.BooleanVar):
         if value.get():
@@ -169,6 +381,7 @@ class TriggerEditor(ttk.Frame):
 
     def on_change_callback(self, *_):
         self.trigger.trigger.trigger_callback = int(self.callback_var.get() or '0', 16)
+        self.toggle_item()
 
     def on_change_pos(self, axis: str):
         new_value = int(getattr(self, f'{axis}_var').get() or '0')

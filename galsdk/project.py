@@ -301,22 +301,7 @@ class Project:
             module_db = Database.read(f)
         module_manifest = Manifest.from_archive(module_dir, 'MODULE', module_db, original_path=module_db_path)
 
-        module_set_addr = addresses['MapModules']
-        module_set_addrs = struct.unpack(f'<{NUM_MAPS}I',
-                                         exe[module_set_addr:module_set_addr + 4 * NUM_MAPS])
-        maps = []
-        for i in range(len(module_set_addrs)):
-            this_addr = module_set_addrs[i]
-            if i + 1 >= NUM_MAPS:
-                next_addr = module_set_addr
-            else:
-                next_addr = module_set_addrs[i + 1]
-            num_modules = (next_addr - this_addr) // MODULE_ENTRY_SIZE
-            raw_entries = struct.unpack('<' + ('2I' * num_modules), exe[this_addr:next_addr])
-            maps.append([
-                {'index': raw_entries[j], 'entry_point': raw_entries[j + 1]}
-                for j in range(0, len(raw_entries), 2)
-            ])
+        maps = cls._get_maps(addresses['MapModules'], exe)
 
         rooms_seen = set()
         all_modules_path = Path.cwd() / 'data' / 'module'
@@ -340,7 +325,7 @@ class Project:
                     module_file = module_manifest[index]
                     metadata_path = module_file.path.with_suffix('.json')
                     if metadata_path.exists():
-                        module = RoomModule.load_with_metadata(module_file.path)
+                        module = RoomModule.load_with_metadata(module_file.path, version.language)
                     else:
                         with module_file.path.open('rb') as f:
                             module = RoomModule.parse(f, version.language, module_entry['entry_point'])
@@ -351,11 +336,8 @@ class Project:
                             module_manifest.rename(index, f'{module.name}_{index}', ext=module.suggested_extension)
 
                         new_metadata_path = module_manifest[index].path.with_suffix('.json')
-                        if metadata_path.exists():
-                            metadata_path.rename(new_metadata_path)
-                        else:
-                            with new_metadata_path.with_suffix('.json').open('w') as f:
-                                module.save_metadata(f)
+                        with new_metadata_path.with_suffix('.json').open('w') as f:
+                            module.save_metadata(f)
 
         x_scales = []
         option_menu = []
@@ -480,6 +462,22 @@ class Project:
         project.save()
         return project
 
+    @staticmethod
+    def _get_maps(module_set_addr: int, exe: Exe) -> list[list[dict[str, int]]]:
+        module_set_addrs = struct.unpack(f'<{NUM_MAPS}I',
+                                         exe[module_set_addr:module_set_addr + 4 * NUM_MAPS])
+        maps = []
+        for i in range(len(module_set_addrs)):
+            this_addr = module_set_addrs[i]
+            next_addr = module_set_addr if i + 1 >= NUM_MAPS else module_set_addrs[i + 1]
+            num_modules = (next_addr - this_addr) // MODULE_ENTRY_SIZE
+            raw_entries = struct.unpack('<' + ('2I' * num_modules), exe[this_addr:next_addr])
+            maps.append([
+                {'index': raw_entries[j], 'entry_point': raw_entries[j + 1]}
+                for j in range(0, len(raw_entries), 2)
+            ])
+        return maps
+
     @classmethod
     def open(cls, project_dir: str) -> Project:
         """
@@ -589,6 +587,15 @@ class Project:
         for i, manifest_file in enumerate(manifest):
             if manifest_file.name[0] == stage:
                 yield manifest.load_file(i, RoomModule.load_with_metadata)
+
+    def get_room_indexes_by_map(self) -> list[list[int]]:
+        addresses = ADDRESSES[self.version.id]
+        exe_path = self.project_dir / 'boot' / self.version.exe_name
+        with exe_path.open('rb') as f:
+            exe = Exe.read(f)
+
+        maps = self._get_maps(addresses['MapModules'], exe)
+        return [[entry['index'] for entry in map_] for map_ in maps]
 
     def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
         manifest = Manifest.load_from(self.project_dir / 'models')
