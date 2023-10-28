@@ -4,7 +4,7 @@ from typing import Callable
 
 from galsdk.coords import Dimension
 from galsdk.game import KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType, Stage
-from galsdk.module import FunctionCall, TriggerType, TriggerFlag
+from galsdk.module import CallbackFunction, FunctionCall, TriggerType, TriggerFlag
 from galsdk.room import TriggerObject
 from galsdk.ui.room.util import validate_int
 
@@ -13,7 +13,7 @@ class TriggerEditor(ttk.Frame):
     MAX_MESSAGE_LEN = 20
 
     def __init__(self, trigger: TriggerObject, messages: dict[int, str], maps: list[list[str]], movies: list[str],
-                 functions: dict[int, list[FunctionCall]], *args, **kwargs):
+                 functions: dict[int, CallbackFunction], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.trigger = trigger
         self.conditions = ['Always', 'Not attacking', 'On activate', 'On scan (hard-coded item)', 'On scan',
@@ -29,7 +29,8 @@ class TriggerEditor(ttk.Frame):
         self.maps = maps
         self.movies = movies
         self.functions = functions
-        self.call_vars = {}
+        self.call_enabled_vars = {}
+        self.return_vars = {}
         self.arg_vars = {}
         self.arg_tracers = set()
         self.map_room_links = []
@@ -67,11 +68,7 @@ class TriggerEditor(ttk.Frame):
         enabled_label = ttk.Label(self, text='Enabled:', anchor=tk.W)
         enabled_input = ttk.Entry(self, textvariable=self.enabled_var, validate='all',
                                   validatecommand=self.hex_validator, state=state)
-
-        if self.last_enabled_callback in functions:
-            self.enabled_actions_frame = self.make_action_frame(functions[self.last_enabled_callback])
-        else:
-            self.enabled_actions_frame = None
+        self.enabled_actions_frame = None
 
         if self.trigger.trigger:
             value = self.conditions[self.trigger.trigger.type]
@@ -111,10 +108,7 @@ class TriggerEditor(ttk.Frame):
         self.callback_label = ttk.Label(self, text='Callback:', anchor=tk.W)
         self.callback_input = ttk.Entry(self, textvariable=self.callback_var, validate='all',
                                         validatecommand=self.hex_validator, state=state)
-        if self.last_trigger_callback in functions:
-            self.callback_actions_frame = self.make_action_frame(functions[self.last_trigger_callback])
-        else:
-            self.callback_actions_frame = None
+        self.callback_actions_frame = None
 
         self.id_var.trace_add('write', self.on_change_id)
         self.x_var.trace_add('write', lambda *_: self.on_change_pos('x'))
@@ -147,19 +141,31 @@ class TriggerEditor(ttk.Frame):
 
         id_input.focus_force()
 
-    def make_action_frame(self, calls: list[FunctionCall]) -> ttk.Labelframe:
+    def make_action_frame(self, cb_address: int, show_return_value: bool = False) -> ttk.Labelframe:
+        cb = self.functions[cb_address]
         stages = list(Stage)
         frame = ttk.Labelframe(self, text='Actions')
         row = 0
-        for call in calls:
+        if show_return_value and cb.return_value_instruction is not None and cb.return_value is not None:
+            old_var = self.return_vars.get(cb_address)
+            return_var, return_label, return_entry = self.make_int_entry(cb.return_value, frame, old_var,
+                                                                         'Return value')
+            if old_var is None:
+                self.return_vars[cb_address] = return_var
+                return_var.trace_add('write', self.return_value_updater(cb, self.int_value_getter(return_var)))
+            return_label.grid(row=row, column=0)
+            return_entry.grid(row=row, column=1)
+            row += 1
+
+        for call in cb.calls:
             function = KNOWN_FUNCTIONS[call.name]
-            if call.call_address not in self.call_vars:
+            if call.call_address not in self.call_enabled_vars:
                 enabled_var = tk.BooleanVar(frame, call.is_enabled is not False)
                 if call.is_enabled is not None:
                     enabled_var.trace_add('write', self.function_enabler(call, enabled_var))
-                self.call_vars[call.call_address] = enabled_var
+                self.call_enabled_vars[call.call_address] = enabled_var
             else:
-                enabled_var = self.call_vars[call.call_address]
+                enabled_var = self.call_enabled_vars[call.call_address]
 
             state = tk.DISABLED if call.is_enabled is None else tk.NORMAL
             function_check = ttk.Checkbutton(frame, text=call.name, variable=enabled_var, state=state)
@@ -212,6 +218,14 @@ class TriggerEditor(ttk.Frame):
                 row += 1
 
         return frame
+
+    @staticmethod
+    def return_value_updater(cb: CallbackFunction, getter: Callable[[], int | None]) -> Callable[..., None]:
+        def updater(*_):
+            value = getter()
+            if value is not None:
+                cb.return_value = value
+        return updater
 
     @staticmethod
     def function_enabler(call: FunctionCall, var: tk.BooleanVar) -> Callable[..., None]:
@@ -268,11 +282,11 @@ class TriggerEditor(ttk.Frame):
         item_select = ttk.Combobox(parent, textvariable=item_var, values=names, state='readonly')
         return item_var, item_label, item_select
     
-    def make_int_entry(self, default_value: int, parent: tk.Widget, int_var: tk.StringVar = None)\
+    def make_int_entry(self, default_value: int, parent: tk.Widget, int_var: tk.StringVar = None, text: str = 'Integer')\
             -> tuple[tk.StringVar, ttk.Label, ttk.Entry]:
         if int_var is None:
             int_var = tk.StringVar(self, str(default_value))
-        label = ttk.Label(parent, text='Integer:', anchor=tk.W)
+        label = ttk.Label(parent, text=f'{text}:', anchor=tk.W)
         entry = ttk.Entry(parent, textvariable=int_var, validate='all', validatecommand=self.validator)
         return int_var, label, entry
 
@@ -313,7 +327,7 @@ class TriggerEditor(ttk.Frame):
         if self.trigger.trigger and self.trigger.trigger.enabled_callback in self.functions:
             self.enabled_actions_frame = self.configure_actions_frame(self.last_enabled_callback,
                                                                       self.trigger.trigger.enabled_callback,
-                                                                      self.enabled_actions_frame)
+                                                                      self.enabled_actions_frame, True)
             self.last_enabled_callback = self.trigger.trigger.enabled_callback
             self.enabled_actions_frame.grid(row=row, column=0, columnspan=2)
             row += 1
@@ -355,12 +369,13 @@ class TriggerEditor(ttk.Frame):
         elif self.callback_actions_frame is not None:
             self.callback_actions_frame.grid_forget()
 
-    def configure_actions_frame(self, last_value: int, callback: int, frame: ttk.Labelframe | None) -> ttk.Labelframe:
+    def configure_actions_frame(self, last_value: int, callback: int, frame: ttk.Labelframe | None,
+                                show_return_value: bool = False) -> ttk.Labelframe:
         if callback != last_value or frame is None:
             if frame is not None:
                 frame.grid_forget()
                 frame.destroy()
-            frame = self.make_action_frame(self.functions[callback])
+            frame = self.make_action_frame(callback, show_return_value)
         return frame
 
     def on_change_id(self, *_):

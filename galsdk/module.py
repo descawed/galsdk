@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import struct
-from dataclasses import astuple, dataclass, field, replace
+from dataclasses import asdict, astuple, dataclass, field, replace
 from enum import IntEnum, IntFlag
 from pathlib import Path
 from typing import Any, BinaryIO, Self, TextIO
@@ -49,6 +49,13 @@ class FunctionCall:
     name: str
     arguments: list[tuple[int | None, int | None]]
     is_enabled: bool | None = True
+
+
+@dataclass
+class CallbackFunction:
+    calls: list[FunctionCall]
+    return_value_instruction: int | None
+    return_value: int | None
 
 
 @dataclass
@@ -405,7 +412,7 @@ class RoomModule(FileFormat):
 
     def __init__(self, module_id: int, layout: RoomLayout, backgrounds: list[BackgroundSet],
                  actor_layouts: list[ActorLayoutSet], triggers: TriggerSet, entrances: list[EntranceSet],
-                 load_address: int, raw_data: bytes, functions: dict[int, list[FunctionCall]]):
+                 load_address: int, raw_data: bytes, functions: dict[int, CallbackFunction]):
         self.module_id = module_id
         self.layout = layout
         self.backgrounds = backgrounds
@@ -576,7 +583,7 @@ class RoomModule(FileFormat):
             'triggers': self.triggers.address + self.load_address,
             'entrances': [entrance_set.address + self.load_address for entrance_set in self.entrances],
             'numEntrances': len(self.entrances[0].entrances) if self.entrances else 0,
-            'functions': {f'{addr:08X}': [astuple(call) for call in calls] for addr, calls in self.functions.items()},
+            'functions': {f'{addr:08X}': asdict(callback) for addr, callback in self.functions.items()},
         }, f)
 
     @classmethod
@@ -591,8 +598,10 @@ class RoomModule(FileFormat):
             functions = None
         else:
             functions = {}
-            for hex_addr, calls in metadata.get('functions', {}).items():
-                functions[int(hex_addr, 16)] = [FunctionCall(*call) for call in calls]
+            for hex_addr, callback in metadata.get('functions', {}).items():
+                functions[int(hex_addr, 16)] = CallbackFunction([FunctionCall(**call) for call in callback['calls']],
+                                                                callback['return_value_instruction'],
+                                                                callback['return_value'])
 
         if language is not None:
             addresses = REGION_ADDRESSES[language]
@@ -822,13 +831,14 @@ class RoomModule(FileFormat):
     @classmethod
     def parse_function(cls, data: bytes, start_address: int, module_space: range, regs: list[Register],
                        room_address: RoomAddresses, known_functions: dict[int, str] = None,
-                       function_calls: list[FunctionCall] = None):
+                       function_calls: list[FunctionCall] = None) -> tuple[int | None, int | None]:
         in_delay_slot = False
         jump_address = None
         do_return = False
         restore_regs = False
         grab_room_layout_ptr = False
         found_entrance_array = False
+        ever_branched = False
         function_name = None
         arg_regs = [rabbitizer.RegGprO32.a0.value, rabbitizer.RegGprO32.a1.value, rabbitizer.RegGprO32.a2.value,
                     rabbitizer.RegGprO32.a3.value]
@@ -859,6 +869,7 @@ class RoomModule(FileFormat):
                     reg.source = UNDEFINED
                     reg.instruction = i
                 case 'jal':
+                    ever_branched = True
                     dest = inst.getInstrIndexAsVram()
                     in_delay_slot = True
                     # when we're tracking function calls, we don't want to step into them, just record the interesting
@@ -884,7 +895,7 @@ class RoomModule(FileFormat):
                         if value in module_space:
                             room_address.set_by_address(address, value)
                             if room_address.is_complete:
-                                return  # nothing left to do
+                                return None, None  # nothing left to do
                         if (function_calls is not None
                                 and address == room_address.game_state + GameStateOffsets.MESSAGE_ID
                                 and value_reg.instruction is not UNDEFINED):
@@ -931,6 +942,7 @@ class RoomModule(FileFormat):
                             room_address.num_entrances = cls.find_entrance_count(data, dest, module_space)
 
                     if is_branch or inst.isJump():
+                        ever_branched = True
                         # for some reason, this function can return a signed number, so do the two's complement
                         dest = (inst.getBranchVramGeneric() + (1 << 32)) & 0xffffffff
 
@@ -998,7 +1010,7 @@ class RoomModule(FileFormat):
                     else:
                         raise ValueError('Found call to SetRoomLayout but a2 was undefined')
                     if room_address.is_complete:
-                        return  # nothing left to do
+                        return None, None  # nothing left to do
 
                 if jump_address is not None:
                     regs_to_restore = [replace(reg) for reg in regs]
@@ -1006,13 +1018,13 @@ class RoomModule(FileFormat):
                                        function_calls)
                     if room_address.is_complete:
                         # we've found everything we were looking for; no need to keep parsing
-                        return
+                        return None, None
 
                     jump_address = None
                     if restore_regs:
                         regs = regs_to_restore
                         restore_regs = False
-                else:
+                elif not do_return:
                     # clobber registers
                     for j in range(1, len(regs)):
                         if not rabbitizer.RegGprO32.s0.value <= j <= rabbitizer.RegGprO32.s7.value:
@@ -1022,11 +1034,23 @@ class RoomModule(FileFormat):
                             reg.instruction = UNDEFINED
 
                 if do_return:
-                    return
+                    # we don't do this logic in any of the other returns because those are all handling filling out the
+                    # room addresses, and we only care about the return value when we're tracing function calls
+                    return_value_instruction = None
+                    return_value = None
+                    # if we ever branched, then we don't have a way to keep track of whether any return value we ended
+                    # up with varied by branch, so we exclude those. we only track a hard-coded return value when there
+                    # was only one path through the code meaning it was the only return value we could've gotten.
+                    if not ever_branched:
+                        reg = regs[rabbitizer.RegGprO32.v0.value]
+                        if reg.instruction is not UNDEFINED and reg.value is not UNDEFINED:
+                            return_value_instruction = reg.instruction
+                            return_value = reg.value
+                    return return_value_instruction, return_value
 
     @classmethod
     def parse_with_addresses(cls, data: bytes, load_address: int, room_addresses: RoomAddresses,
-                             functions: dict[int, list[FunctionCall]] = None,
+                             functions: dict[int, CallbackFunction] = None,
                              known_functions: dict[int, str] = None) -> RoomModule:
         module_id = int.from_bytes(data[:4], 'little')
 
@@ -1066,17 +1090,19 @@ class RoomModule(FileFormat):
             functions = {}
             for trigger in triggers.triggers:
                 if trigger.enabled_callback != 0:
-                    functions[trigger.enabled_callback] = []
+                    functions[trigger.enabled_callback] = CallbackFunction([], None, None)
                 if trigger.trigger_callback != 0:
-                    functions[trigger.trigger_callback] = []
+                    functions[trigger.trigger_callback] = CallbackFunction([], None, None)
 
             if known_functions is not None:
-                for address, calls in functions.items():
+                for address, function in functions.items():
                     regs = [Register() for _ in range(32)]
                     regs[0].value = 0
                     regs[rabbitizer.RegGprO32.a0.value].value = room_addresses.game_state
-                    cls.parse_function(data, address, range(load_address, load_address + len(data)), regs,
-                                       room_addresses, known_functions, calls)
+                    rvi, rv = cls.parse_function(data, address, range(load_address, load_address + len(data)), regs,
+                                                 room_addresses, known_functions, function.calls)
+                    function.return_value_instruction = rvi
+                    function.return_value = rv
 
         return cls(module_id, room_layout, backgrounds, actor_layouts, triggers, entrance_sets, load_address, data,
                    functions)
