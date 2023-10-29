@@ -3,8 +3,8 @@ Editor and utilities for the PSX game Galerians (1999). Requires Python 3.11.
 
 ## Editor
 The editor is a GUI application for exploring the game's files. Run it from the repo's root directory with
-`python -m galsdk.editor`. At the moment, only room and string changes can actually be saved and exported. Support for
-editing other files will be added in the future.
+`python -m galsdk.editor`. At the moment, it supports editing rooms, strings, and art textures. Support for editing
+other files will be added in the future.
 
 ### Projects
 A project is a folder where the editor extracts game files and their metadata. Before you can view anything in the
@@ -17,7 +17,9 @@ contains. Choose a directory for the project to be created in with the Browse bu
 a minute for it to finish extracting the game files and you'll be taken to the project view.
 
 To open an existing project, use File > Open Project (or ctrl-O) and select the project directory. To export your
-changes to a playable CD image, use File > Export (make sure to save first).
+changes to a playable CD image, use File > Export (make sure to save first). Not all files can be edited within the
+editor at this time, but if you make changes to project files outside the editor, the export process will still pick
+them up based on the file modification timestamps.
 
 ### Tabs
 - **Room** - This is probably the most useful feature of the editor. From this tab, you can view the layout of all the
@@ -132,7 +134,10 @@ changes to a playable CD image, use File > Export (make sure to save first).
   animations work on this tab and how they affect exporting.
 - **Art** - This tab allows viewing and exporting of all known images in the game except for backgrounds and model
   textures (which are available on other tabs). The exact organization of images on this tab varies depending on your
-  game version. You can right-click on an image in the list to export.
+  game version. You can right-click on an image in the list to export, or to import a replacement image. For 16-bit and
+  24-bit TIMs, you can import any common image format and it will be converted to TIM automatically. However, the game
+  doesn't use many (any?) of these. For 4-bit and 8-bit TIMs, you can only import images already in TIM format. Use a
+  tool like [TIMedit](https://github.com/Lameguy64/TIMedit) to convert other images to the appropriate format.
 - **Menu** - This tab displays images defined in menu files. These files don't exist in the Japanese version, so this
   tab won't appear for Japan-version projects. The other versions have two menu files, one for the option menu and
   one for the inventory. In addition to displaying the icons within each menu, the top-level entry for the option menu

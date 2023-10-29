@@ -20,7 +20,7 @@ class MenuTab(ImageViewerTab):
             self.tree.insert('', tk.END, text=name, iid=name, open=False)
             try:
                 self.images[name] = menu.render()
-                self.exportable_ids.add(name)
+                self.context_ids.add(name)
             except NotImplementedError:
                 pass
 
@@ -28,7 +28,7 @@ class MenuTab(ImageViewerTab):
                 iid = f'{name}_{i}'
                 self.tree.insert(name, tk.END, text=f'{i}', iid=iid)
                 self.images[iid] = tile
-                self.exportable_ids.add(iid)
+                self.context_ids.add(iid)
 
     def get_image_from_iid(self, iid: str) -> Optional[Image]:
         return self.images.get(iid)

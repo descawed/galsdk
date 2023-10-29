@@ -89,6 +89,10 @@ class Tim:
             pixels.append((r, g, b, 0xff))
         return pixels
 
+    def is_compatible_with(self, other: Tim) -> bool:
+        """Check whether a TIM is compatible with another TIM, meaning they have the same attributes"""
+        return self.width == other.width and self.height == other.height and self.bpp == other.bpp
+
     def set_clut(self, data: ByteString, width: int, x: int = 0, y: int = 0):
         """
         Set the CLUT (color lookup table) for this TIM image

@@ -234,14 +234,16 @@ class Editor(ShowBase):
         for tab in self.notebook.tabs():
             self.notebook.forget(tab)
 
-        self.tabs = [RoomTab(self.project, self), StringTab(self.project), ActorTab(self.project, self),
-                     BackgroundTab(self.project), ItemTab(self.project, self), ModelTab(self.project, self),
-                     ArtTab(self.project), MenuTab(self.project), MovieTab(self.project, self),
-                     VoiceTab(self.project, self)]
-        for tab in self.tabs:
+        tabs = [RoomTab(self.project, self), StringTab(self.project), ActorTab(self.project, self),
+                BackgroundTab(self.project), ItemTab(self.project, self), ModelTab(self.project, self),
+                ArtTab(self.project), MenuTab(self.project), MovieTab(self.project, self),
+                VoiceTab(self.project, self)]
+        self.tabs = []
+        for tab in tabs:
             if tab.should_appear:
                 self.notebook.add(tab, text=tab.name)
                 tab.on_change(self.on_tab_change)
+                self.tabs.append(tab)
 
         self.notebook.pack(expand=1, fill=tk.BOTH)
 

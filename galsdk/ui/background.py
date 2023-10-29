@@ -1,6 +1,5 @@
 import tkinter as tk
 from pathlib import Path
-from typing import Optional
 
 from galsdk.ui.image import ImageViewerTab
 from galsdk.project import Project
@@ -12,8 +11,8 @@ from psx.tim import Tim
 class BackgroundTab(ImageViewerTab):
     """Editor tab for viewing room background images"""
 
-    dbs: list[tuple[Path, Optional[TimDb]]]
-    current_image: Optional[Tim]
+    dbs: list[tuple[Path, TimDb | None]]
+    current_image: Tim | None
 
     def __init__(self, project: Project):
         super().__init__('Background', project)
@@ -47,9 +46,9 @@ class BackgroundTab(ImageViewerTab):
                 for i in range(len(db)):
                     iid = f'img_{index}_{i}'
                     self.tree.insert(db_id, tk.END, text=str(i), iid=iid)
-                    self.exportable_ids.add(iid)
+                    self.context_ids.add(iid)
 
-    def get_image_from_iid(self, iid: str) -> Optional[Tim]:
+    def get_image_from_iid(self, iid: str) -> Tim | None:
         if iid.startswith('img_'):
             db_index, img_index = [int(piece) for piece in iid[4:].split('_')]
             db = self.dbs[db_index][1]
