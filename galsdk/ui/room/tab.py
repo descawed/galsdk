@@ -1,3 +1,4 @@
+import copy
 import math
 import tkinter as tk
 from itertools import zip_longest
@@ -80,6 +81,7 @@ class RoomViewport(Viewport):
         self.entrance_sets = []
         self.entrances = []
         self.entrance_node = self.render_target.attachNewNode('room_viewport_entrances')
+        self.functions = {}
 
         self.default_fov = None
         self.project = project
@@ -119,6 +121,7 @@ class RoomViewport(Viewport):
         self.cameras = []
         self.entrance_sets = []
         self.entrances = []
+        self.functions = {}
         self.actor_layouts = []
         self.actors = []
         for animation in filter(None, self.actor_animations):
@@ -347,6 +350,7 @@ class RoomViewport(Viewport):
         self.room_id = room_id
         self.current_stage = Stage(self.name[0])
         self.current_bg = 0
+        self.functions = copy.deepcopy(module.functions)
 
         for cut in module.layout.cuts:
             object_name = f'cut_{len(self.cuts)}_{room_id}'
@@ -516,13 +520,10 @@ class RoomTab(Tab):
         self.detail_widget = None
         self.menu_item = None
         self.rooms = []
+        self.rooms_by_index = {}
+        self.movies = self.project.get_movie_list()
         self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True, 'actors': True,
                            'entrances': True}
-
-        key_items = list(self.project.get_items(True))
-        self.item_names = [f'Unused #{i}' for i in range(len(key_items))]
-        for item in key_items:
-            self.item_names[item.id] = item.name
 
         self.group_menu = tk.Menu(self, tearoff=False)
         self.group_menu.add_command(label='Hide', command=self.toggle_current_group)
@@ -530,16 +531,20 @@ class RoomTab(Tab):
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
+        self.strings = {}
 
         for stage in Stage:
             stage: Stage
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
 
+            self.strings[stage] = dict(self.project.get_stage_strings(stage).iter_ids())
+
             for room in self.project.get_stage_rooms(stage):
                 room_id = len(self.rooms)
                 self.rooms.append(room)
+                self.rooms_by_index[room.key] = room
                 iid = f'room_{room_id}'
-                self.tree.insert(stage, tk.END, text=f'#{room.obj.module_id:02X}: {room.obj.name}', iid=iid)
+                self.tree.insert(stage, tk.END, text=f'#{room.obj.module_id:02X}: {room.file.name}', iid=iid)
 
                 actor_iid = f'actors_{room_id}'
                 self.tree.insert(iid, tk.END, text='Actors', iid=actor_iid, open=True)
@@ -553,6 +558,9 @@ class RoomTab(Tab):
                 self.tree.insert(iid, tk.END, text='Cuts', iid=cut_iid)
                 trigger_iid = f'triggers_{room_id}'
                 self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
+
+        maps = self.project.get_room_indexes_by_map()
+        self.room_names_by_map = [[self.rooms_by_index[index].file.name for index in map_] for map_ in maps]
 
         self.viewport = RoomViewport(self.base, 1024, 768, self.project, self)
         self.viewport.on_select(self.on_viewport_select)
@@ -620,14 +628,15 @@ class RoomTab(Tab):
         return False
 
     def update_room(self,
-                    object_type: Literal['all', 'collider', 'entrance', 'actor', 'camera', 'cut', 'trigger'] = 'all'):
+                    object_type: Literal['all', 'collider', 'entrance', 'actor', 'camera', 'cut', 'trigger', 'function'] = 'all'):
         if self.current_room is not None:
             # push changes back to the room module
             changed = False
             i_rect = 0
             i_tri = 0
             i_circle = 0
-            room = self.rooms[self.current_room].obj
+            from_manifest = self.rooms[self.current_room]
+            room = from_manifest.obj
 
             if object_type in ['all', 'collider']:
                 for i, collider in enumerate(self.viewport.colliders):
@@ -668,7 +677,7 @@ class RoomTab(Tab):
                     changed = True
                     del room.layout.colliders[num_colliders:]
 
-            if object_type in ['all', 'entrance']:
+            if object_type in ['all', 'entrance'] and room.entrances:
                 entrance_set_id = self.viewport.current_entrance_set
                 entrance_set = room.entrances[entrance_set_id]
                 for i, entrance in enumerate(self.viewport.entrances):
@@ -766,12 +775,26 @@ class RoomTab(Tab):
                     changed = True
                     del room.triggers.triggers[num_triggers:]
 
+            if object_type in ['all', 'function'] and self.viewport.functions != room.functions:
+                changed = True
+                function_triggers = {}
+                for i, trigger in enumerate(self.viewport.triggers):
+                    if trigger.trigger:
+                        function_triggers.setdefault(trigger.trigger.enabled_callback, []).append(i)
+                        function_triggers.setdefault(trigger.trigger.trigger_callback, []).append(i)
+                for address, func in self.viewport.functions.items():
+                    if func != room.functions.get(address):
+                        for trigger_index in function_triggers.get(address, []):
+                            iid = f'trigger_{trigger_index}_{self.current_room}'
+                            self.tree.item(iid, text=f'* #{trigger_index}')
+                room.functions = self.viewport.functions
+
             room.validate_for_write()
 
             if changed:
                 self.changed_room_ids.add(self.current_room)
                 iid = f'room_{self.current_room}'
-                self.tree.item(iid, text=f'* #{room.module_id:02X}: {room.name}')
+                self.tree.item(iid, text=f'* #{room.module_id:02X}: {from_manifest.file.name}')
                 self.notify_change()
 
     def set_room(self, room_id: int):
@@ -881,7 +904,9 @@ class RoomTab(Tab):
                     obj = collider.object
                 case 'trigger':
                     obj = self.viewport.triggers[object_id]
-                    editor = TriggerEditor(obj, self.item_names, self)
+                    room = self.rooms[self.current_room].obj
+                    editor = TriggerEditor(obj, self.strings[room.name[0]], self.room_names_by_map, self.movies,
+                                           self.viewport.functions, self)
                 case 'cut':
                     obj = self.viewport.cuts[object_id]
                     editor = CameraCutEditor(obj, self)
@@ -942,7 +967,11 @@ class RoomTab(Tab):
     def save(self):
         self.update_room()  # make sure we've pushed all changes back to the room modules
         for room_id in self.changed_room_ids:
-            self.rooms[room_id].save()
+            room = self.rooms[room_id]
+            room.save(language=self.project.version.language)
+            # function info is saved in the metadata
+            with room.file.path.with_suffix('.json').open('w') as f:
+                room.obj.save_metadata(f)
         self.changed_room_ids.clear()
         self.clear_change_markers()
 

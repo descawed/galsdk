@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import struct
-from dataclasses import astuple, dataclass, field
+from dataclasses import asdict, astuple, dataclass, field, replace
 from enum import IntEnum, IntFlag
 from pathlib import Path
 from typing import Any, BinaryIO, Self, TextIO
@@ -11,7 +11,7 @@ from typing import Any, BinaryIO, Self, TextIO
 import rabbitizer
 
 from galsdk.format import FileFormat
-from galsdk.game import REGION_ADDRESSES, GameStateOffsets
+from galsdk.game import REGION_ADDRESSES, KNOWN_FUNCTIONS, ArgumentType, GameStateOffsets
 from galsdk.model import ACTORS
 
 
@@ -41,6 +41,21 @@ class TriggerFlag(IntFlag):
     ACTOR_2 = 2
     ACTOR_3 = 4
     ALLOW_LIVING_ACTOR = 8
+
+
+@dataclass
+class FunctionCall:
+    call_address: int
+    name: str
+    arguments: list[tuple[int | None, int | None]]
+    is_enabled: bool | None = True
+
+
+@dataclass
+class CallbackFunction:
+    calls: list[FunctionCall]
+    return_value_instruction: int | None
+    return_value: int | None
 
 
 @dataclass
@@ -263,16 +278,31 @@ class Undefined:
     def __add__(self, other: Any) -> Undefined:
         return self
 
+    def __radd__(self, other: Any) -> Undefined:
+        return self
+
     def __sub__(self, other: Any) -> Undefined:
+        return self
+
+    def __rsub__(self, other: Any) -> Undefined:
         return self
 
     def __mul__(self, other: Any) -> Undefined:
         return self
 
+    def __rmul__(self, other: Any) -> Undefined:
+        return self
+
     def __truediv__(self, other: Any) -> Undefined:
         return self
 
+    def __rtruediv__(self, other: Any) -> Undefined:
+        return self
+
     def __floordiv__(self, other: Any) -> Undefined:
+        return self
+
+    def __rfloordiv__(self, other: Any) -> Undefined:
         return self
 
     def __neg__(self) -> Undefined:
@@ -284,10 +314,19 @@ class Undefined:
     def __and__(self, other: Any) -> Undefined:
         return self
 
+    def __rand__(self, other: Any) -> Undefined:
+        return self
+
     def __or__(self, other: Any) -> Undefined:
         return self
 
+    def __ror__(self, other: Any) -> Undefined:
+        return self
+
     def __xor__(self, other: Any) -> Undefined:
+        return self
+
+    def __rxor__(self, other: Any) -> Undefined:
         return self
 
     def __eq__(self, other: Any) -> bool:
@@ -298,6 +337,13 @@ class Undefined:
 
 
 UNDEFINED = Undefined()
+
+
+@dataclass
+class Register:
+    value: int | Undefined = field(default_factory=lambda: UNDEFINED)
+    source: int | Undefined = field(default_factory=lambda: UNDEFINED)
+    instruction: int | Undefined = field(default_factory=lambda: UNDEFINED)
 
 
 @dataclass
@@ -366,7 +412,7 @@ class RoomModule(FileFormat):
 
     def __init__(self, module_id: int, layout: RoomLayout, backgrounds: list[BackgroundSet],
                  actor_layouts: list[ActorLayoutSet], triggers: TriggerSet, entrances: list[EntranceSet],
-                 load_address: int, raw_data: bytes):
+                 load_address: int, raw_data: bytes, functions: dict[int, CallbackFunction]):
         self.module_id = module_id
         self.layout = layout
         self.backgrounds = backgrounds
@@ -375,6 +421,7 @@ class RoomModule(FileFormat):
         self.entrances = entrances
         self.load_address = load_address
         self.raw_data = raw_data
+        self.functions = functions
 
     @property
     def is_empty(self) -> bool:
@@ -432,7 +479,7 @@ class RoomModule(FileFormat):
             return cls.load(f, REGION_ADDRESSES[language]['ModuleLoadAddresses'][0])
         return cls.parse(f, language, entry_point)
 
-    def write(self, f: BinaryIO, **kwargs):
+    def write(self, f: BinaryIO, *, language: str = None, **kwargs):
         self.validate_for_write()
 
         f.write(self.raw_data)
@@ -501,6 +548,57 @@ class RoomModule(FileFormat):
             f.seek(self.triggers.address)
             f.write(self.triggers.encode())
 
+        addresses = None
+        if language is not None:
+            addresses = REGION_ADDRESSES[language]
+        for address, callback in self.functions.items():
+            for call in callback.calls:
+                offset = call.call_address - self.load_address
+                f.seek(offset)
+                if call.is_enabled and addresses is not None:
+                    dest_address = addresses[call.name]
+                    # jal dest_address
+                    instruction = 0x0c000000 | ((dest_address & 0x3ffffff) >> 2)
+                    f.write(instruction.to_bytes(4, 'little'))
+                elif call.is_enabled is False:
+                    f.write(b'\0\0\0\0')  # nop
+
+                argument_types = KNOWN_FUNCTIONS[call.name].arguments
+                for arg_type, (inst_addr, value) in zip(argument_types, call.arguments):
+                    if arg_type == ArgumentType.GAME_STATE:
+                        continue
+                    self.update_immediate(inst_addr, value, f)
+
+            self.update_immediate(callback.return_value_instruction, callback.return_value, f)
+
+    def update_immediate(self, inst_addr: int | None, value: int | None, f: BinaryIO):
+        if inst_addr is None or value is None:
+            return
+
+        offset = inst_addr - self.load_address
+        raw_word = self.raw_data[offset:offset + 4]
+        word = int.from_bytes(raw_word, 'little')
+        instruction = rabbitizer.Instruction(word, inst_addr)
+        # we only support immediate loads
+        # TODO: flag these arguments so the UI won't let the user try to change them
+        opcode = instruction.getOpcodeName()
+        if instruction.rs != rabbitizer.RegGprO32.zero or not (opcode == 'addiu' or
+                                                               (opcode == 'addu'
+                                                                and instruction.rt == rabbitizer.RegGprO32.zero)):
+            print(f'Warning: could not update {instruction} at {inst_addr:08X}')
+            return
+        if value > 0xffff:
+            raise ValueError(f'Value {value} is too large to encode as an immediate')
+        target_reg = (instruction.rd if opcode == 'addu' else instruction.rt).value
+        if value == 0:
+            # addu target,$zero,$zero
+            new_inst = (target_reg << 11) | 0x00000021
+        else:
+            # addiu target,$zero,imm
+            new_inst = 0x24000000 | (target_reg << 16) | value
+        f.seek(offset)
+        f.write(new_inst.to_bytes(4, 'little'))
+
     def validate_for_write(self):
         if len(self.layout.colliders) > self.MAX_COLLIDERS:
             raise ValueError(f'Too many colliders: max {self.MAX_COLLIDERS}, found {len(self.layout.colliders)}')
@@ -536,21 +634,44 @@ class RoomModule(FileFormat):
             'triggers': self.triggers.address + self.load_address,
             'entrances': [entrance_set.address + self.load_address for entrance_set in self.entrances],
             'numEntrances': len(self.entrances[0].entrances) if self.entrances else 0,
+            'functions': {f'{addr:08X}': asdict(callback) for addr, callback in self.functions.items()},
         }, f)
 
     @classmethod
-    def load_with_metadata(cls, path: Path) -> RoomModule:
+    def load_with_metadata(cls, path: Path, language: str = None) -> RoomModule:
         meta_path = path.with_suffix('.json')
         with meta_path.open() as f:
             metadata = json.load(f)
 
         load_address = metadata['loadAddress']
-        room_addresses = RoomAddresses(0, 0, set(metadata['actorLayouts']), {metadata['triggers']},
+        metadata_functions = metadata.get('functions')
+        if metadata_functions is None:
+            functions = None
+        else:
+            functions = {}
+            for hex_addr, callback in metadata.get('functions', {}).items():
+                functions[int(hex_addr, 16)] = CallbackFunction([FunctionCall(**call) for call in callback['calls']],
+                                                                callback['return_value_instruction'],
+                                                                callback['return_value'])
+
+        if language is not None:
+            addresses = REGION_ADDRESSES[language]
+            game_state = addresses['GameState']
+
+            known_functions = {}
+            for name in KNOWN_FUNCTIONS:
+                if name in addresses:
+                    known_functions[addresses[name]] = name
+        else:
+            game_state = 0
+            known_functions = None
+
+        room_addresses = RoomAddresses(game_state, 0, set(metadata['actorLayouts']), {metadata['triggers']},
                                        set(metadata['backgrounds']), {metadata['roomLayout']},
                                        set(metadata['entrances']), metadata['numEntrances'])
 
         data = path.read_bytes()
-        return cls.parse_with_addresses(data, load_address, room_addresses)
+        return cls.parse_with_addresses(data, load_address, room_addresses, functions, known_functions)
 
     @classmethod
     def _is_ptr(cls, p: int) -> bool:
@@ -759,15 +880,21 @@ class RoomModule(FileFormat):
                 return inst.getProcessedImmediate()
 
     @classmethod
-    def parse_function(cls, data: bytes, start_address: int, module_space: range, room_address: RoomAddresses,
-                       regs: list[Undefined | int]):
+    def parse_function(cls, data: bytes, start_address: int, module_space: range, regs: list[Register],
+                       room_address: RoomAddresses, known_functions: dict[int, str] = None,
+                       function_calls: list[FunctionCall] = None) -> tuple[int | None, int | None]:
         in_delay_slot = False
         jump_address = None
         do_return = False
         restore_regs = False
         grab_room_layout_ptr = False
         found_entrance_array = False
-        sources: list[Undefined | int] = [UNDEFINED for _ in regs]
+        ever_branched = False
+        function_name = None
+        arg_regs = [rabbitizer.RegGprO32.a0.value, rabbitizer.RegGprO32.a1.value, rabbitizer.RegGprO32.a2.value,
+                    rabbitizer.RegGprO32.a3.value]
+        if known_functions is None:
+            known_functions = {}
 
         for i in range(start_address, module_space.stop, 4):
             offset = i - module_space.start
@@ -778,55 +905,84 @@ class RoomModule(FileFormat):
 
             match inst.getOpcodeName():
                 case 'lui':
-                    regs[inst.rt.value] = inst.getProcessedImmediate() << 16
-                    sources[inst.rt.value] = UNDEFINED
+                    reg = regs[inst.rt.value]
+                    reg.value = inst.getProcessedImmediate() << 16
+                    reg.source = UNDEFINED
+                    reg.instruction = i
                 case 'addiu':
-                    regs[inst.rt.value] = regs[inst.rs.value] + inst.getProcessedImmediate()
-                    sources[inst.rt.value] = UNDEFINED
+                    reg = regs[inst.rt.value]
+                    reg.value = regs[inst.rs.value].value + inst.getProcessedImmediate()
+                    reg.source = UNDEFINED
+                    reg.instruction = i
                 case 'addu':
-                    regs[inst.rd.value] = regs[inst.rs.value] + regs[inst.rt.value]
-                    sources[inst.rd.value] = UNDEFINED
+                    reg = regs[inst.rd.value]
+                    reg.value = regs[inst.rs.value].value + regs[inst.rt.value].value
+                    reg.source = UNDEFINED
+                    reg.instruction = i
                 case 'jal':
+                    ever_branched = True
                     dest = inst.getInstrIndexAsVram()
                     in_delay_slot = True
-                    if dest in module_space:
-                        jump_address = dest
-                    elif dest == room_address.set_room_layout:
-                        grab_room_layout_ptr = True
+                    # when we're tracking function calls, we don't want to step into them, just record the interesting
+                    # ones
+                    if function_calls is None:
+                        if dest in module_space:
+                            jump_address = dest
+                        elif dest == room_address.set_room_layout:
+                            grab_room_layout_ptr = True
+                    elif dest in known_functions:
+                        function_name = known_functions[dest]
+                        # we can't grab the args yet because they could be set in the delay slot
                     continue
                 case 'jr':
                     in_delay_slot = True
                     do_return = inst.isJrRa()
                     continue
                 case 'sw':
-                    address = regs[inst.rs.value] + inst.getProcessedImmediate()
-                    value = regs[inst.rt.value]
-                    if address is not UNDEFINED and value is not UNDEFINED and value in module_space:
-                        room_address.set_by_address(address, value)
-                        if room_address.is_complete:
-                            return  # nothing left to do
+                    address = regs[inst.rs.value].value + inst.getProcessedImmediate()
+                    value_reg = regs[inst.rt.value]
+                    value = value_reg.value
+                    if address is not UNDEFINED and value is not UNDEFINED:
+                        if value in module_space:
+                            room_address.set_by_address(address, value)
+                            if room_address.is_complete:
+                                return None, None  # nothing left to do
+                        if (function_calls is not None
+                                and address == room_address.game_state + GameStateOffsets.MESSAGE_ID
+                                and value_reg.instruction is not UNDEFINED):
+                            # we'll treat this as a fake call to SetMessageId, because frequently the game just sets
+                            # the message ID directly instead of calling the function. we set is_enabled to None because
+                            # this isn't a real function call and can't be enabled or disabled
+                            instruction = value_reg.instruction
+                            call = FunctionCall(i, 'SetMessageId', [(instruction, value)], None)
+                            if call not in function_calls:
+                                function_calls.append(call)
                 case 'lw':
-                    address = regs[inst.rs.value] + inst.getProcessedImmediate()
+                    address = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     if address is not UNDEFINED:
-                        regs[inst.rt.value] = room_address.get_by_address(address)
-                        sources[inst.rt.value] = address
+                        reg = regs[inst.rt.value]
+                        reg.value = room_address.get_by_address(address)
+                        reg.source = address
+                        reg.instruction = i
                 case 'lh':
-                    address = regs[inst.rs.value] + inst.getProcessedImmediate()
+                    address = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     if address is not UNDEFINED:
-                        regs[inst.rt.value] = room_address.get_by_address(address) & 0xffff
-                        sources[inst.rt.value] = address
+                        reg = regs[inst.rt.value]
+                        reg.value = room_address.get_by_address(address) & 0xffff
+                        reg.source = address
+                        reg.instruction = i
                 case _:
                     if (is_branch := inst.isBranch()) and inst.readsRt() and inst.readsRs():
                         # first, check if we're comparing to the game state's lastRoom field; that will identify if this
                         # value came from the room's entrance array
                         had_found_entrance_array = found_entrance_array
-                        if (room_address.is_last_room_address(sources[inst.rt.value])
-                                and sources[inst.rs.value] is not UNDEFINED):
-                            room_address.entrances.add(sources[inst.rs.value])
+                        if (room_address.is_last_room_address(regs[inst.rt.value].source)
+                                and regs[inst.rs.value].source is not UNDEFINED):
+                            room_address.entrances.add(regs[inst.rs.value].source)
                             found_entrance_array = True
-                        elif (room_address.is_last_room_address(sources[inst.rs.value])
-                              and sources[inst.rt.value] is not UNDEFINED):
-                            room_address.entrances.add(sources[inst.rt.value])
+                        elif (room_address.is_last_room_address(regs[inst.rs.value].source)
+                              and regs[inst.rt.value].source is not UNDEFINED):
+                            room_address.entrances.add(regs[inst.rt.value].source)
                             found_entrance_array = True
 
                         # for some reason, this function can return a signed number, so do the two's complement
@@ -837,6 +993,7 @@ class RoomModule(FileFormat):
                             room_address.num_entrances = cls.find_entrance_count(data, dest, module_space)
 
                     if is_branch or inst.isJump():
+                        ever_branched = True
                         # for some reason, this function can return a signed number, so do the two's complement
                         dest = (inst.getBranchVramGeneric() + (1 << 32)) & 0xffffffff
 
@@ -845,58 +1002,107 @@ class RoomModule(FileFormat):
                             in_delay_slot = True
                             jump_address = dest
                             restore_regs = True
+                            do_return = inst.isUnconditionalBranch()
                             continue
-                        elif inst.isUnconditionalBranch():
-                            # if we encounter an unconditional backwards branch, exit this code path
+                        if inst.isUnconditionalBranch():
+                            # if we encounter an unconditional branch, exit this code path
                             in_delay_slot = True
                             do_return = True
                             continue
 
                     # wipe out any registers modified by instructions we don't know about
                     if inst.modifiesRt():
-                        regs[inst.rt.value] = UNDEFINED
-                        sources[inst.rt.value] = UNDEFINED
+                        reg = regs[inst.rt.value]
+                        reg.value = UNDEFINED
+                        reg.source = UNDEFINED
+                        reg.instruction = UNDEFINED
                     if inst.modifiesRd():
-                        regs[inst.rd.value] = UNDEFINED
-                        sources[inst.rd.value] = UNDEFINED
+                        reg = regs[inst.rd.value]
+                        reg.value = UNDEFINED
+                        reg.source = UNDEFINED
+                        reg.instruction = UNDEFINED
                     if inst.modifiesRs():
-                        regs[inst.rs.value] = UNDEFINED
-                        sources[inst.rs.value] = UNDEFINED
+                        reg = regs[inst.rs.value]
+                        reg.value = UNDEFINED
+                        reg.source = UNDEFINED
+                        reg.instruction = UNDEFINED
 
             if in_delay_slot:
                 in_delay_slot = False
 
+                if function_name is not None:
+                    needed_args = KNOWN_FUNCTIONS[function_name].arguments
+                    arg_values = []
+                    for arg_index, arg_type in enumerate(needed_args):
+                        reg_index = arg_regs[arg_index]
+                        reg = regs[reg_index]
+                        value = reg.value
+                        instruction = reg.instruction
+                        # we don't care about the game state argument because it's always the same, so if that one is
+                        # undefined, it's fine
+                        if (value is UNDEFINED or instruction is UNDEFINED) and arg_type != ArgumentType.GAME_STATE:
+                            break
+                        if value is UNDEFINED:
+                            value = None
+                        if instruction is UNDEFINED:
+                            instruction = None
+                        arg_values.append((instruction, value))
+                    else:
+                        # we didn't find any invalid arguments
+                        call = FunctionCall(i - 4, function_name, arg_values)
+                        if call not in function_calls:
+                            function_calls.append(call)
+                    function_name = None
+
                 if grab_room_layout_ptr:
-                    room_layout_ptr = regs[rabbitizer.RegGprO32.a2.value]
+                    room_layout_ptr = regs[rabbitizer.RegGprO32.a2.value].value
                     if room_layout_ptr is not UNDEFINED and room_layout_ptr in module_space:
                         room_address.room_layout.add(room_layout_ptr)
                     else:
                         raise ValueError('Found call to SetRoomLayout but a2 was undefined')
                     if room_address.is_complete:
-                        return  # nothing left to do
+                        return None, None  # nothing left to do
 
                 if jump_address is not None:
-                    regs_to_restore = [reg for reg in regs]
-                    cls.parse_function(data, jump_address, module_space, room_address, regs)
+                    regs_to_restore = [replace(reg) for reg in regs]
+                    cls.parse_function(data, jump_address, module_space, regs, room_address, known_functions,
+                                       function_calls)
                     if room_address.is_complete:
                         # we've found everything we were looking for; no need to keep parsing
-                        return
+                        return None, None
 
                     jump_address = None
                     if restore_regs:
                         regs = regs_to_restore
                         restore_regs = False
-                elif do_return:
-                    return
-                else:
+                elif not do_return:
                     # clobber registers
                     for j in range(1, len(regs)):
                         if not rabbitizer.RegGprO32.s0.value <= j <= rabbitizer.RegGprO32.s7.value:
-                            regs[j] = UNDEFINED
-                            sources[j] = UNDEFINED
+                            reg = regs[j]
+                            reg.value = UNDEFINED
+                            reg.source = UNDEFINED
+                            reg.instruction = UNDEFINED
+
+                if do_return:
+                    # we don't do this logic in any of the other returns because those are all handling filling out the
+                    # room addresses, and we only care about the return value when we're tracing function calls
+                    return_value_instruction = None
+                    return_value = None
+                    # if we ever branched, then we don't have a way to keep track of whether any return value we ended
+                    # up with varied by branch, so we exclude those. we only track a hard-coded return value when there
+                    # was only one path through the code meaning it was the only return value we could've gotten.
+                    if not ever_branched:
+                        reg = regs[rabbitizer.RegGprO32.v0.value]
+                        if reg.instruction is not UNDEFINED and reg.value is not UNDEFINED:
+                            return_value_instruction = reg.instruction
+                            return_value = reg.value
+                    return return_value_instruction, return_value
 
     @classmethod
-    def parse_with_addresses(cls, data: bytes, load_address: int, room_addresses: RoomAddresses) -> RoomModule:
+    def parse_with_addresses(cls, data: bytes, load_address: int, room_addresses: RoomAddresses,
+                             functions: dict[int, CallbackFunction] = None,
+                             known_functions: dict[int, str] = None) -> RoomModule:
         module_id = int.from_bytes(data[:4], 'little')
 
         actor_layouts = []
@@ -931,7 +1137,26 @@ class RoomModule(FileFormat):
             offset = address - load_address
             entrance_sets.append(cls.parse_entrances(data, offset, room_addresses.num_entrances, room_addresses))
 
-        return cls(module_id, room_layout, backgrounds, actor_layouts, triggers, entrance_sets, load_address, data)
+        if functions is None:
+            functions = {}
+            for trigger in triggers.triggers:
+                if trigger.enabled_callback != 0:
+                    functions[trigger.enabled_callback] = CallbackFunction([], None, None)
+                if trigger.trigger_callback != 0:
+                    functions[trigger.trigger_callback] = CallbackFunction([], None, None)
+
+            if known_functions is not None:
+                for address, function in functions.items():
+                    regs = [Register() for _ in range(32)]
+                    regs[0].value = 0
+                    regs[rabbitizer.RegGprO32.a0.value].value = room_addresses.game_state
+                    rvi, rv = cls.parse_function(data, address, range(load_address, load_address + len(data)), regs,
+                                                 room_addresses, known_functions, function.calls)
+                    function.return_value_instruction = rvi
+                    function.return_value = rv
+
+        return cls(module_id, room_layout, backgrounds, actor_layouts, triggers, entrance_sets, load_address, data,
+                   functions)
 
     @classmethod
     def parse(cls, f: BinaryIO, language: str, entry_point: int) -> RoomModule:
@@ -944,18 +1169,23 @@ class RoomModule(FileFormat):
         if (entry_point - load_address) >= len(data):
             # this is a stub; return a dummy module
             return cls(module_id, RoomLayout(), [], [], TriggerSet(), [], load_address,
-                       data)
+                       data, {})
 
         game_state = addresses['GameState']
-        regs: list[Undefined | int] = [UNDEFINED] * 32
-        regs[0] = 0
-        regs[rabbitizer.RegGprO32.a0.value] = game_state
+        regs = [Register() for _ in range(32)]
+        regs[0].value = 0
+        regs[rabbitizer.RegGprO32.a0.value].value = game_state
         room_addresses = RoomAddresses(game_state, addresses['SetRoomLayout'])
-        cls.parse_function(data, entry_point, range(load_address, load_address + len(data)), room_addresses, regs)
+        cls.parse_function(data, entry_point, range(load_address, load_address + len(data)), regs, room_addresses)
         if not room_addresses.is_valid:
             raise ValueError('Failed to parse room structure')
 
-        return cls.parse_with_addresses(data, load_address, room_addresses)
+        known_functions = {}
+        for name in KNOWN_FUNCTIONS:
+            if name in addresses:
+                known_functions[addresses[name]] = name
+
+        return cls.parse_with_addresses(data, load_address, room_addresses, known_functions=known_functions)
 
     @classmethod
     def load(cls, f: BinaryIO, load_address: int) -> RoomModule:
@@ -1033,7 +1263,7 @@ class RoomModule(FileFormat):
                     pass
 
         return cls(module_id, room_layout, [backgrounds], actor_layouts, triggers, [], load_address,
-                   data)
+                   data, {})
 
 
 def dump_info(module_path: str, language: str | None, force: bool, json_path: str | None, entry_point: int = None):

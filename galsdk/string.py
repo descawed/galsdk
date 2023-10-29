@@ -57,6 +57,22 @@ class StringDb(FileFormat):
         :param string: The byte string to append to the database
         """
 
+    @abstractmethod
+    def get_by_id(self, string_id: int) -> str:
+        """Get a string from the database with the ID used by the game engine"""
+
+    @abstractmethod
+    def get_index_from_id(self, string_id: int) -> int:
+        """Get a string's index in the database with the ID used by the game engine"""
+
+    @abstractmethod
+    def iter_ids(self) -> Iterable[tuple[int, str]]:
+        """Iterate through the strings in the database as (ID, string) pairs"""
+
+    @abstractmethod
+    def iter_both_ids(self) -> Iterable[tuple[int, tuple[bytes, str]]]:
+        """Iterate over the strings as both raw and decoded strings with their IDs"""
+
 
 # we keep everything as bytes internally because there are some cases where there are bogus characters in the data
 # that we don't want to overwrite unless requested
@@ -197,6 +213,18 @@ class LatinStringDb(StringDb):
         """
         self.strings.append(string)
 
+    def get_by_id(self, string_id: int) -> str:
+        return self[string_id]
+
+    def get_index_from_id(self, string_id: int) -> int:
+        return string_id
+
+    def iter_ids(self) -> Iterable[tuple[int, str]]:
+        return enumerate(self)
+
+    def iter_both_ids(self) -> Iterable[tuple[int, tuple[bytes, str]]]:
+        return enumerate(self.iter_both())
+
 
 class JapaneseStringDb(StringDb):
     BASIC = (
@@ -243,6 +271,24 @@ class JapaneseStringDb(StringDb):
         '',
         '',
     ]
+
+    CODE_NAMES = {
+        32769: 'r',
+        32770: 'w',
+        32771: 'p',
+        32772: 'l',
+        32773: 'y',
+        32774: 'c',
+    }
+
+    NAME_CODES = {
+        'r': 32769,
+        'w': 32770,
+        'p': 32771,
+        'l': 32772,
+        'y': 32773,
+        'c': 32774,
+    }
 
     strings: list[bytes]
 
@@ -336,7 +382,14 @@ class JapaneseStringDb(StringDb):
             c = string[i]
             if c == '<':
                 end = string[i:].index('>')
-                code = int(string[i+1:end])
+                str_code = string[i+1:end].lower()
+                if str_code in cls.NAME_CODES:
+                    code = cls.NAME_CODES[str_code]
+                elif str_code.startswith('k:'):
+                    kanji_index = int(str_code.split(':', 1)[1])
+                    code = kanji_index | 0x800
+                else:
+                    code = int(str_code)
                 out.append(code)
                 i = end
             elif c in cls.BASIC:
@@ -357,7 +410,10 @@ class JapaneseStringDb(StringDb):
                 c = '\0'
                 expect_argument = False
             elif code & 0xc000:
-                c = '\0'
+                if code in cls.CODE_NAMES:
+                    c = '<' + cls.CODE_NAMES[code] + '>'
+                else:
+                    c = '\0'
                 expect_argument = (code & 0xff) in [3, 6]
             else:
                 if code & 0x800:
@@ -365,7 +421,7 @@ class JapaneseStringDb(StringDb):
                         c = cls.KANJI[stage_index][code & 0xff]
                     except IndexError:
                         if allow_unknown:
-                            c = '\0'
+                            c = f'<k:{code & 0xff}>'
                         else:
                             raise
                 else:
@@ -399,6 +455,29 @@ class JapaneseStringDb(StringDb):
     def __len__(self) -> int:
         """Number of strings in the database"""
         return len(self.strings)
+
+    def get_index_from_id(self, string_id: int) -> int:
+        """Get a string's index in the database by its offset in the file"""
+        for i, (current_id, s) in enumerate(self.iter_ids()):
+            if current_id == string_id:
+                return i
+            if current_id > string_id:
+                raise ValueError(f'{string_id} was not found')
+        raise ValueError(f'{string_id} was not found')
+
+    def get_by_id(self, string_id: int) -> str:
+        """Get a string from the database by its offset in the file"""
+        return self[self.get_index_from_id(string_id)]
+
+    def iter_both_ids(self) -> Iterable[tuple[int, tuple[bytes, str]]]:
+        current = 0
+        for s in self.strings:
+            yield current, (s, self.decode(s, self.kanji_index or 0))
+            current += len(s) + 2  # +2 for the delimiter
+
+    def iter_ids(self) -> Iterable[tuple[int, str]]:
+        for i, (_, s) in self.iter_both_ids():
+            yield i, s
 
     def iter_raw(self) -> Iterable[bytes]:
         """Iterate over the strings as raw (un-decoded) bytes"""

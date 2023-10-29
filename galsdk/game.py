@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, auto
+from typing import Self
 
 from psx import Region
 
@@ -15,12 +16,20 @@ class Stage(str, Enum):
     def __str__(self):
         return self.value
 
+    def __int__(self) -> int:
+        return list(type(self)).index(self)
+
+    @classmethod
+    def from_int(cls, int_index: int) -> Self:
+        return list(cls)[int_index]
+
 
 class GameStateOffsets(IntEnum):
     LAST_ROOM = 0xE
     BACKGROUNDS = 0x18
     ACTOR_LAYOUTS = 0x2C
     TRIGGERS = 0x30
+    MESSAGE_ID = 0x44
 
 
 KEY_ITEM_NAMES = [
@@ -74,10 +83,118 @@ MED_ITEM_NAMES = [
     'Appollinar',
     'Skip',
 ]
+MAP_NAMES = [
+    'Hospital 15F',
+    'Hospital 14F',
+    'Hospital 13F',
+    'Your House 1F',
+    'Your House 2F',
+    'Hotel 1F',
+    'Hotel 2F',
+    'Hotel 3F',
+    'Mushroom Tower',
+]
 NUM_KEY_ITEMS = len(KEY_ITEM_NAMES)
 NUM_MED_ITEMS = len(MED_ITEM_NAMES)
-NUM_MAPS = 9
+NUM_MAPS = len(MAP_NAMES)
+NUM_MOVIES = 65
 MODULE_ENTRY_SIZE = 8
+
+
+class ArgumentType(Enum):
+    INTEGER = auto()
+    KEY_ITEM = auto()
+    MESSAGE = auto()
+    MAP = auto()
+    ROOM = auto()
+    STAGE = auto()
+    MED_ITEM = auto()
+    GAME_STATE = auto()
+    MOVIE = auto()
+
+
+@dataclass
+class Function:
+    arguments: list[ArgumentType]
+    returns_value: bool = False
+
+
+KNOWN_FUNCTIONS = {
+    'GetStateFlag': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,
+    ], True),
+    'SetStateFlag': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,
+    ]),
+    'ClearStateFlag': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,
+    ]),
+    'GetStageStateFlag': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,
+        ArgumentType.STAGE,
+    ], True),
+    'SetStageStateFlag': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,
+        ArgumentType.STAGE,
+    ]),
+    'ClearStageStateFlag': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,
+        ArgumentType.STAGE,
+    ]),
+    'PickUpFile': Function([
+        ArgumentType.INTEGER,
+        ArgumentType.KEY_ITEM,
+    ]),
+    'PickUpKeyItem': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.KEY_ITEM,
+        ArgumentType.MESSAGE,
+        ArgumentType.INTEGER,
+        # there's actually a 5th argument which is some pointer, but we don't currently support stack arguments and I
+        # also don't know enough about what it points to to edit it
+    ]),
+    'PickUpMedItem': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.MED_ITEM,
+        ArgumentType.INTEGER,
+    ], True),
+    'SetMessageId': Function([
+        ArgumentType.MESSAGE,
+    ]),
+    'ChangeStage': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.STAGE,
+    ]),
+    'GoToRoom': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.MAP,
+        ArgumentType.ROOM,
+        ArgumentType.INTEGER,  # door sound ID
+    ]),
+    'PlayMovie': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.MOVIE,
+        ArgumentType.INTEGER,
+        ArgumentType.INTEGER,
+    ]),
+    'ShowItemTim': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,  # index in ITEMTIM.CDB
+    ]),
+    'SaveMenu': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,
+        ArgumentType.MESSAGE,
+        ArgumentType.INTEGER,
+        # unsupported 5th argument
+    ]),
+}
 
 
 @dataclass
@@ -155,8 +272,24 @@ REGION_ADDRESSES = {
         'MenuXScaleStart': 0x801917A4,
         'MenuXScaleStop': 0x801917B0,
         'GameState': 0x801AF308,
+        'Movies': 0x80191F78,
         'SetRoomLayout': 0x8012E980,
         'SetCollisionObjects': 0x80121194,
+        'GetStateFlag': 0x80128600,
+        'GetStageStateFlag': 801284E8,
+        'SetStateFlag': 0x80128380,
+        'SetStageStateFlag': 0x80128220,
+        'ClearStateFlag': 0x8012812C,
+        'ClearStageStateFlag': 0x80127F20,
+        'PickUpFile': 0x80138DA0,
+        'SetMessageId': 0x80129B84,
+        'GoToRoom': 0x801201B8,
+        'ChangeStage': 0x8012016C,
+        'PickUpMedItem': 0x8011E798,
+        'PickUpKeyItem': 0x8011E7C4,
+        'PlayMovie': 0x8011FE44,
+        'ShowItemTim': 0x8015EA7C,
+        'SaveMenu': 0x80125928,
     },
     'ja': {
         'FontPages': 0x8019144C,
@@ -173,8 +306,23 @@ REGION_ADDRESSES = {
         'XaDef3': 0x801938D0,
         'XaDefEnd': 0x8019392C,
         'GameState': 0x801AF910,
+        'Movies': 0x80191C9C,
         'SetRoomLayout': 0x8012F400,
         'SetCollisionObjects': 0x80123A70,
+        'GetStateFlag': 0x8012A688,
+        'GetStageStateFlag': 0x8012A7B0,
+        'SetStateFlag': 0x8012A8C8,
+        'SetStageStateFlag': 0x8012AA30,
+        'ClearStateFlag': 0x8012AB90,
+        'ClearStageStateFlag': 0x8012AD10,
+        'GoToRoom': 0x80122A5C,
+        'ChangeStage': 0x80122A10,
+        'PickUpFile': 0x80139F10,
+        'PickUpKeyItem': 0x80120F10,
+        'PickUpMedItem': 0x80120EE4,
+        'PlayMovie': 0x801225F4,
+        'ShowItemTim': 0x8015FAA8,
+        'SaveMenu': 0x80128174,
     },
 }
 
