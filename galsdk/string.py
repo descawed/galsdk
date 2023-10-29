@@ -22,7 +22,7 @@ class StringDb(FileFormat):
         """Get a string from the database"""
 
     @abstractmethod
-    def __setitem__(self, key: int, value: str):
+    def __setitem__(self, key: int, value: str | bytes):
         """Change a string in the database"""
 
     @abstractmethod
@@ -167,9 +167,9 @@ class LatinStringDb(StringDb):
         """Get a string from the database"""
         return self.strings[item].decode(self.encoding, 'replace')
 
-    def __setitem__(self, key: int, value: str):
+    def __setitem__(self, key: int, value: str | bytes):
         """Change a string in the database"""
-        self.strings[key] = value.encode(self.encoding)
+        self.strings[key] = value if isinstance(value, bytes) else value.encode(self.encoding)
 
     def __iter__(self) -> Iterable[str]:
         """Iterate over the strings in the database"""
@@ -180,13 +180,11 @@ class LatinStringDb(StringDb):
         """Number of strings in the database"""
         return len(self.strings)
 
-    @classmethod
-    def decode(cls, data: bytes, stage_index: int) -> str:
-        return data.decode(cls.DEFAULT_ENCODING, 'replace')
+    def decode(self, data: bytes, stage_index: int) -> str:
+        return data.decode(self.encoding, 'replace')
 
-    @classmethod
-    def encode(cls, string: str, stage_index: int) -> bytes:
-        return string.encode(cls.DEFAULT_ENCODING)
+    def encode(self, string: str, stage_index: int) -> bytes:
+        return string.encode(self.encoding)
 
     def iter_raw(self) -> Iterable[bytes]:
         """Iterate over the strings as raw (un-decoded) bytes"""
@@ -381,7 +379,7 @@ class JapaneseStringDb(StringDb):
         while i < len(string):
             c = string[i]
             if c == '<':
-                end = string[i:].index('>')
+                end = string.index('>', i)
                 str_code = string[i+1:end].lower()
                 if str_code in cls.NAME_CODES:
                     code = cls.NAME_CODES[str_code]

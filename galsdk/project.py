@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import functools
 import io
 import json
 import re
@@ -555,19 +556,35 @@ class Project:
         font_type = JapaneseFont if self.version.region == Region.NTSC_J else LatinFont
         return font_type.load(self.project_dir)
 
-    def get_stage_strings(self, stage: Stage) -> StringDb:
+    @functools.cache
+    def get_stage_strings(self, stage: Stage) -> FromManifest[StringDb]:
+        """
+        Get the string database for the given stage.
+
+        :param stage: The stage for which to get the string database
+        :return: The string database. Subsequent calls to this function for the same stage always return the same
+        database object.
+        """
+
         path = self.project_dir / 'stages' / stage / 'stage.json'
         with path.open('r') as f:
             stage_info = json.load(f)
         stage_index = stage_info['index']
         string_path = self.project_dir / stage_info['strings']
-        with string_path.open('rb') as f:
-            if self.version.region == Region.NTSC_J:
-                return JapaneseStringDb.read(f, kanji_index=stage_index)
-            else:
-                return LatinStringDb.read(f)
+        manifest = Manifest.load_from(string_path.parent)
+        if self.version.region == Region.NTSC_J:
+            return manifest.load_file(string_path.name, JapaneseStringDb, kanji_index=stage_index)
+        else:
+            return manifest.load_file(string_path.name, LatinStringDb)
 
-    def get_unmapped_strings(self) -> Iterable[tuple[str, StringDb]]:
+    @functools.cache
+    def get_unmapped_strings(self) -> list[FromManifest[StringDb]]:
+        """
+        Get a list of unmapped strings (string databases not mapped to any stage)
+
+        :return: A list of databases. Subsequent calls to this function always return the same list object.
+        """
+
         mapped_strings = set()
         for stage in Stage:
             path = self.project_dir / 'stages' / stage / 'stage.json'
@@ -576,11 +593,12 @@ class Project:
             mapped_strings.add(self.project_dir / stage_info['strings'])
 
         messages = Manifest.load_from(self.project_dir / 'messages')
+        databases = []
         for entry in messages:
             if entry.path not in mapped_strings:
-                with entry.path.open('rb') as f:
-                    # unmapped strings are always in Japanese
-                    yield entry.name, JapaneseStringDb.read(f)
+                # unmapped strings are always in Japanese
+                databases.append(messages.load_file(entry.name, JapaneseStringDb))
+        return databases
 
     def get_stage_rooms(self, stage: Stage) -> Iterable[FromManifest[RoomModule]]:
         manifest = Manifest.load_from(self.project_dir / 'modules')

@@ -3,8 +3,8 @@ Editor and utilities for the PSX game Galerians (1999). Requires Python 3.11.
 
 ## Editor
 The editor is a GUI application for exploring the game's files. Run it from the repo's root directory with
-`python -m galsdk.editor`. At the moment, only room changes can actually be saved and exported. Support for editing
-other files will be added in the future.
+`python -m galsdk.editor`. At the moment, only room and string changes can actually be saved and exported. Support for
+editing other files will be added in the future.
 
 ### Projects
 A project is a folder where the editor extracts game files and their metadata. Before you can view anything in the
@@ -67,10 +67,10 @@ changes to a playable CD image, use File > Export (make sure to save first).
     actor" flag is set. Note that there is no flag for Actor 0 because Actor 0 is always the player.
 - **String** - This tab shows the game's message strings. "Messages" exclusively means the messages that appear at the
   bottom of the screen, e.g. when inspecting objects; all other text consists of standalone images. Each stage of the
-  game has a separate message file, so this tab groups messages by stage. Some versions of the game also include
-  additional debug strings which will show as a group called "Unmapped". When clicking on a string, you will be shown an
-  image of that string rendered in the game font as well as a text box to edit the string. There are various control
-  codes that can be used depending on the version of the game.
+  game has a separate message file, so this tab groups messages by stage. There also additional debug strings that go in
+  their own group. When clicking on a string, you will be shown an image of that string rendered in the game font as
+  well as a text box to edit the string. There are various control codes that can be used depending on the version of
+  the game.
   - The English (and presumably other non-Japanese) versions of the game use control codes prefixed with $. The
     available codes are as follows:
     - $c(n) - Change text color. n is the index of the CLUT to use in the font TIM file. Valid indexes are 0 (white),
@@ -98,6 +98,13 @@ changes to a playable CD image, use File > Export (make sure to save first).
     - \<y> - Display a yes/no prompt.
     - \<c>\<n> - Change text color. n is the index of the CLUT to use in the font TIM file. Valid indexes are 0
       (white), 1 (red), and 4 (yellow).
+    
+    The last caveat is that the Japanese version of the game references strings by their offset in the file rather than
+    by index like the Western versions do. This means that if you change the length of a string, you'll break every
+    string that comes after it in that group. If you want to make the string shorter, you can try padding back to the
+    original length with spaces and/or color control codes, which take up no space and will be invisible if no text
+    comes after them. If you want to make it longer, there's no option but to patch the game code with the updated
+    offsets.
 - **Actor** - This tab allows you to view the 3D model for each actor in the game. The number preceding the actor name
   in the list is the actor ID. Note that this is not the same ID shown in the actor section of the Room tab, which
   identifies a specific placed *instance* of an actor. All of these models are also viewable on the Model tab. The

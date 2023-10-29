@@ -5,10 +5,11 @@ from tkinter import ttk
 from PIL import ImageTk
 
 from galsdk import util
-from galsdk.ui.tab import Tab
-from galsdk.project import Project
 from galsdk.game import Stage
+from galsdk.manifest import FromManifest
+from galsdk.project import Project
 from galsdk.string import StringDb
+from galsdk.ui.tab import Tab
 
 
 @dataclass
@@ -16,7 +17,8 @@ class GameString:
     raw: bytes
     text: str
     stage_index: int
-    source_db: StringDb
+    source_db: FromManifest[StringDb]
+    db_id: int
 
 
 class StringTab(Tab):
@@ -31,30 +33,35 @@ class StringTab(Tab):
         self.strings = []
         self.current_index = None
         self.font = project.get_font()
+        self.dbs = {}
+        self.changed_dbs = set()
 
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
 
-        for i, (name, string_db) in enumerate(project.get_unmapped_strings()):
+        for i, string_db in enumerate(project.get_unmapped_strings()):
             iid = f'unmapped_{i}'
-            self.tree.insert('', tk.END, text=name, iid=iid, open=False)
-            for j, (raw, string) in string_db.iter_both_ids():
+            self.dbs[f'{string_db.manifest.name}/{string_db.file.name}'] = string_db
+            self.tree.insert('', tk.END, text=string_db.file.name, iid=iid, open=False)
+            for j, (raw, string) in string_db.obj.iter_both_ids():
                 string_id = len(self.strings)
-                self.strings.append(GameString(raw, string, 0, string_db))
+                self.strings.append(GameString(raw, string, 0, string_db, j))
                 preview = f'{j}: {string}'
                 if len(preview) > self.MAX_PREVIEW_LEN:
                     preview = preview[:self.MAX_PREVIEW_LEN - 3] + '...'
                 self.tree.insert(iid, tk.END, text=preview, iid=str(string_id))
 
-        for i, stage in enumerate(Stage):
+        for stage in Stage:
             stage: Stage
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
 
+            stage_index = int(stage)
             string_db = project.get_stage_strings(stage)
-            for j, (raw, string) in string_db.iter_both_ids():
+            self.dbs[f'{string_db.manifest.name}/{string_db.file.name}'] = string_db
+            for j, (raw, string) in string_db.obj.iter_both_ids():
                 string_id = len(self.strings)
-                self.strings.append(GameString(raw, string, i, string_db))
+                self.strings.append(GameString(raw, string, stage_index, string_db, j))
                 preview = f'{j}: {string}'
                 if len(preview) > self.MAX_PREVIEW_LEN:
                     preview = preview[:self.MAX_PREVIEW_LEN-3] + '...'
@@ -98,11 +105,23 @@ class StringTab(Tab):
     def string_changed(self, _=None):
         text = self.text_box.get('1.0', tk.END).strip('\n')
         string = self.strings[self.current_index]
-        try:
-            string.raw = string.source_db.encode(text, string.stage_index)
-            self.show()
-        except (IndexError, ValueError):
-            pass  # user is probably editing
+        if text != string.text:
+            try:
+                db = string.source_db.obj
+                string.raw = db.encode(text, string.stage_index)
+                self.show()
+            except (IndexError, ValueError):
+                return  # user is probably editing
+
+            string.text = text
+            preview = f'* {string.db_id}: {string.text}'
+            if len(preview) > self.MAX_PREVIEW_LEN:
+                preview = preview[:self.MAX_PREVIEW_LEN - 3] + '...'
+            self.tree.item(str(self.current_index), text=preview)
+            db_index = db.get_index_from_id(string.db_id)
+            db[db_index] = string.raw
+            self.changed_dbs.add(f'{string.source_db.manifest.name}/{string.source_db.file.name}')
+            self.notify_change()
 
     def select_string(self, _):
         try:
@@ -117,3 +136,13 @@ class StringTab(Tab):
             self.text_box.delete('1.0', tk.END)
             self.text_box.insert('1.0', string.text)
             self.show()
+
+    @property
+    def has_unsaved_changes(self) -> bool:
+        return len(self.changed_dbs) > 0
+
+    def save(self):
+        for db_name in self.changed_dbs:
+            db = self.dbs[db_name]
+            db.save()
+        self.changed_dbs.clear()

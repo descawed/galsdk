@@ -181,10 +181,16 @@ def scale_to_fit(original_width: int, original_height: int, available_width: int
                  max_scale: int) -> tuple[int, int]:
     if original_width > original_height:
         new_width = min(available_width, original_width * max_scale)
-        new_height = original_height * (new_width / original_width)
+        try:
+            new_height = original_height * (new_width / original_width)
+        except ZeroDivisionError:
+            new_height = 0
     else:
         new_height = min(available_height, original_height * max_scale)
-        new_width = original_width * (new_height / original_height)
+        try:
+            new_width = original_width * (new_height / original_height)
+        except ZeroDivisionError:
+            new_width = 0
 
     if new_width > available_width:
         new_height *= available_width / new_width

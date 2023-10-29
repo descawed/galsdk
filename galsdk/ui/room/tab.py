@@ -537,7 +537,7 @@ class RoomTab(Tab):
             stage: Stage
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
 
-            self.strings[stage] = dict(self.project.get_stage_strings(stage).iter_ids())
+            self.strings[stage] = self.project.get_stage_strings(stage).obj
 
             for room in self.project.get_stage_rooms(stage):
                 room_id = len(self.rooms)
@@ -854,8 +854,12 @@ class RoomTab(Tab):
             for i in range(len(container)):
                 self.tree.insert(iid, tk.END, text=f'#{i}', iid=f'{group}_{i}_{room_id}')
 
-    def select_item(self, _):
-        iid = self.tree.selection()[0]
+    def select_item(self, _=None):
+        selection = self.tree.selection()
+        if not selection:
+            return
+
+        iid = selection[0]
         room_level_ids = ['room', 'actors', 'colliders', 'cameras', 'cuts', 'triggers', 'entrances']
         object_ids = ['collider', 'trigger', 'cut', 'camera']
         if any(iid.startswith(f'{room_level_id}_') for room_level_id in room_level_ids):
@@ -905,8 +909,8 @@ class RoomTab(Tab):
                 case 'trigger':
                     obj = self.viewport.triggers[object_id]
                     room = self.rooms[self.current_room].obj
-                    editor = TriggerEditor(obj, self.strings[room.name[0]], self.room_names_by_map, self.movies,
-                                           self.viewport.functions, self)
+                    editor = TriggerEditor(obj, dict(self.strings[room.name[0]].iter_ids()), self.room_names_by_map,
+                                           self.movies, self.viewport.functions, self)
                 case 'cut':
                     obj = self.viewport.cuts[object_id]
                     editor = CameraCutEditor(obj, self)
@@ -949,15 +953,17 @@ class RoomTab(Tab):
 
     def set_active(self, is_active: bool):
         self.viewport.set_active(is_active)
+        self.update_room()
         if is_active:
             self.resize_3d()
-        self.update_room()
+            # update the current view in case something changed while we were inactive
+            self.select_item()
 
     @property
     def has_unsaved_changes(self) -> bool:
         return len(self.changed_room_ids) > 0
 
-    def clear_change_markers(self, iid=None):
+    def clear_change_markers(self, iid: str = None):
         for child in self.tree.get_children(iid):
             name = self.tree.item(child, 'text')
             if name.startswith('* '):
