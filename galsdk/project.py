@@ -336,7 +336,7 @@ class Project:
                             module_manifest.rename(index, f'{module.name}_{index}', ext=module.suggested_extension)
 
                         new_metadata_path = module_manifest[index].path.with_suffix('.json')
-                        with new_metadata_path.with_suffix('.json').open('w') as f:
+                        with new_metadata_path.open('w') as f:
                             module.save_metadata(f)
 
         x_scales = []

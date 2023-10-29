@@ -479,7 +479,7 @@ class RoomModule(FileFormat):
             return cls.load(f, REGION_ADDRESSES[language]['ModuleLoadAddresses'][0])
         return cls.parse(f, language, entry_point)
 
-    def write(self, f: BinaryIO, **kwargs):
+    def write(self, f: BinaryIO, *, language: str = None, **kwargs):
         self.validate_for_write()
 
         f.write(self.raw_data)
@@ -547,6 +547,57 @@ class RoomModule(FileFormat):
         if self.triggers.address > 0:
             f.seek(self.triggers.address)
             f.write(self.triggers.encode())
+
+        addresses = None
+        if language is not None:
+            addresses = REGION_ADDRESSES[language]
+        for address, callback in self.functions.items():
+            for call in callback.calls:
+                offset = call.call_address - self.load_address
+                f.seek(offset)
+                if call.is_enabled and addresses is not None:
+                    dest_address = addresses[call.name]
+                    # jal dest_address
+                    instruction = 0x0c000000 | ((dest_address & 0x3ffffff) >> 2)
+                    f.write(instruction.to_bytes(4, 'little'))
+                elif call.is_enabled is False:
+                    f.write(b'\0\0\0\0')  # nop
+
+                argument_types = KNOWN_FUNCTIONS[call.name].arguments
+                for arg_type, (inst_addr, value) in zip(argument_types, call.arguments):
+                    if arg_type == ArgumentType.GAME_STATE:
+                        continue
+                    self.update_immediate(inst_addr, value, f)
+
+            self.update_immediate(callback.return_value_instruction, callback.return_value, f)
+
+    def update_immediate(self, inst_addr: int | None, value: int | None, f: BinaryIO):
+        if inst_addr is None or value is None:
+            return
+
+        offset = inst_addr - self.load_address
+        raw_word = self.raw_data[offset:offset + 4]
+        word = int.from_bytes(raw_word, 'little')
+        instruction = rabbitizer.Instruction(word, inst_addr)
+        # we only support immediate loads
+        # TODO: flag these arguments so the UI won't let the user try to change them
+        opcode = instruction.getOpcodeName()
+        if instruction.rs != rabbitizer.RegGprO32.zero or not (opcode == 'addiu' or
+                                                               (opcode == 'addu'
+                                                                and instruction.rt == rabbitizer.RegGprO32.zero)):
+            print(f'Warning: could not update {instruction} at {inst_addr:08X}')
+            return
+        if value > 0xffff:
+            raise ValueError(f'Value {value} is too large to encode as an immediate')
+        target_reg = (instruction.rd if opcode == 'addu' else instruction.rt).value
+        if value == 0:
+            # addu target,$zero,$zero
+            new_inst = (target_reg << 11) | 0x00000021
+        else:
+            # addiu target,$zero,imm
+            new_inst = 0x24000000 | (target_reg << 16) | value
+        f.seek(offset)
+        f.write(new_inst.to_bytes(4, 'little'))
 
     def validate_for_write(self):
         if len(self.layout.colliders) > self.MAX_COLLIDERS:
