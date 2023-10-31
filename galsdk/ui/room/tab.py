@@ -9,7 +9,7 @@ from typing import Callable, Literal
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
 from panda3d.core import (CollisionHandlerQueue, CollisionNode, CollisionPlane, CollisionRay, CollisionTraverser,
-                          GeomNode, KeyboardButton, MouseButton, NodePath, Plane, Vec3)
+                          GeomNode, KeyboardButton, LPoint3, MouseButton, NodePath, Plane, Vec3)
 from PIL import Image
 
 from galsdk import util
@@ -83,7 +83,6 @@ class RoomViewport(Viewport):
         self.entrance_node = self.render_target.attachNewNode('room_viewport_entrances')
         self.functions = {}
 
-        self.default_fov = None
         self.project = project
         self.stage_backgrounds = {}
         for stage in Stage:
@@ -195,7 +194,9 @@ class RoomViewport(Viewport):
                                self.camera_view.position.panda_z)
             self.camera.lookAt(self.camera_target)
             self.camera_target_model.setHpr(self.camera, 0, 90, 0)
-            self.camera.node().getLens().setMinFov(self.camera_view.fov)
+            vfov = self.camera_view.fov
+            hfov = vfov * self.aspect_ratio
+            self.camera.node().getLens().setFov(hfov, vfov)
             if self.background:
                 distance = self.calculate_screen_fill_distance(self.background.width, self.background.height)
                 self.background.node_path.setPos(0, distance, 0)
@@ -226,9 +227,6 @@ class RoomViewport(Viewport):
         self.set_bg()
 
     def set_camera_view(self, camera: CameraObject | None):
-        if self.default_fov is None and self.camera is not None:
-            self.default_fov = self.camera.node().getLens().getMinFov()
-
         if self.background:
             self.background.remove_from_scene()
             self.background = None
@@ -262,7 +260,7 @@ class RoomViewport(Viewport):
             self.set_bg()
         else:
             self.camera_target.hide()
-            self.camera.node().getLens().setMinFov(self.default_fov)
+            self.camera.node().getLens().setAspectRatio(self.aspect_ratio)
             camera_distance = self.get_default_camera_distance()
             self.max_zoom = camera_distance * 4
             if self.wall:
@@ -436,23 +434,45 @@ class RoomViewport(Viewport):
         if not self.has_focus:
             return Task.cont
 
+        if self.was_dragging_last_frame or self.was_panning_last_frame:
+            # let the base viewport handle this
+            return super().watch_mouse(_)
+
         is_mouse1_down = self.base.mouseWatcherNode.isButtonDown(MouseButton.one())
-        if is_mouse1_down and not self.was_mouse1_down_last_frame:
+        if is_mouse1_down or self.selected_item is not None:
             mouse_pos = self.base.mouseWatcherNode.getMouse()
             self.picker_ray.setFromLens(self.camera.node(), mouse_pos.getX(), mouse_pos.getY())
             self.collision_traverser.traverse(self.render_target)
             if self.collision_queue.getNumEntries() > 0:
                 self.collision_queue.sortEntries()
+                chosen_object = None
                 for entry in self.collision_queue.entries:
                     node_path = entry.getIntoNodePath()
                     if not node_path.isHidden() and (object_name := node_path.getNetTag('object_name')):
-                        if self.selected_item is None or self.selected_item[0].name != object_name:
-                            for listener in self.select_listeners:
-                                listener(object_name)
-                        self.was_mouse1_down_last_frame = is_mouse1_down
-                        self.was_dragging_last_frame = False
-                        return Task.cont
+                        if chosen_object is None:
+                            chosen_object = (entry, object_name)
+                        if self.selected_item is None or self.selected_item[0].name == object_name:
+                            chosen_object = (entry, object_name)
+                            break
 
+                if chosen_object is not None:
+                    entry, object_name = chosen_object
+                    if is_mouse1_down and (self.selected_item is None or self.selected_item[0].name != object_name):
+                        # select the object that was clicked on
+                        for listener in self.select_listeners:
+                            listener(object_name)
+                        self.was_dragging_last_frame = False
+                    elif not is_mouse1_down and self.selected_item[0].name == object_name:
+                        # set the cursor
+                        obj: RoomObject = self.selected_item[0]
+                        self.set_cursor(obj.get_pos_cursor_type(self.camera, entry))
+                    else:
+                        self.set_cursor(None)
+                        return super().watch_mouse(_)
+                    self.was_mouse1_down_last_frame = is_mouse1_down
+                    return Task.cont
+
+        self.set_cursor(None)
         return super().watch_mouse(_)
 
     def move_camera(self, task: Task) -> int:
@@ -474,7 +494,14 @@ class RoomViewport(Viewport):
         else:
             x = 0.
 
-        if x != 0. or y != 0.:
+        if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('q')):
+            z = 1.
+        elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('e')):
+            z = -1.
+        else:
+            z = 0.
+
+        if x != 0. or y != 0. or z != 0.:
             if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.shift()):
                 mult = 2.
             elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.control()):
@@ -483,8 +510,12 @@ class RoomViewport(Viewport):
                 mult = 1.
 
             move_amount = mult * self.MOVE_PER_SECOND * (task.time - self.last_key_time)
-            self.camera.setX(self.camera, x * move_amount)
-            self.camera.setY(self.camera, y * move_amount)
+            move_vector = LPoint3(x, y, z) * move_amount
+            if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.alt()):
+                old_pos = self.camera.getPos(self.render_target)
+                self.camera.setPos(self.render_target, old_pos + move_vector)
+            else:
+                self.camera.setPos(self.camera, move_vector)
 
         self.last_key_time = task.time
         return Task.cont

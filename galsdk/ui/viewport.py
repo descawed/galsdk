@@ -2,6 +2,7 @@ import sys
 from enum import Enum
 from pathlib import Path
 from tkinter import ttk
+from typing import Self
 
 from direct.showbase.ShowBase import DirectObject, ShowBase
 from direct.task import Task
@@ -26,6 +27,17 @@ class Cursor(str, Enum):
     def filename(self):
         return Filename.fromOsSpecific(str(Path.cwd() / 'assets' / f'arrows_{self.value}.{CURSOR_EXT}'),
                                        Filename.TGeneral)
+
+    @classmethod
+    def from_angle(cls, angle: float) -> Self:
+        # slice the circle into 30 and 60 degree arcs corresponding to each cursor we might want to show
+        if 75 <= angle <= 105 or 255 <= angle <= 285:
+            return cls.VERTICAL
+        if angle >= 345 or angle <= 15 or 165 <= angle <= 195:
+            return cls.HORIZONTAL
+        if 15 < angle < 75 or 195 < angle < 255:
+            return cls.DIAGONAL_FORWARD
+        return cls.DIAGONAL_BACKWARD
 
 
 class Viewport(ttk.Frame):
@@ -236,8 +248,7 @@ class Viewport(ttk.Frame):
             props = WindowProperties()
             props.setOrigin(origin.getX(), origin.getY())
             props.setSize(old_props.getXSize(), old_props.getYSize())
-            if cursor is not None:
-                props.setCursorFilename(cursor.filename)
+            props.setCursorFilename(cursor.filename if cursor is not None else Filename(''))
             self._window.requestProperties(props)
 
     def close(self):

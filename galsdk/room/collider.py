@@ -1,11 +1,13 @@
-from panda3d.core import GeomNode, NodePath, SamplerState, Texture
+import math
+
+from panda3d.core import CollisionEntry, GeomNode, NodePath, Point2, SamplerState, Texture, Vec3
 from PIL import Image, ImageDraw
 
 from galsdk import util
 from galsdk.coords import Dimension, Point, Triangle2d
 from galsdk.module import CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room.object import RoomObject
-
+from galsdk.ui.viewport import Cursor
 
 COLLIDER_COLOR = (0., 1., 0., 0.5)
 
@@ -65,6 +67,69 @@ class RectangleColliderObject(RoomObject):
         x = self.position.game_x - width // 2
         z = self.position.game_z - height // 2
         return RectangleCollider(x, z, width, height, self.unknown)
+
+    @property
+    def is_2d(self) -> bool:
+        return True
+
+    @property
+    def can_resize(self) -> bool:
+        return True
+
+    def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
+        center_width = abs(self.width.panda_units / 2)
+        center_height = abs(self.height.panda_units / 2)
+        relative_point = entry.getSurfacePoint(self.node_path)
+        if abs(relative_point[0]) <= center_width * 0.9 and abs(relative_point[1]) <= center_height * 0.9:
+            return Cursor.CENTER
+
+        lens = camera.node().getLens()
+        corners = [Vec3(-center_width, -center_height, 0), Vec3(center_width, -center_height, 0),
+                   Vec3(center_width, center_height, 0), Vec3(-center_width, center_height, 0)]
+        screen_corners = []
+        for corner in corners:
+            screen_corner = Point2()
+            lens.project(camera.getRelativePoint(self.node_path, corner), screen_corner)
+            screen_corners.append(screen_corner)
+
+        screen_intersection = Point2()
+        lens.project(entry.getSurfacePoint(camera), screen_intersection)
+        screen_center = Point2()
+        lens.project(self.node_path.getPos(camera), screen_center)
+        # get the diagonals of the rectangle to determine which side we're closest to
+        diagonal1 = sorted((screen_corners[0], screen_corners[2]), key=lambda p: (p[1], p[0]))
+        diagonal2 = sorted((screen_corners[3], screen_corners[1]), key=lambda p: (p[1], p[0]))
+        edges = []
+        for diag in [diagonal1, diagonal2]:
+            if diag[0][0] == diag[1][0]:
+                # vertical line
+                edges.append(abs(diag[0][0] - screen_intersection[0]) >= abs(diag[1][0] - screen_intersection[0]))
+            else:
+                m = (diag[0][1] - diag[1][1]) / (diag[0][0] - diag[1][0])
+                y = m*(screen_intersection[0] - diag[0][0]) + diag[0][1]
+                edges.append(screen_intersection[1] > y)
+        edge1 = diagonal2[edges[0]]
+        edge2 = diagonal1[edges[1]]
+
+        edge1_distance = (edge1 - screen_intersection).length()
+        edge2_distance = (edge2 - screen_intersection).length()
+        # we divide each edge into quarters. if we're in the quarter closest to a corner, we attach to that corner.
+        # otherwise, we attach to the edge.
+        if edge1_distance / edge2_distance >= 3:
+            point1 = edge2
+            point2 = screen_center
+            offset = 0
+        elif edge2_distance / edge1_distance >= 3:
+            point1 = edge1
+            point2 = screen_center
+            offset = 0
+        else:
+            point1 = edge1
+            point2 = edge2
+            # rotate 90 degrees to get the angle through the edge instead of the angle of the edge itself
+            offset = 90
+        angle = (math.degrees(math.atan2(point2[1] - point1[1], point2[0] - point1[0])) - offset) % 360
+        return Cursor.from_angle(angle)
 
 
 class WallColliderObject(RectangleColliderObject):
@@ -134,6 +199,14 @@ class TriangleColliderObject(RoomObject):
                                 self.triangle.p3.game_x, self.triangle.p3.game_z,
                                 )
 
+    @property
+    def is_2d(self) -> bool:
+        return True
+
+    @property
+    def can_resize(self) -> bool:
+        return True
+
 
 class CircleColliderObject(RoomObject):
     texture_cache = {}
@@ -176,3 +249,32 @@ class CircleColliderObject(RoomObject):
 
     def as_collider(self) -> CircleCollider:
         return CircleCollider(self.position.game_x, self.position.game_z, self.radius.game_units)
+
+    @property
+    def is_2d(self) -> bool:
+        return True
+
+    @property
+    def can_resize(self) -> bool:
+        return True
+
+    def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
+        # since we use a circle texture on a square mesh, we need to make sure the point is actually on the circle
+        camera_center = self.node_path.getPos(camera)
+        camera_intersection = entry.getSurfacePoint(camera)
+        relative_point = camera_center - camera_intersection
+        distance = relative_point.length()
+        radius = self.radius.panda_units
+        if distance > radius:
+            return None
+        if distance < radius * 0.9:
+            return Cursor.CENTER
+
+        lens = camera.node().getLens()
+        screen_center = Point2()
+        lens.project(camera_center, screen_center)
+        screen_intersection = Point2()
+        lens.project(camera_intersection, screen_intersection)
+        screen_relative = screen_center - screen_intersection
+        angle = math.degrees(math.atan2(screen_relative[1], screen_relative[0])) % 360
+        return Cursor.from_angle(angle)

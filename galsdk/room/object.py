@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 
-from panda3d.core import NodePath, PandaNode, Texture
+from panda3d.core import CollisionEntry, NodePath, PandaNode, Texture
 
 from galsdk.coords import Point
+from galsdk.ui.viewport import Cursor
 
 
 class RoomObject(ABC):
@@ -73,3 +74,14 @@ class RoomObject(ABC):
 
     def get_texture(self) -> Texture | None:
         return None
+
+    @property
+    def can_resize(self) -> bool:
+        return False
+
+    @property
+    def is_2d(self) -> bool:
+        return False
+
+    def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
+        return Cursor.CENTER

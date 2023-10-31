@@ -56,3 +56,11 @@ class CameraCutObject(RoomObject):
     def as_camera_cut(self) -> CameraCut:
         return CameraCut(self.camera_id, self.p1.game_x, self.p1.game_z, self.p2.game_x, self.p2.game_z,
                          self.p3.game_x, self.p3.game_z, self.p4.game_x, self.p4.game_z)
+
+    @property
+    def is_2d(self) -> bool:
+        return True
+
+    @property
+    def can_resize(self) -> bool:
+        return True
