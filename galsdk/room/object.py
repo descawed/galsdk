@@ -69,18 +69,15 @@ class RoomObject(ABC):
     def hide(self):
         self.node_path.hide()
 
-    def move(self, direction: Vec3):
-        self.node_path.setPos(self.node_path, direction)
-        pos = self.node_path.getPos()
-        self.position.panda_x = pos[0]
-        self.position.panda_y = pos[1]
-        self.position.panda_z = pos[2]
-
     def move_to(self, point: Point3):
-        self.node_path.setPos(point)
         self.position.panda_x = point[0]
         self.position.panda_y = point[1]
         self.position.panda_z = point[2]
+        self.update_position()
+
+    def rotate(self, angle: float):
+        self.angle = (self.angle + angle) % 360
+        self.update_position()
 
     @abstractmethod
     def get_model(self) -> NodePath | None:

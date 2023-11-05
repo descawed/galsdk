@@ -15,6 +15,7 @@ CURSOR_EXT = 'xmc' if sys.platform == 'linux' else 'ico'
 
 class Cursor(str, Enum):
     CENTER = 'center'
+    ROTATE = 'rotate'
     VERTICAL = 'vertical'
     HORIZONTAL = 'horizontal'
     DIAGONAL_FORWARD = 'diagonal_forward'

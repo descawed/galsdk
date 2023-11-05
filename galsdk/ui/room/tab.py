@@ -40,8 +40,6 @@ from psx.tim import Transparency
 class DragMode(Enum):
     MOVE_H = auto()
     MOVE_V = auto()
-    ROTATE_X = auto()
-    ROTATE_Y = auto()
     ROTATE_Z = auto()
     RESIZE = auto()
 
@@ -60,6 +58,7 @@ class RoomViewport(Viewport):
         self.last_key_time = 0.
         self.drag_mode = None
         self.drag_start_point = None
+        self.drag_start_vector = None
         self.select_listeners = []
 
         self.picker_node = CollisionNode('room_viewport_mouse_ray')
@@ -440,6 +439,27 @@ class RoomViewport(Viewport):
 
         self.camera_task = self.base.taskMgr.add(self.move_camera, 'room_viewport_move')
 
+    def get_drag_pos(self) -> Point3 | None:
+        pos3d = Point3()
+        near_point = Point3()
+        far_point = Point3()
+        self.camera.node().getLens().extrude(self.base.mouseWatcherNode.getMouse(), near_point, far_point)
+        if self.drag_plane.intersectsLine(pos3d, self.render_target.getRelativePoint(self.camera, near_point),
+                                          self.render_target.getRelativePoint(self.camera, far_point)):
+            return pos3d
+        return None
+
+    def set_drag_start_vector(self):
+        if self.selected_item:
+            obj: RoomObject = self.selected_item[0]
+            obj_pos = obj.node_path.getPos()
+            if drag_pos := self.get_drag_pos():
+                self.drag_start_vector = (drag_pos - obj_pos).normalized()
+            else:
+                self.drag_start_vector = None
+        else:
+            self.drag_start_vector = None
+
     def watch_mouse(self, _) -> int:
         if not self.has_focus:
             return Task.cont
@@ -456,9 +476,9 @@ class RoomViewport(Viewport):
             mouse_pos = self.base.mouseWatcherNode.getMouse()
             self.picker_ray.setFromLens(self.camera.node(), mouse_pos.getX(), mouse_pos.getY())
             self.collision_traverser.traverse(self.render_target)
+            chosen_object = None
             if self.collision_queue.getNumEntries() > 0:
                 self.collision_queue.sortEntries()
-                chosen_object = None
                 for entry in self.collision_queue.entries:
                     node_path = entry.getIntoNodePath()
                     if not node_path.isHidden() and (object_name := node_path.getNetTag('object_name')):
@@ -468,58 +488,101 @@ class RoomViewport(Viewport):
                             chosen_object = (entry, object_name)
                             break
 
-                # if the mouse is over an object or we're dragging, do something
-                if chosen_object is not None or self.drag_mode is not None:
-                    if chosen_object:
-                        entry, object_name = chosen_object
-                    else:
-                        entry = object_name = None
+            # if the mouse is over an object or we're dragging, do something
+            if chosen_object is not None or self.drag_mode is not None:
+                if chosen_object:
+                    entry, object_name = chosen_object
+                else:
+                    entry = object_name = None
 
-                    is_action_for_selection = (
-                            (self.selected_item is not None and self.selected_item[0].name == object_name)
-                            or self.drag_mode is not None
-                    )
-                    if is_mouse1_down and not is_action_for_selection:
-                        # select the object that was clicked on
-                        for listener in self.select_listeners:
-                            listener(object_name)
-                        self.was_dragging_last_frame = False
-                    elif not is_mouse1_down and is_action_for_selection:
-                        # set the cursor
-                        obj: RoomObject = self.selected_item[0]
-                        self.set_cursor(obj.get_pos_cursor_type(self.camera, entry))
-                    elif is_mouse1_down and is_action_for_selection:
-                        # drag the object
-                        obj: RoomObject = self.selected_item[0]
-                        if self.drag_mode is None:
-                            cursor = obj.get_pos_cursor_type(self.camera, entry)
-                            if cursor is not None:
-                                if obj.can_resize and cursor != Cursor.CENTER:
-                                    self.drag_mode = DragMode.RESIZE
-                                elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.alt()):
-                                    self.drag_mode = DragMode.ROTATE_Z
-                                elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.shift()):
-                                    self.drag_mode = DragMode.MOVE_V
-                                else:
-                                    self.drag_mode = DragMode.MOVE_H
-                                self.drag_start_point = entry.getSurfacePoint(obj.node_path)
-                        else:
-                            # TODO: implement other drag modes
-                            # TODO: notify detail widget of changes
-                            pos3d = Point3()
-                            near_point = Point3()
-                            far_point = Point3()
-                            self.camera.node().getLens().extrude(mouse_pos, near_point, far_point)
-                            if self.drag_plane.intersectsLine(pos3d,
-                                                              self.render_target.getRelativePoint(self.camera, near_point),
-                                                              self.render_target.getRelativePoint(self.camera, far_point)):
-                                obj.move_to(pos3d - self.drag_start_point)
+                is_action_for_selection = (
+                        (self.selected_item is not None and self.selected_item[0].name == object_name)
+                        or self.drag_mode is not None
+                )
+                if is_mouse1_down and not is_action_for_selection:
+                    # select the object that was clicked on
+                    for listener in self.select_listeners:
+                        listener(object_name)
+                    self.was_dragging_last_frame = False
+                elif not is_mouse1_down and is_action_for_selection:
+                    # set the cursor
+                    obj: RoomObject = self.selected_item[0]
+                    if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.alt()) and obj.can_rotate:
+                        cursor = Cursor.ROTATE
                     else:
-                        # nothing in particular is happening. hand things over to the base viewport.
-                        self.set_cursor(None)
-                        return super().watch_mouse(_)
-                    self.was_mouse1_down_last_frame = is_mouse1_down
-                    return Task.cont
+                        cursor = obj.get_pos_cursor_type(self.camera, entry)
+                    self.set_cursor(cursor)
+                elif is_mouse1_down and is_action_for_selection:
+                    # drag the object
+                    obj: RoomObject = self.selected_item[0]
+                    obj_pos = obj.node_path.getPos()
+                    is_vertical = self.base.mouseWatcherNode.isButtonDown(KeyboardButton.shift()) and not obj.is_2d
+                    is_rotate = self.base.mouseWatcherNode.isButtonDown(KeyboardButton.alt()) and obj.can_rotate
+                    if self.drag_mode is None:
+                        cursor = obj.get_pos_cursor_type(self.camera, entry)
+                        if cursor is not None:
+                            if obj.can_resize and cursor != Cursor.CENTER:
+                                self.drag_mode = DragMode.RESIZE
+                                self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
+                            elif is_rotate:
+                                self.drag_mode = DragMode.ROTATE_Z
+                                self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
+                                self.set_drag_start_vector()
+                                self.set_cursor(Cursor.ROTATE)
+                            elif is_vertical:
+                                self.drag_mode = DragMode.MOVE_V
+                                self.drag_plane = Plane(Vec3(0, 1, 0), obj_pos)
+                            else:
+                                self.drag_mode = DragMode.MOVE_H
+                                self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
+                            self.drag_start_point = entry.getSurfacePoint(obj.node_path)
+                    else:
+                        # TODO: implement other drag modes
+                        # TODO: notify detail widget of changes
+                        if self.drag_mode == DragMode.ROTATE_Z and not is_rotate:
+                            self.set_cursor(Cursor.CENTER)
+                            if is_vertical:
+                                self.drag_mode = DragMode.MOVE_V
+                                self.drag_plane = Plane(Vec3(0, 1, 0), obj_pos)
+                            else:
+                                self.drag_mode = DragMode.MOVE_H
+                                self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
+
+                        if is_vertical and self.drag_mode == DragMode.MOVE_H:
+                            self.drag_mode = DragMode.MOVE_V
+                            self.drag_plane = Plane(Vec3(0, 1, 0), obj_pos)
+                        elif not is_vertical and self.drag_mode == DragMode.MOVE_V:
+                            self.drag_mode = DragMode.MOVE_H
+                            self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
+
+                        if is_rotate and self.drag_mode in [DragMode.MOVE_H, DragMode.MOVE_V]:
+                            self.drag_mode = DragMode.ROTATE_Z
+                            self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
+                            self.set_drag_start_vector()
+                            self.set_cursor(Cursor.ROTATE)
+
+                        if self.drag_mode in [DragMode.MOVE_H, DragMode.MOVE_V]:
+                            if drag_pos := self.get_drag_pos():
+                                new_pos = drag_pos - self.drag_start_point
+                                # preserve the position along the axis that isn't being moved
+                                if self.drag_mode == DragMode.MOVE_H:
+                                    new_pos[2] = obj_pos[2]
+                                else:
+                                    new_pos[1] = obj_pos[1]
+                                obj.move_to(new_pos)
+                        elif self.drag_mode == DragMode.ROTATE_Z and self.drag_start_vector is not None:
+                            if drag_pos := self.get_drag_pos():
+                                mouse_vector = (drag_pos - obj_pos).normalized()
+                                camera_vector = self.render_target.getRelativeVector(self.camera, Vec3(0, 1, 0))
+                                angle = mouse_vector.signedAngleDeg(self.drag_start_vector, camera_vector)
+                                obj.rotate(angle)
+                                self.drag_start_vector = mouse_vector
+                else:
+                    # nothing in particular is happening. hand things over to the base viewport.
+                    self.set_cursor(None)
+                    return super().watch_mouse(_)
+                self.was_mouse1_down_last_frame = is_mouse1_down
+                return Task.cont
 
         self.set_cursor(None)
         return super().watch_mouse(_)
