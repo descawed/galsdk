@@ -19,6 +19,10 @@ class ActorObject(RoomObject):
     def actor_name(self) -> str:
         return self.model.name if self.model else 'None'
 
+    @property
+    def can_rotate(self) -> bool:
+        return True
+
     def get_model(self) -> NodePath | None:
         return self.model.get_panda3d_model() if self.model else None
 

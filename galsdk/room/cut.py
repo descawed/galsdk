@@ -66,6 +66,10 @@ class CameraCutObject(RoomObject):
     def can_resize(self) -> bool:
         return True
 
+    @property
+    def can_rotate(self) -> bool:
+        return True
+
     def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
         center_p1 = Point()
         center_p1.panda_x = (self.p1.panda_x - self.position.panda_x) * CENTER_AREA

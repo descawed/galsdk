@@ -1,6 +1,7 @@
 import copy
 import math
 import tkinter as tk
+from enum import Enum, auto
 from itertools import zip_longest
 from pathlib import Path
 from tkinter import ttk
@@ -8,8 +9,8 @@ from typing import Callable, Literal
 
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
-from panda3d.core import (CollisionHandlerQueue, CollisionNode, CollisionPlane, CollisionRay, CollisionTraverser,
-                          GeomNode, KeyboardButton, LPoint3, MouseButton, NodePath, Plane, Vec3)
+from panda3d.core import (CollisionHandlerQueue, CollisionNode, CollisionRay, CollisionTraverser,
+                          GeomNode, KeyboardButton, MouseButton, NodePath, Plane, Point3, Vec3)
 from PIL import Image
 
 from galsdk import util
@@ -36,6 +37,15 @@ from galsdk.ui.viewport import Cursor, Viewport
 from psx.tim import Transparency
 
 
+class DragMode(Enum):
+    MOVE_H = auto()
+    MOVE_V = auto()
+    ROTATE_X = auto()
+    ROTATE_Y = auto()
+    ROTATE_Z = auto()
+    RESIZE = auto()
+
+
 class RoomViewport(Viewport):
     CAMERA_TARGET_WIDTH = 1.78
     CAMERA_TARGET_HEIGHT = 2.
@@ -48,6 +58,8 @@ class RoomViewport(Viewport):
 
         self.key_listener = None
         self.last_key_time = 0.
+        self.drag_mode = None
+        self.drag_start_point = None
         self.select_listeners = []
 
         self.picker_node = CollisionNode('room_viewport_mouse_ray')
@@ -59,8 +71,7 @@ class RoomViewport(Viewport):
         self.collision_queue = CollisionHandlerQueue()
 
         # we use this plane when dragging to detect the point where the mouse has dragged to
-        self.horizontal_plane = CollisionPlane(Plane(Vec3(0, 0, 1), Vec3(0, 0, 0)))
-        self.horizontal_node_path = None
+        self.drag_plane = None
 
         self.wall = None
         self.selected_item = None
@@ -108,6 +119,7 @@ class RoomViewport(Viewport):
         self.name = None
         self.wall = None
         self.selected_item = None
+        self.drag_mode = None
         if self.background:
             self.background.remove_from_scene()
             self.background = None
@@ -282,6 +294,8 @@ class RoomViewport(Viewport):
             item.set_color((r, g, b, 1.))
             # FIXME: doesn't look good on actor models
             item.node_path.setDepthTest(False)
+            # attach the drag plane to the object
+            self.drag_plane = Plane(Vec3(0, 0, 1), item.node_path.getPos())
         else:
             self.selected_item = None
 
@@ -424,10 +438,6 @@ class RoomViewport(Viewport):
         picker_node_path = self.camera.attachNewNode(self.picker_node)
         self.collision_traverser.addCollider(picker_node_path, self.collision_queue)
 
-        # we use this plane when dragging to detect the point where the mouse has dragged to
-        self.horizontal_node_path = self.render_target.attachNewNode(CollisionNode('room_viewport_horizontal'))
-        self.horizontal_node_path.node().addSolid(self.horizontal_plane)
-
         self.camera_task = self.base.taskMgr.add(self.move_camera, 'room_viewport_move')
 
     def watch_mouse(self, _) -> int:
@@ -439,6 +449,9 @@ class RoomViewport(Viewport):
             return super().watch_mouse(_)
 
         is_mouse1_down = self.base.mouseWatcherNode.isButtonDown(MouseButton.one())
+        if not is_mouse1_down:
+            self.drag_mode = None
+
         if is_mouse1_down or self.selected_item is not None:
             mouse_pos = self.base.mouseWatcherNode.getMouse()
             self.picker_ray.setFromLens(self.camera.node(), mouse_pos.getX(), mouse_pos.getY())
@@ -455,18 +468,54 @@ class RoomViewport(Viewport):
                             chosen_object = (entry, object_name)
                             break
 
-                if chosen_object is not None:
-                    entry, object_name = chosen_object
-                    if is_mouse1_down and (self.selected_item is None or self.selected_item[0].name != object_name):
+                # if the mouse is over an object or we're dragging, do something
+                if chosen_object is not None or self.drag_mode is not None:
+                    if chosen_object:
+                        entry, object_name = chosen_object
+                    else:
+                        entry = object_name = None
+
+                    is_action_for_selection = (
+                            (self.selected_item is not None and self.selected_item[0].name == object_name)
+                            or self.drag_mode is not None
+                    )
+                    if is_mouse1_down and not is_action_for_selection:
                         # select the object that was clicked on
                         for listener in self.select_listeners:
                             listener(object_name)
                         self.was_dragging_last_frame = False
-                    elif not is_mouse1_down and self.selected_item[0].name == object_name:
+                    elif not is_mouse1_down and is_action_for_selection:
                         # set the cursor
                         obj: RoomObject = self.selected_item[0]
                         self.set_cursor(obj.get_pos_cursor_type(self.camera, entry))
+                    elif is_mouse1_down and is_action_for_selection:
+                        # drag the object
+                        obj: RoomObject = self.selected_item[0]
+                        if self.drag_mode is None:
+                            cursor = obj.get_pos_cursor_type(self.camera, entry)
+                            if cursor is not None:
+                                if obj.can_resize and cursor != Cursor.CENTER:
+                                    self.drag_mode = DragMode.RESIZE
+                                elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.alt()):
+                                    self.drag_mode = DragMode.ROTATE_Z
+                                elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.shift()):
+                                    self.drag_mode = DragMode.MOVE_V
+                                else:
+                                    self.drag_mode = DragMode.MOVE_H
+                                self.drag_start_point = entry.getSurfacePoint(obj.node_path)
+                        else:
+                            # TODO: implement other drag modes
+                            # TODO: notify detail widget of changes
+                            pos3d = Point3()
+                            near_point = Point3()
+                            far_point = Point3()
+                            self.camera.node().getLens().extrude(mouse_pos, near_point, far_point)
+                            if self.drag_plane.intersectsLine(pos3d,
+                                                              self.render_target.getRelativePoint(self.camera, near_point),
+                                                              self.render_target.getRelativePoint(self.camera, far_point)):
+                                obj.move_to(pos3d - self.drag_start_point)
                     else:
+                        # nothing in particular is happening. hand things over to the base viewport.
                         self.set_cursor(None)
                         return super().watch_mouse(_)
                     self.was_mouse1_down_last_frame = is_mouse1_down
@@ -510,7 +559,7 @@ class RoomViewport(Viewport):
                 mult = 1.
 
             move_amount = mult * self.MOVE_PER_SECOND * (task.time - self.last_key_time)
-            move_vector = LPoint3(x, y, z) * move_amount
+            move_vector = Point3(x, y, z) * move_amount
             if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.alt()):
                 old_pos = self.camera.getPos(self.render_target)
                 self.camera.setPos(self.render_target, old_pos + move_vector)

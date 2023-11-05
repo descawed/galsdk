@@ -1,7 +1,7 @@
 import math
 from abc import ABC, abstractmethod
 
-from panda3d.core import CollisionEntry, NodePath, PandaNode, Point2, Texture, Vec3
+from panda3d.core import CollisionEntry, NodePath, PandaNode, Point2, Point3, Texture, Vec3
 
 from galsdk.coords import Point
 from galsdk.ui.viewport import Cursor
@@ -69,6 +69,19 @@ class RoomObject(ABC):
     def hide(self):
         self.node_path.hide()
 
+    def move(self, direction: Vec3):
+        self.node_path.setPos(self.node_path, direction)
+        pos = self.node_path.getPos()
+        self.position.panda_x = pos[0]
+        self.position.panda_y = pos[1]
+        self.position.panda_z = pos[2]
+
+    def move_to(self, point: Point3):
+        self.node_path.setPos(point)
+        self.position.panda_x = point[0]
+        self.position.panda_y = point[1]
+        self.position.panda_z = point[2]
+
     @abstractmethod
     def get_model(self) -> NodePath | None:
         pass
@@ -82,6 +95,10 @@ class RoomObject(ABC):
 
     @property
     def is_2d(self) -> bool:
+        return False
+
+    @property
+    def can_rotate(self) -> bool:
         return False
 
     def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
