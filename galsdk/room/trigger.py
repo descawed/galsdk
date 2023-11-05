@@ -22,11 +22,3 @@ class TriggerObject(RectangleColliderObject):
         x = self.position.game_x - width // 2
         z = self.position.game_z - height // 2
         return Interactable(self.id, x, z, width, height), self.trigger
-
-    @property
-    def is_2d(self) -> bool:
-        return True
-
-    @property
-    def can_resize(self) -> bool:
-        return True

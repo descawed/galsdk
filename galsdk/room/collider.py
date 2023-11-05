@@ -10,6 +10,7 @@ from galsdk.room.object import RoomObject
 from galsdk.ui.viewport import Cursor
 
 COLLIDER_COLOR = (0., 1., 0., 0.5)
+CENTER_AREA = 0.9
 
 
 class RectangleColliderObject(RoomObject):
@@ -80,7 +81,8 @@ class RectangleColliderObject(RoomObject):
         center_width = abs(self.width.panda_units / 2)
         center_height = abs(self.height.panda_units / 2)
         relative_point = entry.getSurfacePoint(self.node_path)
-        if abs(relative_point[0]) <= center_width * 0.9 and abs(relative_point[1]) <= center_height * 0.9:
+        if (abs(relative_point[0]) <= center_width * CENTER_AREA
+                and abs(relative_point[1]) <= center_height * CENTER_AREA):
             return Cursor.CENTER
 
         lens = camera.node().getLens()
@@ -207,6 +209,85 @@ class TriangleColliderObject(RoomObject):
     def can_resize(self) -> bool:
         return True
 
+    def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
+        center_p1 = Point()
+        center_p1.panda_x = (self.p1.panda_x - self.position.panda_x) * CENTER_AREA
+        center_p1.panda_y = (self.p1.panda_y - self.position.panda_y) * CENTER_AREA
+
+        center_p2 = Point()
+        center_p2.panda_x = (self.p2.panda_x - self.position.panda_x) * CENTER_AREA
+        center_p2.panda_y = (self.p2.panda_y - self.position.panda_y) * CENTER_AREA
+
+        center_p3 = Point()
+        center_p3.panda_x = (self.p3.panda_x - self.position.panda_x) * CENTER_AREA
+        center_p3.panda_y = (self.p3.panda_y - self.position.panda_y) * CENTER_AREA
+
+        center_tri = Triangle2d(center_p1, center_p2, center_p3)
+
+        rel_intersection = entry.getSurfacePoint(self.node_path)
+        rel_point = Point()
+        rel_point.panda_x = rel_intersection[0]
+        rel_point.panda_y = rel_intersection[1]
+
+        if center_tri.is_point_within(rel_point):
+            return Cursor.CENTER
+
+        lens = camera.node().getLens()
+        vertices = [Vec3(center_p1.panda_x, center_p1.panda_y, 0), Vec3(center_p2.panda_x, center_p2.panda_y, 0),
+                    Vec3(center_p3.panda_x, center_p3.panda_y, 0)]
+        screen_vertices = []
+        for vertex in vertices:
+            screen_vertex = Point2()
+            lens.project(camera.getRelativePoint(self.node_path, vertex), screen_vertex)
+            screen_vertices.append(screen_vertex)
+
+        screen_intersection = Point2()
+        lens.project(entry.getSurfacePoint(camera), screen_intersection)
+        screen_center = Point2()
+        lens.project(self.node_path.getPos(camera), screen_center)
+
+        # find the closest edge
+        edges = [(screen_vertices[0], screen_vertices[1]), (screen_vertices[1], screen_vertices[2]),
+                 (screen_vertices[2], screen_vertices[0])]
+        closest_edge = 0
+        min_distance = None
+        for i, edge in enumerate(edges):
+            if edge[0][0] == edge[1][0]:
+                a = 1
+                b = 0
+                c = -edge[0][0]
+            else:
+                m = (edge[0][1] - edge[1][1]) / (edge[0][0] - edge[1][0])
+                a = -m
+                b = 1
+                c = m*edge[0][0] - edge[0][1]
+
+            distance = abs(a*screen_intersection[0] + b*screen_intersection[1] + c)/math.sqrt(a**2 + b**2)
+            if min_distance is None or distance < min_distance:
+                min_distance = distance
+                closest_edge = i
+
+        edge1, edge2 = edges[closest_edge]
+        edge1_distance = (edge1 - screen_intersection).length()
+        edge2_distance = (edge2 - screen_intersection).length()
+        # we divide each edge into quarters. if we're in the quarter closest to a corner, we attach to that corner.
+        # otherwise, we attach to the edge.
+        if edge1_distance / edge2_distance >= 3:
+            point1 = edge2
+            point2 = screen_center
+            offset = 0
+        elif edge2_distance / edge1_distance >= 3:
+            point1 = edge1
+            point2 = screen_center
+            offset = 0
+        else:
+            point1 = edge1
+            point2 = edge2
+            # rotate 90 degrees to get the angle through the edge instead of the angle of the edge itself
+            offset = 90
+        angle = (math.degrees(math.atan2(point2[1] - point1[1], point2[0] - point1[0])) - offset) % 360
+        return Cursor.from_angle(angle)
+
 
 class CircleColliderObject(RoomObject):
     texture_cache = {}
@@ -267,7 +348,7 @@ class CircleColliderObject(RoomObject):
         radius = self.radius.panda_units
         if distance > radius:
             return None
-        if distance < radius * 0.9:
+        if distance < radius * CENTER_AREA:
             return Cursor.CENTER
 
         lens = camera.node().getLens()

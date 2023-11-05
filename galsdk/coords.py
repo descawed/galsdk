@@ -138,7 +138,7 @@ class Point:
         self.y = Dimension(z)
         self.z = Dimension(y)
 
-    def __add__(self, other: Point):
+    def __add__(self, other: Point) -> Point:
         return Point(self.game_x + other.game_x, self.game_y + other.game_y, self.game_z + other.game_z)
 
     def __iadd__(self, other: Point):
@@ -146,7 +146,7 @@ class Point:
         self.game_y += other.game_y
         self.game_z += other.game_z
 
-    def __sub__(self, other: Point):
+    def __sub__(self, other: Point) -> Point:
         return Point(self.game_x - other.game_x, self.game_y - other.game_y, self.game_z - other.game_z)
 
     def __isub__(self, other: Point):
@@ -259,3 +259,16 @@ class Triangle2d:
         line1 = Line2d(m12, self.p3)
         line2 = Line2d(self.p1, m23)
         return line1.find_intersection(line2)
+
+    @staticmethod
+    def sign(p1: Point, p2: Point, p3: Point) -> float:
+        return ((p1.panda_x - p3.panda_x) * (p2.panda_y - p3.panda_y)
+                - (p2.panda_x - p3.panda_x) * (p1.panda_y - p3.panda_y))
+
+    def is_point_within(self, p: Point) -> bool:
+        # https://stackoverflow.com/a/2049593
+        d1 = self.sign(p, self.p1, self.p2)
+        d2 = self.sign(p, self.p2, self.p3)
+        d3 = self.sign(p, self.p3, self.p1)
+
+        return not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0))
