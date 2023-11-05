@@ -85,52 +85,9 @@ class RectangleColliderObject(RoomObject):
                 and abs(relative_point[1]) <= center_height * CENTER_AREA):
             return Cursor.CENTER
 
-        lens = camera.node().getLens()
         corners = [Vec3(-center_width, -center_height, 0), Vec3(center_width, -center_height, 0),
                    Vec3(center_width, center_height, 0), Vec3(-center_width, center_height, 0)]
-        screen_corners = []
-        for corner in corners:
-            screen_corner = Point2()
-            lens.project(camera.getRelativePoint(self.node_path, corner), screen_corner)
-            screen_corners.append(screen_corner)
-
-        screen_intersection = Point2()
-        lens.project(entry.getSurfacePoint(camera), screen_intersection)
-        screen_center = Point2()
-        lens.project(self.node_path.getPos(camera), screen_center)
-        # get the diagonals of the rectangle to determine which side we're closest to
-        diagonal1 = sorted((screen_corners[0], screen_corners[2]), key=lambda p: (p[1], p[0]))
-        diagonal2 = sorted((screen_corners[3], screen_corners[1]), key=lambda p: (p[1], p[0]))
-        edges = []
-        for diag in [diagonal1, diagonal2]:
-            if diag[0][0] == diag[1][0]:
-                # vertical line
-                edges.append(abs(diag[0][0] - screen_intersection[0]) >= abs(diag[1][0] - screen_intersection[0]))
-            else:
-                m = (diag[0][1] - diag[1][1]) / (diag[0][0] - diag[1][0])
-                y = m*(screen_intersection[0] - diag[0][0]) + diag[0][1]
-                edges.append(screen_intersection[1] > y)
-        edge1 = diagonal2[edges[0]]
-        edge2 = diagonal1[edges[1]]
-
-        edge1_distance = (edge1 - screen_intersection).length()
-        edge2_distance = (edge2 - screen_intersection).length()
-        # we divide each edge into quarters. if we're in the quarter closest to a corner, we attach to that corner.
-        # otherwise, we attach to the edge.
-        if edge1_distance / edge2_distance >= 3:
-            point1 = edge2
-            point2 = screen_center
-            offset = 0
-        elif edge2_distance / edge1_distance >= 3:
-            point1 = edge1
-            point2 = screen_center
-            offset = 0
-        else:
-            point1 = edge1
-            point2 = edge2
-            # rotate 90 degrees to get the angle through the edge instead of the angle of the edge itself
-            offset = 90
-        angle = (math.degrees(math.atan2(point2[1] - point1[1], point2[0] - point1[0])) - offset) % 360
+        angle = self.get_cursor_angle(camera, entry, corners)
         return Cursor.from_angle(angle)
 
 
@@ -232,60 +189,9 @@ class TriangleColliderObject(RoomObject):
         if center_tri.is_point_within(rel_point):
             return Cursor.CENTER
 
-        lens = camera.node().getLens()
         vertices = [Vec3(center_p1.panda_x, center_p1.panda_y, 0), Vec3(center_p2.panda_x, center_p2.panda_y, 0),
                     Vec3(center_p3.panda_x, center_p3.panda_y, 0)]
-        screen_vertices = []
-        for vertex in vertices:
-            screen_vertex = Point2()
-            lens.project(camera.getRelativePoint(self.node_path, vertex), screen_vertex)
-            screen_vertices.append(screen_vertex)
-
-        screen_intersection = Point2()
-        lens.project(entry.getSurfacePoint(camera), screen_intersection)
-        screen_center = Point2()
-        lens.project(self.node_path.getPos(camera), screen_center)
-
-        # find the closest edge
-        edges = [(screen_vertices[0], screen_vertices[1]), (screen_vertices[1], screen_vertices[2]),
-                 (screen_vertices[2], screen_vertices[0])]
-        closest_edge = 0
-        min_distance = None
-        for i, edge in enumerate(edges):
-            if edge[0][0] == edge[1][0]:
-                a = 1
-                b = 0
-                c = -edge[0][0]
-            else:
-                m = (edge[0][1] - edge[1][1]) / (edge[0][0] - edge[1][0])
-                a = -m
-                b = 1
-                c = m*edge[0][0] - edge[0][1]
-
-            distance = abs(a*screen_intersection[0] + b*screen_intersection[1] + c)/math.sqrt(a**2 + b**2)
-            if min_distance is None or distance < min_distance:
-                min_distance = distance
-                closest_edge = i
-
-        edge1, edge2 = edges[closest_edge]
-        edge1_distance = (edge1 - screen_intersection).length()
-        edge2_distance = (edge2 - screen_intersection).length()
-        # we divide each edge into quarters. if we're in the quarter closest to a corner, we attach to that corner.
-        # otherwise, we attach to the edge.
-        if edge1_distance / edge2_distance >= 3:
-            point1 = edge2
-            point2 = screen_center
-            offset = 0
-        elif edge2_distance / edge1_distance >= 3:
-            point1 = edge1
-            point2 = screen_center
-            offset = 0
-        else:
-            point1 = edge1
-            point2 = edge2
-            # rotate 90 degrees to get the angle through the edge instead of the angle of the edge itself
-            offset = 90
-        angle = (math.degrees(math.atan2(point2[1] - point1[1], point2[0] - point1[0])) - offset) % 360
+        angle = self.get_cursor_angle(camera, entry, vertices)
         return Cursor.from_angle(angle)
 
 

@@ -1,12 +1,13 @@
-from panda3d.core import GeomNode, NodePath
+from panda3d.core import CollisionEntry, GeomNode, NodePath, Vec3
 
 from galsdk import util
 from galsdk.coords import Line2d, Point, Triangle2d
 from galsdk.module import CameraCut
 from galsdk.room.object import RoomObject
-
+from galsdk.ui.viewport import Cursor
 
 CUT_COLOR = (1., 0.65, 0., 0.5)
+CENTER_AREA = 0.9
 
 
 class CameraCutObject(RoomObject):
@@ -64,3 +65,36 @@ class CameraCutObject(RoomObject):
     @property
     def can_resize(self) -> bool:
         return True
+
+    def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
+        center_p1 = Point()
+        center_p1.panda_x = (self.p1.panda_x - self.position.panda_x) * CENTER_AREA
+        center_p1.panda_y = (self.p1.panda_y - self.position.panda_y) * CENTER_AREA
+
+        center_p2 = Point()
+        center_p2.panda_x = (self.p2.panda_x - self.position.panda_x) * CENTER_AREA
+        center_p2.panda_y = (self.p2.panda_y - self.position.panda_y) * CENTER_AREA
+
+        center_p3 = Point()
+        center_p3.panda_x = (self.p3.panda_x - self.position.panda_x) * CENTER_AREA
+        center_p3.panda_y = (self.p3.panda_y - self.position.panda_y) * CENTER_AREA
+
+        center_p4 = Point()
+        center_p4.panda_x = (self.p4.panda_x - self.position.panda_x) * CENTER_AREA
+        center_p4.panda_y = (self.p4.panda_y - self.position.panda_y) * CENTER_AREA
+
+        center_tri1 = Triangle2d(center_p1, center_p2, center_p4)
+        center_tri2 = Triangle2d(center_p4, center_p3, center_p1)
+
+        rel_intersection = entry.getSurfacePoint(self.node_path)
+        rel_point = Point()
+        rel_point.panda_x = rel_intersection[0]
+        rel_point.panda_y = rel_intersection[1]
+
+        if center_tri1.is_point_within(rel_point) or center_tri2.is_point_within(rel_point):
+            return Cursor.CENTER
+
+        vertices = [Vec3(center_p1.panda_x, center_p1.panda_y, 0), Vec3(center_p2.panda_x, center_p2.panda_y, 0),
+                    Vec3(center_p4.panda_x, center_p4.panda_y, 0), Vec3(center_p3.panda_x, center_p3.panda_y, 0)]
+        angle = self.get_cursor_angle(camera, entry, vertices)
+        return Cursor.from_angle(angle)

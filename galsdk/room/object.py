@@ -1,6 +1,7 @@
+import math
 from abc import ABC, abstractmethod
 
-from panda3d.core import CollisionEntry, NodePath, PandaNode, Texture
+from panda3d.core import CollisionEntry, NodePath, PandaNode, Point2, Texture, Vec3
 
 from galsdk.coords import Point
 from galsdk.ui.viewport import Cursor
@@ -85,3 +86,59 @@ class RoomObject(ABC):
 
     def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
         return Cursor.CENTER
+
+    def get_cursor_angle(self, camera: NodePath, entry: CollisionEntry, vertices: list[Vec3]) -> float:
+        lens = camera.node().getLens()
+        screen_vertices = []
+        for vertex in vertices:
+            screen_vertex = Point2()
+            lens.project(camera.getRelativePoint(self.node_path, vertex), screen_vertex)
+            screen_vertices.append(screen_vertex)
+
+        screen_intersection = Point2()
+        lens.project(entry.getSurfacePoint(camera), screen_intersection)
+        screen_center = Point2()
+        lens.project(self.node_path.getPos(camera), screen_center)
+
+        # find the closest edge
+        edges = [
+            (screen_vertices[i], screen_vertices[i + 1 if i + 1 < len(screen_vertices) else 0])
+            for i in range(len(screen_vertices))
+        ]
+        closest_edge = 0
+        min_distance = None
+        for i, edge in enumerate(edges):
+            if edge[0][0] == edge[1][0]:
+                a = 1
+                b = 0
+                c = -edge[0][0]
+            else:
+                m = (edge[0][1] - edge[1][1]) / (edge[0][0] - edge[1][0])
+                a = -m
+                b = 1
+                c = m * edge[0][0] - edge[0][1]
+
+            distance = abs(a * screen_intersection[0] + b * screen_intersection[1] + c) / math.sqrt(a ** 2 + b ** 2)
+            if min_distance is None or distance < min_distance:
+                min_distance = distance
+                closest_edge = i
+
+        edge1, edge2 = edges[closest_edge]
+        edge1_distance = (edge1 - screen_intersection).length()
+        edge2_distance = (edge2 - screen_intersection).length()
+        # we divide each edge into quarters. if we're in the quarter closest to a corner, we attach to that corner.
+        # otherwise, we attach to the edge.
+        if edge1_distance / edge2_distance >= 3:
+            point1 = edge2
+            point2 = screen_center
+            offset = 0
+        elif edge2_distance / edge1_distance >= 3:
+            point1 = edge1
+            point2 = screen_center
+            offset = 0
+        else:
+            point1 = edge1
+            point2 = edge2
+            # rotate 90 degrees to get the angle through the edge instead of the angle of the edge itself
+            offset = 90
+        return (math.degrees(math.atan2(point2[1] - point1[1], point2[0] - point1[0])) - offset) % 360
