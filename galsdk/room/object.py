@@ -101,6 +101,12 @@ class RoomObject(ABC):
     def can_rotate(self) -> bool:
         return False
 
+    def start_resize(self, entry: CollisionEntry):
+        pass
+
+    def resize(self, point: Point3):
+        pass
+
     def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
         return Cursor.CENTER
 

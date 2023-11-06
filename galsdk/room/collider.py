@@ -1,6 +1,6 @@
 import math
 
-from panda3d.core import CollisionEntry, GeomNode, Mat3, NodePath, Point2, SamplerState, Texture, Vec3
+from panda3d.core import CollisionEntry, GeomNode, Mat3, NodePath, Point2, SamplerState, Texture, Vec3, Point3
 from PIL import Image, ImageDraw
 
 from galsdk import util
@@ -230,6 +230,7 @@ class CircleColliderObject(RoomObject):
         super().__init__(name, Point(bounds.x, 0, bounds.z), 0)
         self.radius = Dimension(bounds.radius)
         self.color = COLLIDER_COLOR
+        self.resize_offset = 0
 
     @classmethod
     def create_texture(cls, width: int, height: int, color: tuple[float, float, float, float]) -> Texture:
@@ -293,3 +294,13 @@ class CircleColliderObject(RoomObject):
         screen_relative = screen_center - screen_intersection
         angle = math.degrees(math.atan2(screen_relative[1], screen_relative[0])) % 360
         return Cursor.from_angle(angle)
+
+    def start_resize(self, entry: CollisionEntry):
+        self.resize_offset = self.radius.panda_units - entry.getSurfacePoint(self.node_path).length()
+
+    def resize(self, point: Point3):
+        new_radius = Dimension()
+        new_radius.panda_units = point.length() + self.resize_offset
+        scale = new_radius.panda_units / self.radius.panda_units
+        self.radius = new_radius
+        self.node_path.setScale(self.node_path, Vec3(scale, scale, 0))

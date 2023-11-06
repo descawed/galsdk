@@ -524,6 +524,7 @@ class RoomViewport(Viewport):
                             if obj.can_resize and cursor != Cursor.CENTER:
                                 self.drag_mode = DragMode.RESIZE
                                 self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
+                                obj.start_resize(entry)
                             elif is_rotate:
                                 self.drag_mode = DragMode.ROTATE_Z
                                 self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
@@ -562,8 +563,8 @@ class RoomViewport(Viewport):
                             self.set_drag_start_vector()
                             self.set_cursor(Cursor.ROTATE)
 
-                        if self.drag_mode in [DragMode.MOVE_H, DragMode.MOVE_V]:
-                            if drag_pos := self.get_drag_pos():
+                        if drag_pos := self.get_drag_pos():
+                            if self.drag_mode in [DragMode.MOVE_H, DragMode.MOVE_V]:
                                 new_pos = drag_pos - self.drag_start_point
                                 self.drag_start_point = drag_pos
                                 # preserve the position along the axis that isn't being moved
@@ -573,13 +574,15 @@ class RoomViewport(Viewport):
                                     new_pos[1] = 0
                                 direction = obj.node_path.getRelativeVector(self.render_target, new_pos)
                                 obj.move(direction)
-                        elif self.drag_mode == DragMode.ROTATE_Z and self.drag_start_vector is not None:
-                            if drag_pos := self.get_drag_pos():
+                            elif self.drag_mode == DragMode.ROTATE_Z and self.drag_start_vector is not None:
                                 mouse_vector = (drag_pos - obj_pos).normalized()
                                 camera_vector = self.render_target.getRelativeVector(self.camera, Vec3(0, 1, 0))
                                 angle = mouse_vector.signedAngleDeg(self.drag_start_vector, camera_vector)
                                 obj.rotate(angle)
                                 self.drag_start_vector = mouse_vector
+                            elif self.drag_mode == DragMode.RESIZE:
+                                relative_point = drag_pos - obj_pos
+                                obj.resize(relative_point)
                 else:
                     # nothing in particular is happening. hand things over to the base viewport.
                     self.set_cursor(None)
