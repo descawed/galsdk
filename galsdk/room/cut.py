@@ -1,4 +1,4 @@
-from panda3d.core import CollisionEntry, GeomNode, NodePath, Vec3
+from panda3d.core import CollisionEntry, GeomNode, Mat3, NodePath, Vec3
 
 from galsdk import util
 from galsdk.coords import Line2d, Point, Triangle2d
@@ -17,6 +17,11 @@ class CameraCutObject(RoomObject):
         self.p2 = Point(cut.x2, 0, cut.z2)
         self.p3 = Point(cut.x3, 0, cut.z3)
         self.p4 = Point(cut.x4, 0, cut.z4)
+        centroid = self.calculate_centroid()
+        self.relative_p1 = self.p1 - centroid
+        self.relative_p2 = self.p2 - centroid
+        self.relative_p3 = self.p3 - centroid
+        self.relative_p4 = self.p4 - centroid
 
         super().__init__(name, self.calculate_centroid(), 0)
         self.color = CUT_COLOR
@@ -48,6 +53,7 @@ class CameraCutObject(RoomObject):
             (self.p2.panda_x - self.position.panda_x, self.p2.panda_y - self.position.panda_y),
             (self.p4.panda_x - self.position.panda_x, self.p4.panda_y - self.position.panda_y),
             (self.p3.panda_x - self.position.panda_x, self.p3.panda_y - self.position.panda_y),
+            is_static=False,
         )
 
         node = GeomNode('cut_quad')
@@ -70,22 +76,48 @@ class CameraCutObject(RoomObject):
     def can_rotate(self) -> bool:
         return True
 
+    def move(self, direction: Vec3):
+        super().move(direction)
+        pos = self.node_path.getPos()
+        self.p1.panda_point = self.relative_p1.panda_point + pos
+        self.p2.panda_point = self.relative_p2.panda_point + pos
+        self.p3.panda_point = self.relative_p3.panda_point + pos
+        self.p4.panda_point = self.relative_p4.panda_point + pos
+
+    def rotate(self, angle: float):
+        rotate_mat = Mat3.rotateMat(angle)
+        p1 = rotate_mat.xform(self.relative_p1.panda_point)
+        p2 = rotate_mat.xform(self.relative_p2.panda_point)
+        p3 = rotate_mat.xform(self.relative_p3.panda_point)
+        p4 = rotate_mat.xform(self.relative_p4.panda_point)
+        vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
+        util.update_quad(vdata, p1, p2, p4, p3)
+        self.relative_p1.panda_point = p1
+        self.relative_p2.panda_point = p2
+        self.relative_p3.panda_point = p3
+        self.relative_p4.panda_point = p4
+        panda_position = self.position.panda_point
+        self.p1.panda_point = p1 + panda_position
+        self.p2.panda_point = p2 + panda_position
+        self.p3.panda_point = p3 + panda_position
+        self.p4.panda_point = p4 + panda_position
+
     def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
         center_p1 = Point()
-        center_p1.panda_x = (self.p1.panda_x - self.position.panda_x) * CENTER_AREA
-        center_p1.panda_y = (self.p1.panda_y - self.position.panda_y) * CENTER_AREA
+        center_p1.panda_x = self.relative_p1.panda_x * CENTER_AREA
+        center_p1.panda_y = self.relative_p1.panda_y * CENTER_AREA
 
         center_p2 = Point()
-        center_p2.panda_x = (self.p2.panda_x - self.position.panda_x) * CENTER_AREA
-        center_p2.panda_y = (self.p2.panda_y - self.position.panda_y) * CENTER_AREA
+        center_p2.panda_x = self.relative_p2.panda_x * CENTER_AREA
+        center_p2.panda_y = self.relative_p2.panda_y * CENTER_AREA
 
         center_p3 = Point()
-        center_p3.panda_x = (self.p3.panda_x - self.position.panda_x) * CENTER_AREA
-        center_p3.panda_y = (self.p3.panda_y - self.position.panda_y) * CENTER_AREA
+        center_p3.panda_x = self.relative_p3.panda_x * CENTER_AREA
+        center_p3.panda_y = self.relative_p3.panda_y * CENTER_AREA
 
         center_p4 = Point()
-        center_p4.panda_x = (self.p4.panda_x - self.position.panda_x) * CENTER_AREA
-        center_p4.panda_y = (self.p4.panda_y - self.position.panda_y) * CENTER_AREA
+        center_p4.panda_x = self.relative_p4.panda_x * CENTER_AREA
+        center_p4.panda_y = self.relative_p4.panda_y * CENTER_AREA
 
         center_tri1 = Triangle2d(center_p1, center_p2, center_p4)
         center_tri2 = Triangle2d(center_p4, center_p3, center_p1)

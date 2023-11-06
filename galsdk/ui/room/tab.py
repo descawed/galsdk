@@ -535,11 +535,12 @@ class RoomViewport(Viewport):
                             else:
                                 self.drag_mode = DragMode.MOVE_H
                                 self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
-                            self.drag_start_point = entry.getSurfacePoint(obj.node_path)
+                            self.drag_start_point = self.get_drag_pos()
                     else:
                         # TODO: implement other drag modes
                         # TODO: notify detail widget of changes
                         if self.drag_mode == DragMode.ROTATE_Z and not is_rotate:
+                            self.drag_start_point = self.get_drag_pos()
                             self.set_cursor(Cursor.CENTER)
                             if is_vertical:
                                 self.drag_mode = DragMode.MOVE_V
@@ -564,12 +565,14 @@ class RoomViewport(Viewport):
                         if self.drag_mode in [DragMode.MOVE_H, DragMode.MOVE_V]:
                             if drag_pos := self.get_drag_pos():
                                 new_pos = drag_pos - self.drag_start_point
+                                self.drag_start_point = drag_pos
                                 # preserve the position along the axis that isn't being moved
                                 if self.drag_mode == DragMode.MOVE_H:
-                                    new_pos[2] = obj_pos[2]
+                                    new_pos[2] = 0
                                 else:
-                                    new_pos[1] = obj_pos[1]
-                                obj.move_to(new_pos)
+                                    new_pos[1] = 0
+                                direction = obj.node_path.getRelativeVector(self.render_target, new_pos)
+                                obj.move(direction)
                         elif self.drag_mode == DragMode.ROTATE_Z and self.drag_start_vector is not None:
                             if drag_pos := self.get_drag_pos():
                                 mouse_vector = (drag_pos - obj_pos).normalized()
@@ -880,6 +883,7 @@ class RoomTab(Tab):
                         cut_changed = True
                         room.layout.cuts.append(raw_cut)
                     elif room.layout.cuts[i] != raw_cut:
+                        cut_changed = True
                         room.layout.cuts[i] = raw_cut
 
                     if cut_changed:

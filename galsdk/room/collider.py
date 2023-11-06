@@ -1,6 +1,6 @@
 import math
 
-from panda3d.core import CollisionEntry, GeomNode, NodePath, Point2, SamplerState, Texture, Vec3
+from panda3d.core import CollisionEntry, GeomNode, Mat3, NodePath, Point2, SamplerState, Texture, Vec3
 from PIL import Image, ImageDraw
 
 from galsdk import util
@@ -105,6 +105,7 @@ class TriangleColliderObject(RoomObject):
         p3 = Point(bounds.x3, 0, bounds.z3)
         self.triangle = Triangle2d(p1, p2, p3)
         centroid = self.triangle.centroid
+        self.relative = Triangle2d(p1 - centroid, p2 - centroid, p3 - centroid)
         super().__init__(name, centroid, 0)
         self.color = COLLIDER_COLOR
 
@@ -137,6 +138,7 @@ class TriangleColliderObject(RoomObject):
             (self.p1.panda_x - self.position.panda_x, self.p1.panda_y - self.position.panda_y),
             (self.p2.panda_x - self.position.panda_x, self.p2.panda_y - self.position.panda_y),
             (self.p3.panda_x - self.position.panda_x, self.p3.panda_y - self.position.panda_y),
+            False,
         )
 
         node = GeomNode('triangle_collider_triangle')
@@ -170,18 +172,40 @@ class TriangleColliderObject(RoomObject):
     def can_rotate(self) -> bool:
         return True
 
+    def move(self, direction: Vec3):
+        super().move(direction)
+        pos = self.node_path.getPos()
+        self.p1.panda_point = self.relative.p1.panda_point + pos
+        self.p2.panda_point = self.relative.p2.panda_point + pos
+        self.p3.panda_point = self.relative.p3.panda_point + pos
+
+    def rotate(self, angle: float):
+        rotate_mat = Mat3.rotateMat(angle)
+        p1 = rotate_mat.xform(self.relative.p1.panda_point)
+        p2 = rotate_mat.xform(self.relative.p2.panda_point)
+        p3 = rotate_mat.xform(self.relative.p3.panda_point)
+        vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
+        util.update_triangle(vdata, p1, p2, p3)
+        self.relative.p1.panda_point = p1
+        self.relative.p2.panda_point = p2
+        self.relative.p3.panda_point = p3
+        panda_position = self.position.panda_point
+        self.p1.panda_point = p1 + panda_position
+        self.p2.panda_point = p2 + panda_position
+        self.p3.panda_point = p3 + panda_position
+
     def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
         center_p1 = Point()
-        center_p1.panda_x = (self.p1.panda_x - self.position.panda_x) * CENTER_AREA
-        center_p1.panda_y = (self.p1.panda_y - self.position.panda_y) * CENTER_AREA
+        center_p1.panda_x = self.relative.p1.panda_x * CENTER_AREA
+        center_p1.panda_y = self.relative.p1.panda_y * CENTER_AREA
 
         center_p2 = Point()
-        center_p2.panda_x = (self.p2.panda_x - self.position.panda_x) * CENTER_AREA
-        center_p2.panda_y = (self.p2.panda_y - self.position.panda_y) * CENTER_AREA
+        center_p2.panda_x = self.relative.p2.panda_x * CENTER_AREA
+        center_p2.panda_y = self.relative.p2.panda_y * CENTER_AREA
 
         center_p3 = Point()
-        center_p3.panda_x = (self.p3.panda_x - self.position.panda_x) * CENTER_AREA
-        center_p3.panda_y = (self.p3.panda_y - self.position.panda_y) * CENTER_AREA
+        center_p3.panda_x = self.relative.p3.panda_x * CENTER_AREA
+        center_p3.panda_y = self.relative.p3.panda_y * CENTER_AREA
 
         center_tri = Triangle2d(center_p1, center_p2, center_p3)
 

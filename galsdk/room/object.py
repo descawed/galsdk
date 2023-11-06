@@ -69,10 +69,13 @@ class RoomObject(ABC):
     def hide(self):
         self.node_path.hide()
 
+    def move(self, direction: Vec3):
+        self.node_path.setPos(self.node_path, direction)
+        pos = self.node_path.getPos()
+        self.position.panda_point = pos
+
     def move_to(self, point: Point3):
-        self.position.panda_x = point[0]
-        self.position.panda_y = point[1]
-        self.position.panda_z = point[2]
+        self.position.panda_point = point
         self.update_position()
 
     def rotate(self, angle: float):

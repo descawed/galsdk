@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import functools
 
+from panda3d.core import Point3
+
 
 @functools.total_ordering
 class Dimension:
@@ -212,6 +214,16 @@ class Point:
     @panda_z.setter
     def panda_z(self, value: float):
         self.z.panda_units = value
+
+    @property
+    def panda_point(self) -> Point3:
+        return Point3(self.panda_x, self.panda_y, self.panda_z)
+
+    @panda_point.setter
+    def panda_point(self, value: Point3):
+        self.panda_x = value[0]
+        self.panda_y = value[1]
+        self.panda_z = value[2]
 
 
 class Line2d:
