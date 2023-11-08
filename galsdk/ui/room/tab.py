@@ -464,6 +464,10 @@ class RoomViewport(Viewport):
         if not self.has_focus:
             return Task.cont
 
+        if self.camera_view is not None:
+            if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('r')):
+                self.update_camera_view()
+
         if self.was_dragging_last_frame or self.was_panning_last_frame:
             # let the base viewport handle this
             return super().watch_mouse(_)
@@ -632,6 +636,9 @@ class RoomViewport(Viewport):
                 self.camera.setPos(self.render_target, old_pos + move_vector)
             else:
                 self.camera.setPos(self.camera, move_vector)
+            if self.camera_view is not None:
+                self.camera.lookAt(self.camera_target)
+                self.camera_target_model.setHpr(self.camera, 0, 90, 0)
 
         self.last_key_time = task.time
         return Task.cont
