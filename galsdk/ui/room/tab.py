@@ -77,6 +77,8 @@ class RoomViewport(Viewport):
         self.camera_target = None
         self.camera_target_model = None
         self.camera_task = None
+        self.camera_target_toggle = False
+        self.caps_lock_down = False
 
         self.colliders = []
         self.collider_node = self.render_target.attachNewNode('room_viewport_colliders')
@@ -200,7 +202,8 @@ class RoomViewport(Viewport):
             self.camera_target.setPos(self.camera_view.target.panda_x, self.camera_view.target.panda_y,
                                       self.camera_view.target.panda_z)
             self.camera_target.setHpr(0, 0, 0)
-            self.set_target(self.camera_target)
+            if not self.camera_target_toggle:
+                self.set_target(self.camera_target)
             self.camera.setPos(self.render_target, self.camera_view.position.panda_x, self.camera_view.position.panda_y,
                                self.camera_view.position.panda_z)
             self.camera.lookAt(self.camera_target)
@@ -270,6 +273,7 @@ class RoomViewport(Viewport):
             self.camera_view.hide()  # hide the model for the current camera angle so it's not in the way
             self.set_bg()
         else:
+            self.camera_target_toggle = False
             self.camera_target.hide()
             self.camera.node().getLens().setAspectRatio(self.aspect_ratio)
             camera_distance = self.get_default_camera_distance()
@@ -468,6 +472,11 @@ class RoomViewport(Viewport):
             if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('r')):
                 self.update_camera_view()
 
+            if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('k')):
+                self.camera_view.position.panda_point = self.camera.getPos(self.render_target)
+                self.camera_view.target.panda_point = self.camera_target.getPos(self.render_target)
+                self.camera_view.notify_transform()
+
         if self.was_dragging_last_frame or self.was_panning_last_frame:
             # let the base viewport handle this
             return super().watch_mouse(_)
@@ -600,6 +609,16 @@ class RoomViewport(Viewport):
             self.last_key_time = task.time
             return Task.cont
 
+        caps_lock_down = self.base.mouseWatcherNode.isButtonDown(KeyboardButton.capsLock())
+        if caps_lock_down != self.caps_lock_down:
+            self.caps_lock_down = caps_lock_down
+            if caps_lock_down and self.camera_view:
+                self.camera_target_toggle = not self.camera_target_toggle
+                if self.camera_target_toggle:
+                    self.clear_target()
+                else:
+                    self.set_target(self.camera_target, no_move=True)
+
         if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('w')):
             y = 1.
         elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('s')):
@@ -631,11 +650,12 @@ class RoomViewport(Viewport):
 
             move_amount = mult * self.MOVE_PER_SECOND * (task.time - self.last_key_time)
             move_vector = Point3(x, y, z) * move_amount
+            obj = self.camera_target if self.camera_target_toggle and self.camera_view else self.camera
             if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.alt()):
-                old_pos = self.camera.getPos(self.render_target)
-                self.camera.setPos(self.render_target, old_pos + move_vector)
+                old_pos = obj.getPos(self.render_target)
+                obj.setPos(self.render_target, old_pos + move_vector)
             else:
-                self.camera.setPos(self.camera, move_vector)
+                obj.setPos(obj, move_vector)
             if self.camera_view is not None:
                 self.camera.lookAt(self.camera_target)
                 self.camera_target_model.setHpr(self.camera, 0, 90, 0)

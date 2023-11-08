@@ -181,7 +181,7 @@ class Viewport(ttk.Frame):
         else:
             self.camera.setY(self.camera, direction)
 
-    def set_target(self, target: NodePath, camera_pos: tuple[float, float, float] = None):
+    def set_target(self, target: NodePath, camera_pos: tuple[float, float, float] = None, no_move: bool = False):
         self.target = target
         if camera_pos is None:
             camera_pos = (0, self.DEFAULT_ZOOM, self.DEFAULT_HEIGHT)
@@ -189,8 +189,11 @@ class Viewport(ttk.Frame):
         if self.target_orbit is not None:
             self.target_orbit.removeNode()
         self.target_orbit = self.target.attachNewNode(f'viewport_orbit_{self.name}')
-        self.camera.reparentTo(self.target_orbit)
-        self.camera.setPos(*camera_pos)
+        if no_move:
+            self.camera.wrtReparentTo(self.target_orbit)
+        else:
+            self.camera.reparentTo(self.target_orbit)
+            self.camera.setPos(*camera_pos)
         self.camera.lookAt(self.target)
 
     def clear_target(self):
