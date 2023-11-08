@@ -87,6 +87,7 @@ class RoomViewport(Viewport):
         self.camera_target_model = None
         self.camera_task = None
         self.camera_move_mode = CameraMoveMode.CAMERA
+        self.should_show_camera_target = True
 
         self.colliders = []
         self.collider_node = self.render_target.attachNewNode('room_viewport_colliders')
@@ -210,7 +211,7 @@ class RoomViewport(Viewport):
             self.camera_target.setPos(self.camera_view.target.panda_x, self.camera_view.target.panda_y,
                                       self.camera_view.target.panda_z)
             self.camera_target.setHpr(0, 0, 0)
-            if self.camera_move_mode != CameraMoveMode.TARGET:
+            if self.camera_move_mode == CameraMoveMode.CAMERA:
                 self.set_target(self.camera_target)
             else:
                 self.clear_target()
@@ -271,6 +272,8 @@ class RoomViewport(Viewport):
             self.camera_target_model = NodePath(node)
             self.camera_target_model.setTexture(util.create_texture_from_image(self.target_icon), 1)
             self.camera_target_model.reparentTo(self.camera_target)
+            if not self.should_show_camera_target:
+                self.camera_target_model.hide()
 
         # unhide the old camera
         if self.camera_view:
@@ -451,6 +454,15 @@ class RoomViewport(Viewport):
         self.collision_traverser.addCollider(picker_node_path, self.collision_queue)
 
         self.camera_task = self.base.taskMgr.add(self.move_camera, 'room_viewport_move')
+        self.camera.node().getLens().setFar(2000)
+
+    def show_camera_target(self, show: bool):
+        self.should_show_camera_target = show
+        if self.camera_target_model:
+            if show:
+                self.camera_target_model.show()
+            else:
+                self.camera_target_model.hide()
 
     def get_drag_pos(self) -> Point3 | None:
         pos3d = Point3()
@@ -766,6 +778,9 @@ class RoomTab(Tab):
         self.move_select = ttk.Combobox(viewport_options, textvariable=self.move_var, values=list(CameraMoveMode),
                                         state='readonly')
         self.move_var.trace_add('write', self.select_move_mode)
+        self.target_var = tk.BooleanVar(self, True)
+        target_toggle = ttk.Checkbutton(viewport_options, text='Show target', variable=self.target_var)
+        self.target_var.trace_add('write', self.toggle_target)
 
         self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
@@ -776,6 +791,7 @@ class RoomTab(Tab):
         self.view_select.pack(side=tk.LEFT)
         move_label.pack(padx=10, side=tk.LEFT)
         self.move_select.pack(side=tk.LEFT)
+        target_toggle.pack(padx=10, side=tk.LEFT)
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(3, weight=1)
@@ -797,6 +813,9 @@ class RoomTab(Tab):
             text = 'None'
         self.tree.item(iid, text=text)
         self.update_room('actor')
+
+    def toggle_target(self, *_):
+        self.viewport.show_camera_target(self.target_var.get())
 
     def select_view(self, *_):
         view_name = self.view_var.get()
