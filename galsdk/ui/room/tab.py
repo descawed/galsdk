@@ -1136,6 +1136,7 @@ class RoomTab(Tab):
 
     @property
     def has_unsaved_changes(self) -> bool:
+        self.update_room()
         return len(self.changed_room_ids) > 0
 
     def clear_change_markers(self, iid: str = None):
