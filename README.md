@@ -27,7 +27,8 @@ them up based on the file modification timestamps.
     floor layout. A room consists of a few different types of objects which are listed below. You can right-click on the
     category name within the room to show an option to toggle display of that type of object on or off. Clicking on an
     object will highlight it in the 3D view. You can also select objects by clicking on them in the 3D view. Clicking on
-    a camera will show the view from that camera, with the camera's target point displayed as an X.
+    a camera will show the view from that camera, with the camera's target point displayed as an X. Finally, you can
+    click and drag selected objects to move or resize them (although it's a bit janky at the moment).
   - **Actors** - This shows the actors (characters) present in the room. Rooms may have multiple actor layouts for
     different scenarios, although most only have one. The game has a hard-coded limit of four actors per room, the first
     of which is always the player. Therefore, each layout has a fixed list of four actor slots, although slots may be
