@@ -1006,7 +1006,7 @@ class RoomTab(Tab):
 
             # update selectable views
             self.view_var.set('None')
-            self.view_select['values'] = [f'Camera #{i}' for i in range(len(self.viewport.cameras))]
+            self.view_select['values'] = ['None'] + [f'Camera #{i}' for i in range(len(self.viewport.cameras))]
 
     def toggle_current_group(self, *_):
         if self.menu_item:
@@ -1095,7 +1095,6 @@ class RoomTab(Tab):
             object_id = int(pieces[1])
             room_id = int(pieces[2])
             self.set_room(room_id)
-            camera_view = None
             match object_type:
                 case 'collider':
                     collider = Replaceable(self.viewport.colliders[object_id],
@@ -1111,15 +1110,14 @@ class RoomTab(Tab):
                     obj = self.viewport.cuts[object_id]
                     editor = CameraCutEditor(obj, self)
                 case 'camera':
-                    camera_view = obj = self.viewport.cameras[object_id]
+                    obj = self.viewport.cameras[object_id]
                     editor = CameraEditor(obj, self.viewport.num_bgs, self.viewport.current_bg, self.viewport.select_bg,
                                           self.viewport.update_camera_view, self)
+                    self.view_var.set(f'Camera #{object_id}')
                 case _:
                     editor = obj = None
             self.set_detail_widget(editor)
             self.viewport.select(obj)
-            if camera_view is not None:
-                self.viewport.set_camera_view(camera_view)
             self.update_room()
         elif iid.startswith('entrance-set_'):
             pieces = iid.split('_')
