@@ -6,7 +6,7 @@ from galsdk.coords import Dimension
 from galsdk.game import KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType, Stage
 from galsdk.module import CallbackFunction, FunctionCall, TriggerType, TriggerFlag
 from galsdk.room import TriggerObject
-from galsdk.ui.room.util import validate_int
+from galsdk.ui.room.util import validate_int, StringVar
 
 
 class TriggerEditor(ttk.Frame):
@@ -42,16 +42,16 @@ class TriggerEditor(ttk.Frame):
         id_label = ttk.Label(self, text='ID:', anchor=tk.W)
         id_input = ttk.Entry(self, textvariable=self.id_var, validate='all', validatecommand=self.validator)
 
-        self.x_var = tk.StringVar(self, str(self.trigger.x_pos.game_units))
+        self.x_var = StringVar(self, str(self.trigger.x_pos.game_units))
         x_label = ttk.Label(self, text='X:', anchor=tk.W)
         x_input = ttk.Entry(self, textvariable=self.x_var, validate='all', validatecommand=self.validator)
 
-        self.z_var = tk.StringVar(self, str(self.trigger.z_pos.game_units))
+        self.z_var = StringVar(self, str(self.trigger.z_pos.game_units))
         z_label = ttk.Label(self, text='Z:', anchor=tk.W)
         z_input = ttk.Entry(self, textvariable=self.z_var, validate='all', validatecommand=self.validator)
 
-        self.width_var = tk.StringVar(self, str(self.trigger.width.game_units))
-        self.height_var = tk.StringVar(self, str(self.trigger.height.game_units))
+        self.width_var = StringVar(self, str(self.trigger.width.game_units))
+        self.height_var = StringVar(self, str(self.trigger.height.game_units))
 
         width_label = ttk.Label(self, text='W:', anchor=tk.W)
         width_input = ttk.Entry(self, textvariable=self.width_var, validate='all', validatecommand=self.validator)
@@ -140,6 +140,8 @@ class TriggerEditor(ttk.Frame):
         self.toggle_item()
 
         id_input.focus_force()
+
+        self.trigger.on_transform(self.on_object_transform)
 
     def make_action_frame(self, cb_address: int, show_return_value: bool = False) -> ttk.Labelframe:
         cb = self.functions[cb_address]
@@ -412,3 +414,13 @@ class TriggerEditor(ttk.Frame):
         var_dim = Dimension(int(var.get() or '0'), dimension == 'width')
         getattr(self.trigger, f'set_{dimension}')(var_dim)
         self.trigger.update()
+
+    def on_object_transform(self, _):
+        self.x_var.set_no_trace(str(self.trigger.x_pos.game_units))
+        self.z_var.set_no_trace(str(self.trigger.z_pos.game_units))
+        self.width_var.set_no_trace(str(self.trigger.width.game_units))
+        self.height_var.set_no_trace(str(self.trigger.height.game_units))
+
+    def destroy(self):
+        self.trigger.remove_on_transform(self.on_object_transform)
+        super().destroy()

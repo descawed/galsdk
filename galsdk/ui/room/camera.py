@@ -3,7 +3,7 @@ from tkinter import ttk
 from typing import Callable
 
 from galsdk.room import CameraObject
-from galsdk.ui.room.util import validate_int, validate_float
+from galsdk.ui.room.util import validate_int, validate_float, StringVar
 
 
 class CameraEditor(ttk.Frame):
@@ -34,32 +34,32 @@ class CameraEditor(ttk.Frame):
         scale_label = ttk.Label(self, text='Scale:', anchor=tk.W)
         scale_input = ttk.Entry(self, textvariable=self.scale_var, validate='all', validatecommand=validator)
 
-        self.x_var = tk.StringVar(self, str(self.camera.position.game_x))
+        self.x_var = StringVar(self, str(self.camera.position.game_x))
         self.x_var.trace_add('write', lambda *_: self.on_change_pos('position', 'x', self.x_var))
         x_label = ttk.Label(self, text='X:', anchor=tk.W)
         x_input = ttk.Entry(self, textvariable=self.x_var, validate='all', validatecommand=validator)
 
-        self.y_var = tk.StringVar(self, str(self.camera.position.game_y))
+        self.y_var = StringVar(self, str(self.camera.position.game_y))
         self.y_var.trace_add('write', lambda *_: self.on_change_pos('position', 'y', self.y_var))
         y_label = ttk.Label(self, text='Y:', anchor=tk.W)
         y_input = ttk.Entry(self, textvariable=self.y_var, validate='all', validatecommand=validator)
 
-        self.z_var = tk.StringVar(self, str(self.camera.position.game_z))
+        self.z_var = StringVar(self, str(self.camera.position.game_z))
         self.z_var.trace_add('write', lambda *_: self.on_change_pos('position', 'z', self.z_var))
         z_label = ttk.Label(self, text='Z:', anchor=tk.W)
         z_input = ttk.Entry(self, textvariable=self.z_var, validate='all', validatecommand=validator)
 
-        self.target_x_var = tk.StringVar(self, str(self.camera.target.game_x))
+        self.target_x_var = StringVar(self, str(self.camera.target.game_x))
         self.target_x_var.trace_add('write', lambda *_: self.on_change_pos('target', 'x', self.target_x_var))
         target_x_label = ttk.Label(self, text='Target X:', anchor=tk.W)
         target_x_input = ttk.Entry(self, textvariable=self.target_x_var, validate='all', validatecommand=validator)
 
-        self.target_y_var = tk.StringVar(self, str(self.camera.target.game_y))
+        self.target_y_var = StringVar(self, str(self.camera.target.game_y))
         self.target_y_var.trace_add('write', lambda *_: self.on_change_pos('target', 'y', self.target_y_var))
         target_y_label = ttk.Label(self, text='Target Y:', anchor=tk.W)
         target_y_input = ttk.Entry(self, textvariable=self.target_y_var, validate='all', validatecommand=validator)
 
-        self.target_z_var = tk.StringVar(self, str(self.camera.target.game_z))
+        self.target_z_var = StringVar(self, str(self.camera.target.game_z))
         self.target_z_var.trace_add('write', lambda *_: self.on_change_pos('target', 'z', self.target_z_var))
         target_z_label = ttk.Label(self, text='Target Z:', anchor=tk.W)
         target_z_input = ttk.Entry(self, textvariable=self.target_z_var, validate='all', validatecommand=validator)
@@ -94,6 +94,8 @@ class CameraEditor(ttk.Frame):
 
         orientation_input.focus_force()
 
+        self.camera.on_transform(self.on_object_transform)
+
     def on_change_orientation(self, *_):
         self.camera.orientation = int(self.orientation_var.get() or '0')
 
@@ -112,3 +114,16 @@ class CameraEditor(ttk.Frame):
     def on_change_bg(self, *_):
         bg_num = int(self.bg_var.get() or '0')
         self.bg_change_listener(bg_num)
+
+    def on_object_transform(self, _):
+        self.x_var.set_no_trace(str(self.camera.position.game_x))
+        self.y_var.set_no_trace(str(self.camera.position.game_y))
+        self.z_var.set_no_trace(str(self.camera.position.game_z))
+
+        self.target_x_var.set_no_trace(str(self.camera.target.game_x))
+        self.target_y_var.set_no_trace(str(self.camera.target.game_y))
+        self.target_z_var.set_no_trace(str(self.camera.target.game_z))
+
+    def destroy(self):
+        self.camera.remove_on_transform(self.on_object_transform)
+        super().destroy()

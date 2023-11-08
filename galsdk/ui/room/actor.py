@@ -4,7 +4,7 @@ from typing import Callable
 
 from galsdk.model import ActorModel
 from galsdk.room import ActorObject
-from galsdk.ui.room.util import validate_int, validate_float
+from galsdk.ui.room.util import validate_int, validate_float, StringVar
 
 
 class ActorEditor(ttk.Frame):
@@ -30,22 +30,22 @@ class ActorEditor(ttk.Frame):
         type_label = ttk.Label(self, text='Type:', anchor=tk.W)
         type_select = ttk.OptionMenu(self, self.type_var, self.type_var.get(), *self.actor_names)
 
-        self.x_var = tk.StringVar(self, str(self.actor.position.game_x))
+        self.x_var = StringVar(self, str(self.actor.position.game_x))
         self.x_var.trace_add('write', lambda *_: self.on_change_pos('x', self.x_var))
         x_label = ttk.Label(self, text='X:', anchor=tk.W)
         x_input = ttk.Entry(self, textvariable=self.x_var, validate='all', validatecommand=validator)
 
-        self.y_var = tk.StringVar(self, str(self.actor.position.game_y))
+        self.y_var = StringVar(self, str(self.actor.position.game_y))
         self.y_var.trace_add('write', lambda *_: self.on_change_pos('y', self.y_var))
         y_label = ttk.Label(self, text='Y:', anchor=tk.W)
         y_input = ttk.Entry(self, textvariable=self.y_var, validate='all', validatecommand=validator)
 
-        self.z_var = tk.StringVar(self, str(self.actor.position.game_z))
+        self.z_var = StringVar(self, str(self.actor.position.game_z))
         self.z_var.trace_add('write', lambda *_: self.on_change_pos('z', self.z_var))
         z_label = ttk.Label(self, text='Z:', anchor=tk.W)
         z_input = ttk.Entry(self, textvariable=self.z_var, validate='all', validatecommand=validator)
 
-        self.orientation_var = tk.StringVar(self, str(self.actor.angle))
+        self.orientation_var = StringVar(self, str(self.actor.angle))
         self.orientation_var.trace_add('write', self.on_change_orientation)
         orientation_label = ttk.Label(self, text='Orientation:', anchor=tk.W)
         orientation_input = ttk.Entry(self, textvariable=self.orientation_var, validate='all',
@@ -65,6 +65,8 @@ class ActorEditor(ttk.Frame):
         orientation_input.grid(row=5, column=1)
 
         id_input.focus_force()
+
+        self.actor.on_transform(self.on_object_transform)
 
     def on_change_orientation(self, *_):
         self.actor.angle = float(self.orientation_var.get() or '0')
@@ -86,3 +88,13 @@ class ActorEditor(ttk.Frame):
             self.actor.update_model()
             self.actor.update_texture()
             self.on_update_type(self.actor)
+
+    def on_object_transform(self, _):
+        self.orientation_var.set_no_trace(str(self.actor.angle))
+        self.x_var.set_no_trace(str(self.actor.position.game_x))
+        self.y_var.set_no_trace(str(self.actor.position.game_y))
+        self.z_var.set_no_trace(str(self.actor.position.game_z))
+
+    def destroy(self):
+        self.actor.remove_on_transform(self.on_object_transform)
+        super().destroy()

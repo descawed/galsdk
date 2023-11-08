@@ -171,6 +171,7 @@ class RectangleColliderObject(RoomObject):
         util.update_quad(vdata, (-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
         self.width = new_width
         self.height = new_height
+        self.notify_transform()
 
 
 class WallColliderObject(RectangleColliderObject):
@@ -274,6 +275,7 @@ class TriangleColliderObject(RoomObject):
         self.p1.panda_point = p1 + panda_position
         self.p2.panda_point = p2 + panda_position
         self.p3.panda_point = p3 + panda_position
+        self.notify_transform()
 
     def move(self, direction: Vec3):
         super().move(direction)
@@ -281,6 +283,7 @@ class TriangleColliderObject(RoomObject):
         self.p1.panda_point = self.relative.p1.panda_point + pos
         self.p2.panda_point = self.relative.p2.panda_point + pos
         self.p3.panda_point = self.relative.p3.panda_point + pos
+        self.notify_transform()
 
     def rotate(self, angle: float):
         rotate_mat = Mat3.rotateMat(angle)
@@ -445,3 +448,4 @@ class CircleColliderObject(RoomObject):
         # efficient, but for some reason, the mouse ray stopped detecting collisions on objects after I scaled them
         vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
         util.update_quad(vdata, (-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
+        self.notify_transform()

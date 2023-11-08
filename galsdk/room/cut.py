@@ -99,6 +99,7 @@ class CameraCutObject(RoomObject):
         self.p2.panda_point = p2 + panda_position
         self.p3.panda_point = p3 + panda_position
         self.p4.panda_point = p4 + panda_position
+        self.notify_transform()
 
     def move(self, direction: Vec3):
         super().move(direction)
@@ -107,6 +108,7 @@ class CameraCutObject(RoomObject):
         self.p2.panda_point = self.relative_p2.panda_point + pos
         self.p3.panda_point = self.relative_p3.panda_point + pos
         self.p4.panda_point = self.relative_p4.panda_point + pos
+        self.notify_transform()
 
     def rotate(self, angle: float):
         rotate_mat = Mat3.rotateMat(angle)

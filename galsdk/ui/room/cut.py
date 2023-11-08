@@ -3,7 +3,7 @@ from tkinter import ttk
 
 from galsdk.coords import Dimension
 from galsdk.room import CameraCutObject
-from galsdk.ui.room.util import validate_int
+from galsdk.ui.room.util import validate_int, StringVar
 
 
 class CameraCutEditor(ttk.Frame):
@@ -23,9 +23,9 @@ class CameraCutEditor(ttk.Frame):
         self.position_variables = []
         for i in range(4):
             point = getattr(self.cut, f'p{i + 1}')
-            x_var = tk.StringVar(self, str(point.game_x))
+            x_var = StringVar(self, str(point.game_x))
             x_var.trace_add('write', lambda *_: self.on_change_pos(i, 'x'))
-            z_var = tk.StringVar(self, str(point.game_z))
+            z_var = StringVar(self, str(point.game_z))
             z_var.trace_add('write', lambda *_: self.on_change_pos(i, 'z'))
             x_label = ttk.Label(self, text=f'X{i + 1}:', anchor=tk.W)
             x_input = ttk.Entry(self, textvariable=x_var, validate='all', validatecommand=validator)
@@ -40,6 +40,8 @@ class CameraCutEditor(ttk.Frame):
 
         id_input.focus_force()
 
+        self.cut.on_transform(self.on_object_transform)
+
     def on_change_id(self, *_):
         self.cut.camera_id = int(self.id_var.get() or '0')
 
@@ -50,3 +52,13 @@ class CameraCutEditor(ttk.Frame):
         setattr(getattr(self.cut, f'p{index + 1}'), axis, Dimension(new_value, is_x))
         self.cut.recalculate_center()
         self.cut.update_position()
+
+    def on_object_transform(self, _):
+        for i in range(len(self.position_variables)):
+            point = getattr(self.cut, f'p{i + 1}')
+            self.position_variables[i][0].set_no_trace(point.game_x)
+            self.position_variables[i][1].set_no_trace(point.game_z)
+
+    def destroy(self):
+        self.cut.remove_on_transform(self.on_object_transform)
+        super().destroy()

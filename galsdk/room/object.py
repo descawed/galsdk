@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import math
 from abc import ABC, abstractmethod
+from typing import Callable
 
 from panda3d.core import CollisionEntry, NodePath, PandaNode, Point2, Point3, Texture, Vec3
 
@@ -20,6 +23,17 @@ class RoomObject(ABC):
         self.model_node = None
         self.scene = None
         self.color = (0., 0., 0., 0.)
+        self.listeners = set()
+
+    def on_transform(self, callback: Callable[[RoomObject], None]):
+        self.listeners.add(callback)
+
+    def remove_on_transform(self, callback: Callable[[RoomObject], None]):
+        self.listeners.remove(callback)
+
+    def notify_transform(self):
+        for listener in self.listeners:
+            listener(self)
 
     def add_to_scene(self, scene: NodePath):
         self.scene = scene
@@ -73,14 +87,17 @@ class RoomObject(ABC):
         self.node_path.setPos(self.node_path, direction)
         pos = self.node_path.getPos()
         self.position.panda_point = pos
+        self.notify_transform()
 
     def move_to(self, point: Point3):
         self.position.panda_point = point
         self.update_position()
+        self.notify_transform()
 
     def rotate(self, angle: float):
         self.angle = (self.angle + angle) % 360
         self.update_position()
+        self.notify_transform()
 
     @abstractmethod
     def get_model(self) -> NodePath | None:

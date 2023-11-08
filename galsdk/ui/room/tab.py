@@ -538,7 +538,6 @@ class RoomViewport(Viewport):
                                 self.drag_plane = Plane(Vec3(0, 0, 1), obj_pos)
                             self.drag_start_point = self.get_drag_pos()
                     else:
-                        # TODO: notify detail widget of changes
                         if self.drag_mode == DragMode.ROTATE_Z and not is_rotate:
                             self.drag_start_point = self.get_drag_pos()
                             self.set_cursor(Cursor.CENTER)
