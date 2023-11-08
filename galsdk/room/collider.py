@@ -4,7 +4,7 @@ from panda3d.core import CollisionEntry, GeomNode, Mat3, NodePath, Point2, Sampl
 from PIL import Image, ImageDraw
 
 from galsdk import util
-from galsdk.coords import Dimension, Point, Triangle2d
+from galsdk.coords import Dimension, Line2d, Point, Triangle2d
 from galsdk.module import CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room.object import RoomObject
 from galsdk.ui.viewport import Cursor
@@ -23,6 +23,8 @@ class RectangleColliderObject(RoomObject):
         self.unknown = bounds.unknown
         self.color = COLLIDER_COLOR
         self.is_wall = False
+        self.resize_vertices = []
+        self.resize_offset = 0
 
     def get_model(self) -> NodePath:
         half_x = (self.width / 2).panda_units
@@ -45,12 +47,20 @@ class RectangleColliderObject(RoomObject):
         self.position.x = value + self.width // 2
 
     @property
+    def x_far(self) -> Dimension:
+        return self.x_pos + self.width
+
+    @property
     def z_pos(self) -> Dimension:
         return self.position.y - self.height // 2
 
     @z_pos.setter
     def z_pos(self, value: Dimension):
         self.position.y = value + self.height // 2
+
+    @property
+    def z_far(self) -> Dimension:
+        return self.z_pos + self.height
 
     def set_width(self, value: Dimension):
         center_x = self.x_pos + value // 2
@@ -89,6 +99,77 @@ class RectangleColliderObject(RoomObject):
                    Vec3(center_width, center_height, 0), Vec3(-center_width, center_height, 0)]
         angle = self.get_cursor_angle(camera, entry, corners)
         return Cursor.from_angle(angle)
+
+    def start_resize(self, entry: CollisionEntry):
+        center_width = abs(self.width.panda_units / 2)
+        center_height = abs(self.height.panda_units / 2)
+        corners = [Vec3(-center_width, -center_height, 0), Vec3(center_width, -center_height, 0),
+                   Vec3(center_width, center_height, 0), Vec3(-center_width, center_height, 0)]
+        self.resize_vertices, self.resize_offset = self.get_edge(entry, corners)
+
+    def resize(self, point: Point3):
+        center_width = abs(self.width.panda_units / 2)
+        center_height = abs(self.height.panda_units / 2)
+        corners = [Vec3(-center_width, -center_height, 0), Vec3(center_width, -center_height, 0),
+                   Vec3(center_width, center_height, 0), Vec3(-center_width, center_height, 0)]
+
+        game_point = Point()
+        game_point.panda_x = point[0]
+        game_point.panda_y = point[1]
+        line = Line2d(Point(), game_point)  # relative center is at (0, 0)
+        final_point = line.get_point_at_distance(line.panda_len + self.resize_offset)
+
+        if len(self.resize_vertices) == 1:
+            # we're moving a corner, so we're resizing in two dimensions
+            index = self.resize_vertices[0]
+            old_vert = corners[index]
+            new_vert = final_point.panda_point
+            for neighbor in [corners[(index - 1) % 4], corners[(index + 1) % 4]]:
+                if neighbor[0] == old_vert[0]:
+                    neighbor[0] = new_vert[0]
+                else:
+                    neighbor[1] = new_vert[1]
+            corners[index] = new_vert
+        else:
+            # we're moving an edge, so we're resizing in one dimension
+            index1, index2 = self.resize_vertices
+            vert1 = corners[index1]
+            vert2 = corners[index2]
+            if vert1[0] == vert2[0]:
+                vert1[0] = point[0]
+                vert2[0] = point[0]
+            else:
+                vert1[1] = point[1]
+                vert2[1] = point[1]
+
+        game_corners = []
+        for corner in corners:
+            p = Point()
+            p.panda_point = corner
+            game_corners.append(p)
+
+        min_x = min(p.game_x for p in game_corners)
+        max_x = max(p.game_x for p in game_corners)
+        min_z = min(p.game_z for p in game_corners)
+        max_z = max(p.game_z for p in game_corners)
+
+        new_width = Dimension(max_x - min_x, True)
+        width_diff = new_width - self.width
+        if final_point.game_x < 0:
+            width_diff = -width_diff
+        new_height = Dimension(max_z - min_z)
+        height_diff = new_height - self.height
+        if final_point.game_z < 0:
+            height_diff = -height_diff
+        self.node_path.setPos(self.node_path, Vec3(width_diff.panda_units / 2, height_diff.panda_units / 2, 0))
+        self.position.panda_point = self.node_path.getPos()
+
+        half_x = new_width.panda_units / 2
+        half_z = new_height.panda_units / 2
+        vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
+        util.update_quad(vdata, (-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
+        self.width = new_width
+        self.height = new_height
 
 
 class WallColliderObject(RectangleColliderObject):
@@ -255,7 +336,7 @@ class CircleColliderObject(RoomObject):
 
     def get_model(self) -> NodePath:
         radius = self.radius.panda_units
-        geom = util.make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
+        geom = util.make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True, False)
         node = GeomNode('circle_collider_quad')
         node.addGeom(geom)
         return NodePath(node)
@@ -301,6 +382,9 @@ class CircleColliderObject(RoomObject):
     def resize(self, point: Point3):
         new_radius = Dimension()
         new_radius.panda_units = point.length() + self.resize_offset
-        scale = new_radius.panda_units / self.radius.panda_units
         self.radius = new_radius
-        self.node_path.setScale(self.node_path, Vec3(scale, scale, 0))
+        radius = self.radius.panda_units
+        # I tried using scaling instead of changing the vertex data because I thought it might be easier and more
+        # efficient, but for some reason, the mouse ray stopped detecting collisions on objects after I scaled them
+        vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
+        util.update_quad(vdata, (-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)

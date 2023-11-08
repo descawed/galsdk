@@ -581,7 +581,7 @@ class RoomViewport(Viewport):
                                 obj.rotate(angle)
                                 self.drag_start_vector = mouse_vector
                             elif self.drag_mode == DragMode.RESIZE:
-                                relative_point = drag_pos - obj_pos
+                                relative_point = obj.node_path.getRelativePoint(self.render_target, drag_pos)
                                 obj.resize(relative_point)
                 else:
                     # nothing in particular is happening. hand things over to the base viewport.

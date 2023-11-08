@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import math
 
 from panda3d.core import Point3
 
@@ -21,6 +22,9 @@ class Dimension:
 
     def __pos__(self):
         return Dimension(self.game_units, self.is_mirrored)
+
+    def __abs__(self) -> Dimension:
+        return Dimension(abs(self.game_units), self.is_mirrored)
 
     def __add__(self, other: Dimension):
         if other.is_mirrored != self.is_mirrored:
@@ -109,6 +113,9 @@ class Dimension:
 
     def __eq__(self, other: Dimension):
         return self.game_units == other.game_units and self.is_mirrored == other.is_mirrored
+
+    def __repr__(self) -> str:
+        return f'Dimension({self.game_units}, {self.is_mirrored})'
 
     @property
     def game_units(self) -> int:
@@ -255,6 +262,20 @@ class Line2d:
             pass
         point.panda_y = am * point.panda_x + ab
         return point
+
+    @property
+    def panda_len(self) -> float:
+        diff = self.b - self.a
+        return math.sqrt(diff.panda_x**2 + diff.panda_y**2)
+
+    def get_point_at_distance(self, dt: float) -> Point:
+        # https://math.stackexchange.com/a/1630886
+        d = self.panda_len
+        t = dt / d
+        p = Point()
+        p.panda_x = (1 - t)*self.a.panda_x + t*self.b.panda_x
+        p.panda_y = (1 - t)*self.a.panda_y + t*self.b.panda_y
+        return p
 
 
 class Triangle2d:
