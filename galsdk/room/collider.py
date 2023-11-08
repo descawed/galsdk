@@ -290,6 +290,7 @@ class TriangleColliderObject(RoomObject):
         self.set_relative(p1, p2, p3)
 
     def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
+        # FIXME: this doesn't always scale correctly and can result in the center cursor showing when it shouldn't
         scale_mat = Mat3.scaleMat(Vec3(CENTER_AREA, CENTER_AREA, CENTER_AREA))
         p1_scaled = scale_mat.xform(self.relative.p1.panda_point)
         p2_scaled = scale_mat.xform(self.relative.p2.panda_point)
