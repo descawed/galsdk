@@ -44,6 +44,15 @@ class DragMode(Enum):
     RESIZE = auto()
 
 
+class CameraMoveMode(str, Enum):
+    CAMERA = 'Camera'
+    TARGET = 'Target'
+    BOTH = 'Both'
+
+    def __str__(self) -> str:
+        return self.value
+
+
 class RoomViewport(Viewport):
     CAMERA_TARGET_WIDTH = 1.78
     CAMERA_TARGET_HEIGHT = 2.
@@ -77,8 +86,7 @@ class RoomViewport(Viewport):
         self.camera_target = None
         self.camera_target_model = None
         self.camera_task = None
-        self.camera_target_toggle = False
-        self.caps_lock_down = False
+        self.camera_move_mode = CameraMoveMode.CAMERA
 
         self.colliders = []
         self.collider_node = self.render_target.attachNewNode('room_viewport_colliders')
@@ -202,7 +210,7 @@ class RoomViewport(Viewport):
             self.camera_target.setPos(self.camera_view.target.panda_x, self.camera_view.target.panda_y,
                                       self.camera_view.target.panda_z)
             self.camera_target.setHpr(0, 0, 0)
-            if not self.camera_target_toggle:
+            if self.camera_move_mode != CameraMoveMode.TARGET:
                 self.set_target(self.camera_target)
             self.camera.setPos(self.render_target, self.camera_view.position.panda_x, self.camera_view.position.panda_y,
                                self.camera_view.position.panda_z)
@@ -273,7 +281,6 @@ class RoomViewport(Viewport):
             self.camera_view.hide()  # hide the model for the current camera angle so it's not in the way
             self.set_bg()
         else:
-            self.camera_target_toggle = False
             self.camera_target.hide()
             self.camera.node().getLens().setAspectRatio(self.aspect_ratio)
             camera_distance = self.get_default_camera_distance()
@@ -609,16 +616,6 @@ class RoomViewport(Viewport):
             self.last_key_time = task.time
             return Task.cont
 
-        caps_lock_down = self.base.mouseWatcherNode.isButtonDown(KeyboardButton.capsLock())
-        if caps_lock_down != self.caps_lock_down:
-            self.caps_lock_down = caps_lock_down
-            if caps_lock_down and self.camera_view:
-                self.camera_target_toggle = not self.camera_target_toggle
-                if self.camera_target_toggle:
-                    self.clear_target()
-                else:
-                    self.set_target(self.camera_target, no_move=True)
-
         if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('w')):
             y = 1.
         elif self.base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey('s')):
@@ -650,18 +647,36 @@ class RoomViewport(Viewport):
 
             move_amount = mult * self.MOVE_PER_SECOND * (task.time - self.last_key_time)
             move_vector = Point3(x, y, z) * move_amount
-            obj = self.camera_target if self.camera_target_toggle and self.camera_view else self.camera
-            if self.base.mouseWatcherNode.isButtonDown(KeyboardButton.alt()):
-                old_pos = obj.getPos(self.render_target)
-                obj.setPos(self.render_target, old_pos + move_vector)
+            is_absolute = self.base.mouseWatcherNode.isButtonDown(KeyboardButton.alt())
+            if self.camera_move_mode in [CameraMoveMode.CAMERA, CameraMoveMode.BOTH]:
+                target_pos = self.camera_target.getPos(self.camera)
+                if is_absolute:
+                    old_pos = self.camera.getPos(self.render_target)
+                    self.camera.setPos(self.render_target, old_pos + move_vector)
+                else:
+                    self.camera.setPos(self.camera, move_vector)
+                if self.camera_move_mode == CameraMoveMode.BOTH:
+                    self.camera_target.setPos(self.camera, target_pos)
             else:
-                obj.setPos(obj, move_vector)
+                if is_absolute:
+                    old_pos = self.camera_target.getPos(self.render_target)
+                    self.camera_target.setPos(self.render_target, old_pos + move_vector)
+                else:
+                    self.camera_target.setPos(self.camera_target, move_vector)
             if self.camera_view is not None:
                 self.camera.lookAt(self.camera_target)
                 self.camera_target_model.setHpr(self.camera, 0, 90, 0)
 
         self.last_key_time = task.time
         return Task.cont
+
+    def set_camera_move_mode(self, move_mode: CameraMoveMode):
+        self.camera_move_mode = move_mode
+        if self.camera_view:
+            if move_mode != CameraMoveMode.CAMERA:
+                self.clear_target()
+            else:
+                self.set_target(self.camera_target, no_move=True)
 
     def set_active(self, is_active: bool):
         super().set_active(is_active)
@@ -742,9 +757,13 @@ class RoomTab(Tab):
         viewport_options = ttk.Frame(self)
         self.view_var = tk.StringVar(self, 'None')
         view_label = ttk.Label(viewport_options, text='View: ', anchor=tk.W)
-        self.view_select = ttk.OptionMenu(viewport_options, self.view_var, self.view_var.get(), 'None')
-        # do this after creating the OptionMenu so it doesn't trigger immediately
+        self.view_select = ttk.Combobox(viewport_options, textvariable=self.view_var, values=['None'], state='readonly')
         self.view_var.trace_add('write', self.select_view)
+        self.move_var = tk.StringVar(self, CameraMoveMode.CAMERA)
+        move_label = ttk.Label(viewport_options, text='Move: ', anchor=tk.W)
+        self.move_select = ttk.Combobox(viewport_options, textvariable=self.move_var, values=list(CameraMoveMode),
+                                        state='readonly')
+        self.move_var.trace_add('write', self.select_move_mode)
 
         self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
@@ -753,6 +772,8 @@ class RoomTab(Tab):
 
         view_label.pack(padx=10, side=tk.LEFT)
         self.view_select.pack(side=tk.LEFT)
+        move_label.pack(padx=10, side=tk.LEFT)
+        self.move_select.pack(side=tk.LEFT)
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(3, weight=1)
@@ -783,6 +804,10 @@ class RoomTab(Tab):
             camera_id = int(view_name.rsplit('#', 1)[1])
             view = self.viewport.cameras[camera_id]
         self.viewport.set_camera_view(view)
+
+    def select_move_mode(self, *_):
+        move_mode = CameraMoveMode(self.move_var.get())
+        self.viewport.set_camera_move_mode(move_mode)
 
     def resize_3d(self, _=None):
         self.update()
@@ -981,11 +1006,7 @@ class RoomTab(Tab):
 
             # update selectable views
             self.view_var.set('None')
-            menu = self.view_select['menu']
-            menu.delete(1, 'end')
-            for i in range(len(self.viewport.cameras)):
-                label = f'Camera #{i}'
-                menu.add_command(label=label, command=lambda value=label: self.view_var.set(value))
+            self.view_select['values'] = [f'Camera #{i}' for i in range(len(self.viewport.cameras))]
 
     def toggle_current_group(self, *_):
         if self.menu_item:
