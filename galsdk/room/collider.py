@@ -87,6 +87,13 @@ class RectangleColliderObject(RoomObject):
     def can_resize(self) -> bool:
         return True
 
+    @property
+    def vertices(self) -> list[Vec3]:
+        center_width = abs(self.width.panda_units / 2)
+        center_height = abs(self.height.panda_units / 2)
+        return [Vec3(-center_width, -center_height, 0), Vec3(center_width, -center_height, 0),
+                Vec3(center_width, center_height, 0), Vec3(-center_width, center_height, 0)]
+
     def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
         center_width = abs(self.width.panda_units / 2)
         center_height = abs(self.height.panda_units / 2)
@@ -101,29 +108,22 @@ class RectangleColliderObject(RoomObject):
         return Cursor.from_angle(angle)
 
     def start_resize(self, entry: CollisionEntry):
-        center_width = abs(self.width.panda_units / 2)
-        center_height = abs(self.height.panda_units / 2)
-        corners = [Vec3(-center_width, -center_height, 0), Vec3(center_width, -center_height, 0),
-                   Vec3(center_width, center_height, 0), Vec3(-center_width, center_height, 0)]
-        self.resize_vertices, self.resize_offset = self.get_edge(entry, corners)
+        self.resize_vertices, self.resize_offset = self.get_edge(entry, self.vertices)
 
     def resize(self, point: Point3):
-        center_width = abs(self.width.panda_units / 2)
-        center_height = abs(self.height.panda_units / 2)
-        corners = [Vec3(-center_width, -center_height, 0), Vec3(center_width, -center_height, 0),
-                   Vec3(center_width, center_height, 0), Vec3(-center_width, center_height, 0)]
+        corners = self.vertices
 
         game_point = Point()
         game_point.panda_x = point[0]
         game_point.panda_y = point[1]
         line = Line2d(Point(), game_point)  # relative center is at (0, 0)
         final_point = line.get_point_at_distance(line.panda_len + self.resize_offset)
+        new_vert = final_point.panda_point
 
         if len(self.resize_vertices) == 1:
             # we're moving a corner, so we're resizing in two dimensions
             index = self.resize_vertices[0]
             old_vert = corners[index]
-            new_vert = final_point.panda_point
             for neighbor in [corners[(index - 1) % 4], corners[(index + 1) % 4]]:
                 if neighbor[0] == old_vert[0]:
                     neighbor[0] = new_vert[0]
@@ -135,12 +135,13 @@ class RectangleColliderObject(RoomObject):
             index1, index2 = self.resize_vertices
             vert1 = corners[index1]
             vert2 = corners[index2]
+            # this works because the rectangle's sides are always straight in its own reference frame
             if vert1[0] == vert2[0]:
-                vert1[0] = point[0]
-                vert2[0] = point[0]
+                vert1[0] = new_vert[0]
+                vert2[0] = new_vert[0]
             else:
-                vert1[1] = point[1]
-                vert2[1] = point[1]
+                vert1[1] = new_vert[1]
+                vert2[1] = new_vert[1]
 
         game_corners = []
         for corner in corners:
@@ -189,6 +190,8 @@ class TriangleColliderObject(RoomObject):
         self.relative = Triangle2d(p1 - centroid, p2 - centroid, p3 - centroid)
         super().__init__(name, centroid, 0)
         self.color = COLLIDER_COLOR
+        self.resize_vertices = []
+        self.resize_offset = 0
 
     @property
     def p1(self) -> Point:
@@ -213,6 +216,14 @@ class TriangleColliderObject(RoomObject):
     @p3.setter
     def p3(self, value: Point):
         self.triangle.p3 = value
+
+    @property
+    def vertices(self) -> list[Point3]:
+        return [
+            self.relative.p1.panda_point,
+            self.relative.p2.panda_point,
+            self.relative.p3.panda_point,
+        ]
 
     def get_model(self) -> NodePath:
         geom = util.make_triangle(
@@ -253,6 +264,17 @@ class TriangleColliderObject(RoomObject):
     def can_rotate(self) -> bool:
         return True
 
+    def set_relative(self, p1: Point3, p2: Point3, p3: Point3):
+        vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
+        util.update_triangle(vdata, p1, p2, p3)
+        self.relative.p1.panda_point = p1
+        self.relative.p2.panda_point = p2
+        self.relative.p3.panda_point = p3
+        panda_position = self.position.panda_point
+        self.p1.panda_point = p1 + panda_position
+        self.p2.panda_point = p2 + panda_position
+        self.p3.panda_point = p3 + panda_position
+
     def move(self, direction: Vec3):
         super().move(direction)
         pos = self.node_path.getPos()
@@ -265,28 +287,22 @@ class TriangleColliderObject(RoomObject):
         p1 = rotate_mat.xform(self.relative.p1.panda_point)
         p2 = rotate_mat.xform(self.relative.p2.panda_point)
         p3 = rotate_mat.xform(self.relative.p3.panda_point)
-        vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
-        util.update_triangle(vdata, p1, p2, p3)
-        self.relative.p1.panda_point = p1
-        self.relative.p2.panda_point = p2
-        self.relative.p3.panda_point = p3
-        panda_position = self.position.panda_point
-        self.p1.panda_point = p1 + panda_position
-        self.p2.panda_point = p2 + panda_position
-        self.p3.panda_point = p3 + panda_position
+        self.set_relative(p1, p2, p3)
 
     def get_pos_cursor_type(self, camera: NodePath, entry: CollisionEntry) -> Cursor | None:
+        scale_mat = Mat3.scaleMat(Vec3(CENTER_AREA, CENTER_AREA, CENTER_AREA))
+        p1_scaled = scale_mat.xform(self.relative.p1.panda_point)
+        p2_scaled = scale_mat.xform(self.relative.p2.panda_point)
+        p3_scaled = scale_mat.xform(self.relative.p3.panda_point)
+
         center_p1 = Point()
-        center_p1.panda_x = self.relative.p1.panda_x * CENTER_AREA
-        center_p1.panda_y = self.relative.p1.panda_y * CENTER_AREA
+        center_p1.panda_point = p1_scaled
 
         center_p2 = Point()
-        center_p2.panda_x = self.relative.p2.panda_x * CENTER_AREA
-        center_p2.panda_y = self.relative.p2.panda_y * CENTER_AREA
+        center_p2.panda_point = p2_scaled
 
         center_p3 = Point()
-        center_p3.panda_x = self.relative.p3.panda_x * CENTER_AREA
-        center_p3.panda_y = self.relative.p3.panda_y * CENTER_AREA
+        center_p3.panda_point = p3_scaled
 
         center_tri = Triangle2d(center_p1, center_p2, center_p3)
 
@@ -302,6 +318,46 @@ class TriangleColliderObject(RoomObject):
                     Vec3(center_p3.panda_x, center_p3.panda_y, 0)]
         angle = self.get_cursor_angle(camera, entry, vertices)
         return Cursor.from_angle(angle)
+
+    def start_resize(self, entry: CollisionEntry):
+        self.resize_vertices, self.resize_offset = self.get_edge(entry, self.vertices)
+
+    def resize(self, point: Point3):
+        corners = self.vertices
+
+        game_point = Point()
+        game_point.panda_x = point[0]
+        game_point.panda_y = point[1]
+        line = Line2d(Point(), game_point)  # relative center is at (0, 0)
+        final_point = line.get_point_at_distance(line.panda_len + self.resize_offset).panda_point
+
+        if len(self.resize_vertices) == 1:
+            corners[self.resize_vertices[0]] = final_point
+        else:
+            # we're moving an edge, so we're resizing in one dimension
+            index1, index2 = self.resize_vertices
+            vert1 = corners[index1]
+            vert2 = corners[index2]
+            # find the equation of the line passing through final_point with the same slope as the edge
+            if vert1[0] == vert2[0]:
+                a = 1
+                b = 0
+                c = -final_point[0]
+            else:
+                m = (vert1[1] - vert2[1]) / (vert1[0] - vert2[0])
+                a = -m
+                b = 1
+                c = m * final_point[0] - final_point[1]
+            # https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line#Line_defined_by_an_equation
+            # for each vertex, find the point on that line closest to the vertex, and that will be the new vertex
+            denom = a**2 + b**2
+            for vert in [vert1, vert2]:
+                ay = a * vert[1]
+                bx = b * vert[0]
+                vert[0] = (b*(bx - ay) - a*c)/denom
+                vert[1] = (a*(ay - bx) - b*c)/denom
+
+        self.set_relative(corners[0], corners[1], corners[2])
 
 
 class CircleColliderObject(RoomObject):
