@@ -159,7 +159,7 @@ class TriggerEditor(ttk.Frame):
             return_entry.grid(row=row, column=1)
             row += 1
 
-        for call in cb.calls:
+        for i, call in enumerate(cb.calls):
             function = KNOWN_FUNCTIONS[call.name]
             if call.call_address not in self.call_enabled_vars:
                 enabled_var = tk.BooleanVar(frame, call.is_enabled is not False)
@@ -175,7 +175,7 @@ class TriggerEditor(ttk.Frame):
             row += 1
 
             last_map_var = None
-            for i, (arg_type, (arg_address, arg_value)) in enumerate(zip(function.arguments, call.arguments)):
+            for j, (arg_type, (arg_address, arg_value)) in enumerate(zip(function.arguments, call.arguments)):
                 var = self.arg_vars.get(arg_address)
 
                 match arg_type:
@@ -207,12 +207,12 @@ class TriggerEditor(ttk.Frame):
                     case _:
                         continue  # don't care about these arguments
 
-                key = (call.call_address, arg_address, i)
+                key = (i, j)
                 # we need this separately from self.arguments because each usage of an argument is a separate entry in
                 # a function's argument array, and we want to make sure we update all of them so we don't have
                 # conflicting information when we save our changes.
                 if key not in self.arg_tracers:
-                    var.trace_add('write', self.argument_updater(call, i, getter))
+                    var.trace_add('write', self.argument_updater(call, j, getter))
                     self.arg_tracers.add(key)
                 self.arg_vars[arg_address] = var
                 label.grid(row=row, column=0)

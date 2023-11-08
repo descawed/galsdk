@@ -212,6 +212,8 @@ class RoomViewport(Viewport):
             self.camera_target.setHpr(0, 0, 0)
             if self.camera_move_mode != CameraMoveMode.TARGET:
                 self.set_target(self.camera_target)
+            else:
+                self.clear_target()
             self.camera.setPos(self.render_target, self.camera_view.position.panda_x, self.camera_view.position.panda_y,
                                self.camera_view.position.panda_z)
             self.camera.lookAt(self.camera_target)
