@@ -108,14 +108,12 @@ class KeepReader(BinaryIO):
         return self.source.__exit__(__t, __value, __traceback)
 
 
-def make_triangle(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float]) -> Geom:
-    vdata = GeomVertexData('', GeomVertexFormat.getV3(), Geom.UHStatic)
+def make_triangle(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float],
+                  is_static: bool = True) -> Geom:
+    vdata = GeomVertexData('', GeomVertexFormat.getV3(), Geom.UHStatic if is_static else Geom.UHDynamic)
     vdata.setNumRows(3)
 
-    vertex = GeomVertexWriter(vdata, 'vertex')
-    vertex.addData3(p1[0], p1[1], 0)
-    vertex.addData3(p2[0], p2[1], 0)
-    vertex.addData3(p3[0], p3[1], 0)
+    update_triangle(vdata, p1, p2, p3)
 
     primitive = GeomTriangles(Geom.UHStatic)
     primitive.addVertices(0, 1, 2)
@@ -126,24 +124,20 @@ def make_triangle(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[fl
     return geom
 
 
+def update_triangle(vdata: GeomVertexData, p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float]):
+    vertex = GeomVertexWriter(vdata, 'vertex')
+    vertex.setData3(p1[0], p1[1], 0)
+    vertex.setData3(p2[0], p2[1], 0)
+    vertex.setData3(p3[0], p3[1], 0)
+
+
 def make_quad(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float],
-              p4: tuple[float, float], use_texture: bool = False) -> Geom:
+              p4: tuple[float, float], use_texture: bool = False, is_static: bool = True) -> Geom:
     vertex_format = GeomVertexFormat.getV3t2() if use_texture else GeomVertexFormat.getV3()
-    vdata = GeomVertexData('', vertex_format, Geom.UHStatic)
+    vdata = GeomVertexData('', vertex_format, Geom.UHStatic if is_static else Geom.UHDynamic)
     vdata.setNumRows(4)
 
-    vertex = GeomVertexWriter(vdata, 'vertex')
-    vertex.addData3(p1[0], p1[1], 0)
-    vertex.addData3(p2[0], p2[1], 0)
-    vertex.addData3(p3[0], p3[1], 0)
-    vertex.addData3(p4[0], p4[1], 0)
-
-    if use_texture:
-        texcoord = GeomVertexWriter(vdata, 'texcoord')
-        texcoord.addData2(0, 0)
-        texcoord.addData2(1, 0)
-        texcoord.addData2(1, 1)
-        texcoord.addData2(0, 1)
+    update_quad(vdata, p1, p2, p3, p4, use_texture)
 
     primitive = GeomTriangles(Geom.UHStatic)
     primitive.addVertices(0, 1, 2)
@@ -153,6 +147,22 @@ def make_quad(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float,
     geom = Geom(vdata)
     geom.addPrimitive(primitive)
     return geom
+
+
+def update_quad(vdata: GeomVertexData, p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float],
+                p4: tuple[float, float], use_texture: bool = False):
+    vertex = GeomVertexWriter(vdata, 'vertex')
+    vertex.setData3(p1[0], p1[1], 0)
+    vertex.setData3(p2[0], p2[1], 0)
+    vertex.setData3(p3[0], p3[1], 0)
+    vertex.setData3(p4[0], p4[1], 0)
+
+    if use_texture:
+        texcoord = GeomVertexWriter(vdata, 'texcoord')
+        texcoord.setData2(0, 0)
+        texcoord.setData2(1, 0)
+        texcoord.setData2(1, 1)
+        texcoord.setData2(0, 1)
 
 
 def create_texture_from_image(image: Image) -> Texture:

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import functools
+import math
+
+from panda3d.core import Point3
 
 
 @functools.total_ordering
@@ -19,6 +22,9 @@ class Dimension:
 
     def __pos__(self):
         return Dimension(self.game_units, self.is_mirrored)
+
+    def __abs__(self) -> Dimension:
+        return Dimension(abs(self.game_units), self.is_mirrored)
 
     def __add__(self, other: Dimension):
         if other.is_mirrored != self.is_mirrored:
@@ -108,6 +114,9 @@ class Dimension:
     def __eq__(self, other: Dimension):
         return self.game_units == other.game_units and self.is_mirrored == other.is_mirrored
 
+    def __repr__(self) -> str:
+        return f'Dimension({self.game_units}, {self.is_mirrored})'
+
     @property
     def game_units(self) -> int:
         return self._game_units
@@ -138,7 +147,7 @@ class Point:
         self.y = Dimension(z)
         self.z = Dimension(y)
 
-    def __add__(self, other: Point):
+    def __add__(self, other: Point) -> Point:
         return Point(self.game_x + other.game_x, self.game_y + other.game_y, self.game_z + other.game_z)
 
     def __iadd__(self, other: Point):
@@ -146,7 +155,7 @@ class Point:
         self.game_y += other.game_y
         self.game_z += other.game_z
 
-    def __sub__(self, other: Point):
+    def __sub__(self, other: Point) -> Point:
         return Point(self.game_x - other.game_x, self.game_y - other.game_y, self.game_z - other.game_z)
 
     def __isub__(self, other: Point):
@@ -213,6 +222,16 @@ class Point:
     def panda_z(self, value: float):
         self.z.panda_units = value
 
+    @property
+    def panda_point(self) -> Point3:
+        return Point3(self.panda_x, self.panda_y, self.panda_z)
+
+    @panda_point.setter
+    def panda_point(self, value: Point3):
+        self.panda_x = value[0]
+        self.panda_y = value[1]
+        self.panda_z = value[2]
+
 
 class Line2d:
     def __init__(self, a: Point, b: Point):
@@ -244,6 +263,20 @@ class Line2d:
         point.panda_y = am * point.panda_x + ab
         return point
 
+    @property
+    def panda_len(self) -> float:
+        diff = self.b - self.a
+        return math.sqrt(diff.panda_x**2 + diff.panda_y**2)
+
+    def get_point_at_distance(self, dt: float) -> Point:
+        # https://math.stackexchange.com/a/1630886
+        d = self.panda_len
+        t = dt / d
+        p = Point()
+        p.panda_x = (1 - t)*self.a.panda_x + t*self.b.panda_x
+        p.panda_y = (1 - t)*self.a.panda_y + t*self.b.panda_y
+        return p
+
 
 class Triangle2d:
     def __init__(self, p1: Point, p2: Point, p3: Point):
@@ -259,3 +292,16 @@ class Triangle2d:
         line1 = Line2d(m12, self.p3)
         line2 = Line2d(self.p1, m23)
         return line1.find_intersection(line2)
+
+    @staticmethod
+    def sign(p1: Point, p2: Point, p3: Point) -> float:
+        return ((p1.panda_x - p3.panda_x) * (p2.panda_y - p3.panda_y)
+                - (p2.panda_x - p3.panda_x) * (p1.panda_y - p3.panda_y))
+
+    def is_point_within(self, p: Point) -> bool:
+        # https://stackoverflow.com/a/2049593
+        d1 = self.sign(p, self.p1, self.p2)
+        d2 = self.sign(p, self.p2, self.p3)
+        d3 = self.sign(p, self.p3, self.p1)
+
+        return not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0))

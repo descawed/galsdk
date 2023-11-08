@@ -22,6 +22,10 @@ class CameraObject(RoomObject):
         self.model.reparentTo(self.node_path)
         self.color = (0.5, 0.5, 0.5, 0.9)
 
+    @property
+    def can_rotate(self) -> bool:
+        return True
+
     def remove_from_scene(self):
         self.node_path.detachNode()
 

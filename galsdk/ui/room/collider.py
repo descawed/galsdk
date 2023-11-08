@@ -5,7 +5,7 @@ from galsdk.coords import Dimension
 from galsdk.module import ColliderType, CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room import CircleColliderObject, RectangleColliderObject, TriangleColliderObject, WallColliderObject
 from galsdk.ui.room.replaceable import Replaceable
-from galsdk.ui.room.util import validate_int
+from galsdk.ui.room.util import validate_int, StringVar
 
 
 ColliderObject = CircleColliderObject | RectangleColliderObject | TriangleColliderObject | WallColliderObject
@@ -35,12 +35,12 @@ class ColliderEditor(ttk.Frame):
                                     command=self.on_change_type)
         validator = (self.register(validate_int), '%P')
 
-        self.x_var = tk.StringVar(self)
+        self.x_var = StringVar(self)
         self.x_var.trace_add('write', lambda *_: self.on_change_pos('x'))
         self.x_label = ttk.Label(self, text='X:', anchor=tk.W)
         self.x_input = ttk.Entry(self, textvariable=self.x_var, validate='all', validatecommand=validator)
 
-        self.z_var = tk.StringVar(self)
+        self.z_var = StringVar(self)
         self.z_var.trace_add('write', lambda *_: self.on_change_pos('z'))
         self.z_label = ttk.Label(self, text='Z:', anchor=tk.W)
         self.z_input = ttk.Entry(self, textvariable=self.z_var, validate='all', validatecommand=validator)
@@ -48,23 +48,23 @@ class ColliderEditor(ttk.Frame):
         type_label.grid(row=0, column=0)
         type_input.grid(row=0, column=1)
 
-        self.triangle_p1_x_var = tk.StringVar(self)
+        self.triangle_p1_x_var = StringVar(self)
         self.triangle_p1_x_var.trace_add('write', lambda *_: self.on_change_tri_point('p1', 'x'))
-        self.triangle_p2_x_var = tk.StringVar(self)
+        self.triangle_p2_x_var = StringVar(self)
         self.triangle_p2_x_var.trace_add('write', lambda *_: self.on_change_tri_point('p2', 'x'))
-        self.triangle_p3_x_var = tk.StringVar(self)
+        self.triangle_p3_x_var = StringVar(self)
         self.triangle_p3_x_var.trace_add('write', lambda *_: self.on_change_tri_point('p3', 'x'))
-        self.triangle_p1_z_var = tk.StringVar(self)
+        self.triangle_p1_z_var = StringVar(self)
         self.triangle_p1_z_var.trace_add('write', lambda *_: self.on_change_tri_point('p1', 'z'))
-        self.triangle_p2_z_var = tk.StringVar(self)
+        self.triangle_p2_z_var = StringVar(self)
         self.triangle_p2_z_var.trace_add('write', lambda *_: self.on_change_tri_point('p2', 'z'))
-        self.triangle_p3_z_var = tk.StringVar(self)
+        self.triangle_p3_z_var = StringVar(self)
         self.triangle_p3_z_var.trace_add('write', lambda *_: self.on_change_tri_point('p3', 'z'))
-        self.rectangle_width_var = tk.StringVar(self)
+        self.rectangle_width_var = StringVar(self)
         self.rectangle_width_var.trace_add('write', lambda *_: self.on_change_rect_size('width'))
-        self.rectangle_height_var = tk.StringVar(self)
+        self.rectangle_height_var = StringVar(self)
         self.rectangle_height_var.trace_add('write', lambda *_: self.on_change_rect_size('height'))
-        self.circle_radius_var = tk.StringVar(self)
+        self.circle_radius_var = StringVar(self)
         self.circle_radius_var.trace_add('write', lambda *_: self.on_change_radius())
 
         self.triangle_p1_x_label = ttk.Label(self, text='X1:', anchor=tk.W)
@@ -96,6 +96,7 @@ class ColliderEditor(ttk.Frame):
                                              validatecommand=validator)
 
         self.update_display()
+        self.collider.object.on_transform(self.on_object_transform)
 
     def toggle_triangle(self, show: bool):
         if show:
@@ -165,10 +166,10 @@ class ColliderEditor(ttk.Frame):
     def update_display(self):
         match self.type:
             case ColliderType.WALL | ColliderType.RECTANGLE:
-                self.x_var.set(str(self.collider.object.x_pos.game_units))
-                self.z_var.set(str(self.collider.object.z_pos.game_units))
-                self.rectangle_width_var.set(str(self.collider.object.width.game_units))
-                self.rectangle_height_var.set(str(self.collider.object.height.game_units))
+                self.x_var.set_no_trace(str(self.collider.object.x_pos.game_units))
+                self.z_var.set_no_trace(str(self.collider.object.z_pos.game_units))
+                self.rectangle_width_var.set_no_trace(str(self.collider.object.width.game_units))
+                self.rectangle_height_var.set_no_trace(str(self.collider.object.height.game_units))
                 self.toggle_rectangle(True)
                 self.toggle_triangle(False)
                 self.toggle_circle(False)
@@ -176,19 +177,19 @@ class ColliderEditor(ttk.Frame):
                 p1 = self.collider.object.p1
                 p2 = self.collider.object.p2
                 p3 = self.collider.object.p3
-                self.triangle_p1_x_var.set(str(p1.game_x))
-                self.triangle_p1_z_var.set(str(p1.game_z))
-                self.triangle_p2_x_var.set(str(p2.game_x))
-                self.triangle_p2_z_var.set(str(p2.game_z))
-                self.triangle_p3_x_var.set(str(p3.game_x))
-                self.triangle_p3_z_var.set(str(p3.game_z))
+                self.triangle_p1_x_var.set_no_trace(str(p1.game_x))
+                self.triangle_p1_z_var.set_no_trace(str(p1.game_z))
+                self.triangle_p2_x_var.set_no_trace(str(p2.game_x))
+                self.triangle_p2_z_var.set_no_trace(str(p2.game_z))
+                self.triangle_p3_x_var.set_no_trace(str(p3.game_x))
+                self.triangle_p3_z_var.set_no_trace(str(p3.game_z))
                 self.toggle_rectangle(False)
                 self.toggle_triangle(True)
                 self.toggle_circle(False)
             case ColliderType.CIRCLE:
-                self.x_var.set(str(self.collider.object.position.game_x))
-                self.z_var.set(str(self.collider.object.position.game_z))
-                self.circle_radius_var.set(str(self.collider.object.radius.game_units))
+                self.x_var.set_no_trace(str(self.collider.object.position.game_x))
+                self.z_var.set_no_trace(str(self.collider.object.position.game_z))
+                self.circle_radius_var.set_no_trace(str(self.collider.object.radius.game_units))
                 self.toggle_rectangle(False)
                 self.toggle_triangle(False)
                 self.toggle_circle(True)
@@ -230,6 +231,7 @@ class ColliderEditor(ttk.Frame):
         z = self.collider.object.position.game_z
         name = self.collider.object.name
 
+        self.collider.object.remove_on_transform(self.on_object_transform)
         match self.type:
             case ColliderType.WALL:
                 bounds = RectangleCollider(x, z, 0, 0)
@@ -243,5 +245,13 @@ class ColliderEditor(ttk.Frame):
             case ColliderType.CIRCLE:
                 bounds = CircleCollider(x, z, 0)
                 self.collider.object = CircleColliderObject(name, bounds)
+        self.collider.object.on_transform(self.on_object_transform)
 
         self.update_display()
+
+    def on_object_transform(self, _):
+        self.update_display()
+
+    def destroy(self):
+        self.collider.object.remove_on_transform(self.on_object_transform)
+        super().destroy()
