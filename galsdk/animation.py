@@ -76,10 +76,20 @@ class Frame:
 
 class Animation(FileFormat):
     FRAME_TIME = 1 / 30
+    EXTRA_DATA_SIZE = 72
 
-    def __init__(self, frames: list[Frame], name: str = None):
+    def __init__(self, frames: list[Frame], name: str = None, extra_data: bytes = b''):
         self.frames = frames
         self.name = name
+        self.extra_data = extra_data
+
+    @property
+    def damage(self) -> int:
+        return int.from_bytes(self.extra_data[6:8], 'little')
+
+    @property
+    def attack_type(self) -> int:
+        return self.extra_data[8] if len(self.extra_data) > 8 else 0
 
     @functools.cache
     def convert_frame(self, i: int) -> tuple[np.ndarray, list[np.ndarray]]:
@@ -127,9 +137,12 @@ class Animation(FileFormat):
             frames.append(Frame.from_raw(values))
             prev_values = values
 
-        return cls(frames)
+        # seems to only be present for actor animations
+        extra_data = f.read()[-cls.EXTRA_DATA_SIZE:]
+        return cls(frames, extra_data=extra_data)
 
     def write(self, f: BinaryIO, **kwargs):
+        # FIXME: this code is out of date (doesn't write extra data; need to pad frames to multiple of 4)
         prev_values = self.frames[0].to_raw()
         f.write(struct.pack('<48hI', *prev_values))
 
@@ -256,6 +269,7 @@ class AnimationDb(Archive[Animation | None]):
         return cls(animations, header)
 
     def write(self, f: BinaryIO, **kwargs):
+        # FIXME: this code is out of date
         total_size = 0
         offset = len(self.header)
         for animation in self.animations:

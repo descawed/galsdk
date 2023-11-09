@@ -904,8 +904,12 @@ class ActorModel(Model):
             root = root.add_child(segments[15])
         next_seg = root.add_child(segments[1])
         if actor.id == DOROTHY_EYE.id:
-            next_seg.add_child(segments[2]).add_child(segments[3]).add_child(segments[4]).add_child(segments[5])\
-                .add_child(segments[6])
+            # something special must be going on in the code for this model, because it just adds segments 0 through 7,
+            # but here it doesn't seem to look right unless we put 5 after 6 and remove the vertical offset on 7
+            next_seg.add_child(segments[2]).add_child(segments[3]).add_child(segments[4]).add_child(segments[6])\
+                .add_child(segments[5]).add_child(segments[7])
+            offset = segments[7].offset
+            segments[7].offset = (offset[0], 0, offset[2])
         else:
             if actor.id in [HOTEL_KNOCK_GUY.id, HOTEL_KNOCK_GUY_2.id, HOTEL_RECEPTIONIST.id, LEM_ROBOT.id, JOULE.id]:
                 next_seg = next_seg.add_child(segments[15])
