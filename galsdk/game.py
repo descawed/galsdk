@@ -98,6 +98,7 @@ NUM_KEY_ITEMS = len(KEY_ITEM_NAMES)
 NUM_MED_ITEMS = len(MED_ITEM_NAMES)
 NUM_MAPS = len(MAP_NAMES)
 NUM_MOVIES = 65
+NUM_ACTOR_INSTANCES = 138
 MODULE_ENTRY_SIZE = 8
 
 
@@ -111,6 +112,7 @@ class ArgumentType(Enum):
     MED_ITEM = auto()
     GAME_STATE = auto()
     MOVIE = auto()
+    ADDRESS = auto()
 
 
 @dataclass
@@ -194,6 +196,28 @@ KNOWN_FUNCTIONS = {
         ArgumentType.INTEGER,
         # unsupported 5th argument
     ]),
+    'LoadAiModule': Function([
+        ArgumentType.INTEGER,
+    ]),
+    'InstallActorAiRoutine': Function([
+        ArgumentType.ADDRESS,
+        ArgumentType.ADDRESS,
+    ]),
+    'AttackPlayerRanged': Function([
+        ArgumentType.ADDRESS,
+        ArgumentType.INTEGER,
+        ArgumentType.INTEGER,
+        ArgumentType.ADDRESS,
+    ]),
+    'LoadModuleEntry': Function([
+        ArgumentType.INTEGER,
+        ArgumentType.INTEGER,
+        ArgumentType.ADDRESS,
+    ]),
+    'MaybeStartMeleeAttack': Function([
+        ArgumentType.ADDRESS,
+        ArgumentType.INTEGER,
+    ]),
 }
 
 
@@ -273,6 +297,7 @@ REGION_ADDRESSES = {
         'MenuXScaleStop': 0x801917B0,
         'GameState': 0x801AF308,
         'Movies': 0x80191F78,
+        'DefaultActorInstanceHealth': 0x80193E40,
         'SetRoomLayout': 0x8012E980,
         'SetCollisionObjects': 0x80121194,
         'GetStateFlag': 0x80128600,
@@ -323,6 +348,11 @@ REGION_ADDRESSES = {
         'PlayMovie': 0x801225F4,
         'ShowItemTim': 0x8015FAA8,
         'SaveMenu': 0x80128174,
+        'LoadAiModule': 0x8013C708,
+        'InstallActorAiRoutine': 0x8013C770,
+        'AttackPlayerRanged': 0x8014A180,
+        'LoadModuleEntry': 0x8011F7D0,
+        'MaybeStartMeleeAttack': 0x80144F48,
     },
 }
 

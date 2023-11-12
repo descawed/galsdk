@@ -12,11 +12,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePath
 from typing import Iterable
 
+from galsdk import util
 from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
-from galsdk.game import Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_KEY_ITEMS, NUM_MED_ITEMS, NUM_MAPS, NUM_MOVIES, \
-    MODULE_ENTRY_SIZE, GameVersion, VERSIONS, ADDRESSES
+from galsdk.game import (Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_ACTOR_INSTANCES, NUM_KEY_ITEMS, NUM_MED_ITEMS,
+                         NUM_MAPS, NUM_MOVIES, MODULE_ENTRY_SIZE, GameVersion, VERSIONS, ADDRESSES)
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
 from galsdk.model import ACTORS, ActorModel, ItemModel
@@ -339,6 +340,8 @@ class Project:
                         new_metadata_path = module_manifest[index].path.with_suffix('.json')
                         with new_metadata_path.open('w') as f:
                             module.save_metadata(f)
+                        # remove the old metadata path
+                        metadata_path.unlink(True)
 
         x_scales = []
         option_menu = []
@@ -735,6 +738,27 @@ class Project:
         inventory_menu_file = menu_manifest['Inventory']
         with inventory_menu_file.path.open('rb') as f:
             yield 'Inventory', Menu.read(f)
+
+    @functools.cache
+    def get_actor_instance_health(self) -> list[tuple[int, int]]:
+        num_bytes = NUM_ACTOR_INSTANCES * 4
+        if self.version.region == Region.NTSC_J:
+            manifest = Manifest.load_from(self.project_dir / 'modules')
+            with manifest[129].path.open('rb') as f:
+                f.seek(0x40)
+                data = f.read()
+        else:
+            addresses = ADDRESSES[self.version.id]
+            exe_path = self.project_dir / 'boot' / self.version.exe_name
+            with exe_path.open('rb') as f:
+                exe = Exe.read(f)
+            address = addresses['DefaultActorInstanceHealth']
+            data = exe[address:address + num_bytes]
+
+        return [
+            (util.int_from_bytes(data[i:i+2]), util.int_from_bytes(data[i+2:i+4]))
+            for i in range(0, num_bytes, 4)
+        ]
 
     @property
     def default_export_image(self) -> Path:

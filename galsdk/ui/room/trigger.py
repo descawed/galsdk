@@ -4,7 +4,7 @@ from typing import Callable
 
 from galsdk.coords import Dimension
 from galsdk.game import KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType, Stage
-from galsdk.module import CallbackFunction, FunctionCall, TriggerType, TriggerFlag
+from galsdk.module import CallbackFunction, FunctionArgument, FunctionCall, TriggerType, TriggerFlag
 from galsdk.room import TriggerObject
 from galsdk.ui.room.util import validate_int, StringVar
 
@@ -148,10 +148,12 @@ class TriggerEditor(ttk.Frame):
         stages = list(Stage)
         frame = ttk.Labelframe(self, text='Actions')
         row = 0
-        if show_return_value and cb.return_value_instruction is not None and cb.return_value is not None:
+        if show_return_value and cb.return_value.address is not None and cb.return_value.value is not None:
             old_var = self.return_vars.get(cb_address)
-            return_var, return_label, return_entry = self.make_int_entry(cb.return_value, frame, old_var,
+            return_var, return_label, return_entry = self.make_int_entry(cb.return_value.value, frame, old_var,
                                                                          'Return value')
+            if not cb.return_value.can_update:
+                return_entry.configure(state=tk.DISABLED)
             if old_var is None:
                 self.return_vars[cb_address] = return_var
                 return_var.trace_add('write', self.return_value_updater(cb, self.int_value_getter(return_var)))
@@ -175,13 +177,16 @@ class TriggerEditor(ttk.Frame):
             row += 1
 
             last_map_var = None
-            for j, (arg_type, (arg_address, arg_value)) in enumerate(zip(function.arguments, call.arguments)):
-                var = self.arg_vars.get(arg_address)
+            for j, (arg_type, (arg_addr, arg_value, can_update)) in enumerate(zip(function.arguments, call.arguments)):
+                var = self.arg_vars.get(arg_addr)
 
                 match arg_type:
                     case ArgumentType.INTEGER:
                         var, label, select = self.make_int_entry(arg_value, frame, var)
                         getter = self.int_value_getter(var)
+                    case ArgumentType.ADDRESS:
+                        var, label, select = self.make_int_entry(arg_value, frame, var, 'Address', True)
+                        getter = self.int_value_getter(var, 16)
                     case ArgumentType.MAP:
                         var, label, select = self.make_option_select(arg_value, 'Map', MAP_NAMES, frame, var)
                         getter = self.string_value_getter(var, MAP_NAMES)
@@ -207,6 +212,9 @@ class TriggerEditor(ttk.Frame):
                     case _:
                         continue  # don't care about these arguments
 
+                if not can_update:
+                    select.configure(state=tk.DISABLED)
+
                 key = (i, j)
                 # we need this separately from self.arguments because each usage of an argument is a separate entry in
                 # a function's argument array, and we want to make sure we update all of them so we don't have
@@ -214,7 +222,7 @@ class TriggerEditor(ttk.Frame):
                 if key not in self.arg_tracers:
                     var.trace_add('write', self.argument_updater(call, j, getter))
                     self.arg_tracers.add(key)
-                self.arg_vars[arg_address] = var
+                self.arg_vars[arg_addr] = var
                 label.grid(row=row, column=0)
                 select.grid(row=row, column=1)
                 row += 1
@@ -242,7 +250,8 @@ class TriggerEditor(ttk.Frame):
             value = getter()
             if value is not None:
                 addr = call.arguments[index][0]
-                call.arguments[index] = (addr, value)
+                can_update = call.arguments[index][2]
+                call.arguments[index] = FunctionArgument(addr, value, can_update)
         return updater
 
     def msg_value_getter(self, var: tk.StringVar) -> Callable[[], int]:
@@ -263,15 +272,15 @@ class TriggerEditor(ttk.Frame):
         return getter
 
     @staticmethod
-    def int_value_getter(var: tk.StringVar) -> Callable[[], int | None]:
+    def int_value_getter(var: tk.StringVar, base: int = 10) -> Callable[[], int | None]:
         def getter() -> int | None:
             try:
-                return int(var.get())
+                return int(var.get(), base)
             except ValueError:
                 return None
 
         return getter
-    
+
     def make_option_select(self, default_item: int, label: str, names: list[str], parent: tk.Widget = None,
                            item_var: tk.StringVar = None) -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
         assert default_item >= 0
@@ -284,12 +293,14 @@ class TriggerEditor(ttk.Frame):
         item_select = ttk.Combobox(parent, textvariable=item_var, values=names, state='readonly')
         return item_var, item_label, item_select
     
-    def make_int_entry(self, default_value: int, parent: tk.Widget, int_var: tk.StringVar = None, text: str = 'Integer')\
-            -> tuple[tk.StringVar, ttk.Label, ttk.Entry]:
+    def make_int_entry(self, default_value: int, parent: tk.Widget, int_var: tk.StringVar = None, text: str = 'Integer',
+                       is_hex: bool = False) -> tuple[tk.StringVar, ttk.Label, ttk.Entry]:
         if int_var is None:
-            int_var = tk.StringVar(self, str(default_value))
+            str_val = f'{default_value:08X}' if is_hex else str(default_value)
+            int_var = tk.StringVar(self, str_val)
         label = ttk.Label(parent, text=f'{text}:', anchor=tk.W)
-        entry = ttk.Entry(parent, textvariable=int_var, validate='all', validatecommand=self.validator)
+        entry = ttk.Entry(parent, textvariable=int_var, validate='all',
+                          validatecommand=self.hex_validator if is_hex else self.validator)
         return int_var, label, entry
 
     def make_msg_select(self, default_msg: int, parent: tk.Widget, msg_var: tk.StringVar = None)\

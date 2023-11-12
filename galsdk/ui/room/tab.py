@@ -725,6 +725,7 @@ class RoomTab(Tab):
         self.rooms = []
         self.rooms_by_index = {}
         self.movies = self.project.get_movie_list()
+        self.actor_instance_health = self.project.get_actor_instance_health()
         self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True, 'actors': True,
                            'entrances': True}
 
@@ -740,7 +741,7 @@ class RoomTab(Tab):
             stage: Stage
             self.tree.insert('', tk.END, text=f'Stage {stage}', iid=stage, open=False)
 
-            self.strings[stage] = self.project.get_stage_strings(stage).obj
+            self.strings[str(stage)] = self.project.get_stage_strings(stage).obj
 
             for room in self.project.get_stage_rooms(stage):
                 room_id = len(self.rooms)
@@ -1163,7 +1164,8 @@ class RoomTab(Tab):
             if pieces[2] == 'actor':
                 actor_id = int(pieces[3])
                 actor = self.viewport.actors[actor_id]
-                self.set_detail_widget(ActorEditor(actor, self.viewport.actor_models, self.on_update_actor, self))
+                self.set_detail_widget(ActorEditor(actor, self.viewport.actor_models, self.actor_instance_health,
+                                                   self.on_update_actor, self))
                 self.viewport.select(actor)
 
     def set_active(self, is_active: bool):

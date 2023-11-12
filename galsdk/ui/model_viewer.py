@@ -129,7 +129,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
                 self.animation_set = AnimationDb.read(f)
             values = ['None']
             values.extend(str(i) for i, animation in enumerate(self.animation_set) if animation)
-            self.anim_select.configure(values=values, state=tk.NORMAL)
+            self.anim_select.configure(values=values, state='readonly')
             self.models[self.current_index].set_animations(self.animation_set)
         else:
             self.animation_set = None
@@ -187,7 +187,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
             self.current_index = index
             model = self.models[index]
             self.model_frame.set_model(model)
-            self.anim_set_select.configure(state=tk.NORMAL)
+            self.anim_set_select.configure(state='readonly')
             if model.anim_index is not None:
                 self.set_anim_set_index(model.anim_index)
             else:

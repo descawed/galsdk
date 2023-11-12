@@ -8,11 +8,12 @@ from galsdk.ui.room.util import validate_int, validate_float, StringVar
 
 
 class ActorEditor(ttk.Frame):
-    def __init__(self, actor: ActorObject, actor_models: list[ActorModel],
+    def __init__(self, actor: ActorObject, actor_models: list[ActorModel], actor_instance_health: list[tuple[int, int]],
                  on_update_type: Callable[[ActorObject], None], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.actor = actor
         self.actor_models = actor_models
+        self.actor_instance_health = actor_instance_health
         self.actor_names = ['None']
         self.actor_names.extend(model.name for model in self.actor_models)
         self.on_update_type = on_update_type
@@ -51,6 +52,13 @@ class ActorEditor(ttk.Frame):
         orientation_input = ttk.Entry(self, textvariable=self.orientation_var, validate='all',
                                       validatecommand=float_validator)
 
+        health_str, health_state = self.get_health_info()
+        self.health_var = tk.StringVar(self, health_str)
+        self.health_var.trace_add('write', self.on_change_health)
+        health_label = ttk.Label(self, text='Health:', anchor=tk.W)
+        self.health_input = ttk.Entry(self, textvariable=self.health_var, validate='all', validatecommand=validator,
+                                      state=health_state)
+
         id_label.grid(row=0, column=0)
         id_input.grid(row=0, column=1)
         type_label.grid(row=1, column=0)
@@ -63,10 +71,27 @@ class ActorEditor(ttk.Frame):
         z_input.grid(row=4, column=1)
         orientation_label.grid(row=5, column=0)
         orientation_input.grid(row=5, column=1)
+        health_label.grid(row=6, column=0)
+        self.health_input.grid(row=6, column=1)
 
         id_input.focus_force()
 
         self.actor.on_transform(self.on_object_transform)
+
+    def get_health_info(self) -> tuple[str, str]:
+        if self.actor.id < len(self.actor_instance_health):
+            health_str = str(self.actor_instance_health[self.actor.id][0])
+            health_state = tk.NORMAL
+        else:
+            health_str = '0'
+            health_state = tk.DISABLED
+        return health_str, health_state
+
+    def on_change_health(self, *_):
+        if self.actor.id >= len(self.actor_instance_health):
+            return
+        unknown = self.actor_instance_health[self.actor.id][1]
+        self.actor_instance_health[self.actor.id] = (int(self.health_var.get() or '0'), unknown)
 
     def on_change_orientation(self, *_):
         self.actor.angle = float(self.orientation_var.get() or '0')
@@ -74,6 +99,9 @@ class ActorEditor(ttk.Frame):
 
     def on_change_id(self, *_):
         self.actor.id = int(self.id_var.get() or '0')
+        health_str, health_state = self.get_health_info()
+        self.health_var.set(health_str)
+        self.health_input.configure(state=health_state)
 
     def on_change_pos(self, axis: str, new_value: tk.StringVar):
         setattr(self.actor.position, f'game_{axis}', int(new_value.get() or '0'))
