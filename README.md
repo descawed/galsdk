@@ -181,7 +181,7 @@ interfaces:
 - `galsdk.xa` - Unpack XA databases. The game's dialogue is stored in the disc's XA file(s) (XA.MXA in the US version,
   files in the XA directory in the Japanese version) with no indication where particular recordings begin or end. In the
   US version, DISPLAY.CDB entries 0, 1, and 2 are a kind of header-only database defining where in the XA file to find
-  the various dialogue recordings for  discs 1, 2, and 3 respectively. Run this tool with the path to the file from
+  the various dialogue recordings for discs 1, 2, and 3 respectively. Run this tool with the path to the file from
   DISPLAY.CDB for the disc you want, followed by the path to the XA file, and finally the path to a directory to extract
   the recordings to. This tool doesn't currently work with the Japanese version because the XA layouts are hard-coded
   in the exe.

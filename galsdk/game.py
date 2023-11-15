@@ -214,7 +214,7 @@ KNOWN_FUNCTIONS = {
         ArgumentType.INTEGER,
         ArgumentType.ADDRESS,
     ]),
-    'MaybeStartMeleeAttack': Function([
+    'StartMeleeAttack': Function([
         ArgumentType.ADDRESS,
         ArgumentType.INTEGER,
     ]),
@@ -352,7 +352,7 @@ REGION_ADDRESSES = {
         'InstallActorAiRoutine': 0x8013C770,
         'AttackPlayerRanged': 0x8014A180,
         'LoadModuleEntry': 0x8011F7D0,
-        'MaybeStartMeleeAttack': 0x80144F48,
+        'StartMeleeAttack': 0x80144F48,
     },
 }
 

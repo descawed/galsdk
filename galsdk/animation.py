@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import functools
 import io
 import struct
@@ -18,26 +17,26 @@ from galsdk.format import Archive, FileFormat
 
 
 class AnimationFlag(IntFlag):
-    UNKNOWN_0 = 1
-    UNKNOWN_1 = 2
-    UNKNOWN_2 = 4
-    UNKNOWN_3 = 8
-    UNKNOWN_4 = 0x10
-    UNKNOWN_5 = 0x20
-    UNKNOWN_6 = 0x40
-    UNKNOWN_7 = 0x80
-    UNKNOWN_8 = 0x100
-    UNKNOWN_9 = 0x200
-    UNKNOWN_10 = 0x400
-    UNKNOWN_11 = 0x800
-    UNKNOWN_12 = 0x1000
-    UNKNOWN_13 = 0x2000
-    UNKNOWN_14 = 0x4000
-    UNKNOWN_15 = 0x8000
+    FLIP_HIT_SEGMENTS = 1
+    SEGMENT_1_HIT = 2
+    SEGMENT_2_HIT = 4
+    SEGMENT_3_HIT = 8
+    SEGMENT_4_HIT = 0x10
+    SEGMENT_5_HIT = 0x20
+    SEGMENT_6_HIT = 0x40
+    SEGMENT_7_HIT = 0x80
+    SEGMENT_8_HIT = 0x100
+    SEGMENT_9_HIT = 0x200
+    SEGMENT_10_HIT = 0x400
+    SEGMENT_11_HIT = 0x800
+    SEGMENT_12_HIT = 0x1000
+    SEGMENT_13_HIT = 0x2000
+    SEGMENT_14_HIT = 0x4000
+    SEGMENT_15_HIT = 0x8000
     UNKNOWN_16 = 0x10000
     UNKNOWN_17 = 0x20000
     UNKNOWN_18 = 0x40000
-    UNKNOWN_19 = 0x80000
+    FACE_TARGET = 0x80000
     UNKNOWN_20 = 0x100000
     UNKNOWN_21 = 0x200000
     UNKNOWN_22 = 0x400000
@@ -50,6 +49,60 @@ class AnimationFlag(IntFlag):
     FORWARD = 0x20000000
     TOGGLE_DIRECTION = 0x40000000
     END = 0x80000000
+
+    @property
+    def hit_segment(self) -> int:
+        flags = self
+        if flags & self.FLIP_HIT_SEGMENTS:
+            # flips the bit order from 0123456789ABCDEF to 3450129AB678CDEF
+            flags = (flags << 3) & 0xe380 | flags & 0xf | (flags >> 3) & 0x1c70
+        if flags & self.SEGMENT_1_HIT:
+            return 1
+        if flags & self.SEGMENT_2_HIT:
+            return 2
+        if flags & self.SEGMENT_3_HIT:
+            return 3
+        if flags & self.SEGMENT_4_HIT:
+            return 4
+        if flags & self.SEGMENT_5_HIT:
+            return 5
+        if flags & self.SEGMENT_6_HIT:
+            return 6
+        if flags & self.SEGMENT_7_HIT:
+            return 7
+        if flags & self.SEGMENT_8_HIT:
+            return 8
+        if flags & self.SEGMENT_9_HIT:
+            return 9
+        if flags & self.SEGMENT_10_HIT:
+            return 10
+        if flags & self.SEGMENT_11_HIT:
+            return 11
+        if flags & self.SEGMENT_12_HIT:
+            return 12
+        if flags & self.SEGMENT_13_HIT:
+            return 13
+        if flags & self.SEGMENT_14_HIT:
+            return 14
+        if flags & self.SEGMENT_15_HIT:
+            return 15
+        return 0
+
+
+@dataclass
+class AttackData:
+    unknown1: int
+    hit_angle: int
+    unknown2: int
+    damage: int
+    type: int
+    unknown3: int
+    unknown4: int
+
+    @property
+    def is_empty(self) -> bool:
+        return (self.unknown1 == 0 and self.hit_angle == 0 and self.unknown2 == 0 and self.damage == 0
+                and self.type == 0 and self.unknown3 == 0 and self.unknown4 == 0)
 
 
 @dataclass
@@ -76,20 +129,18 @@ class Frame:
 
 class Animation(FileFormat):
     FRAME_TIME = 1 / 30
-    EXTRA_DATA_SIZE = 72
+    DEFAULT_HEADER_SIZE = 72
+    ATTACK_DATA_FORMAT = '<4h2bh'
+    ATTACK_DATA_SIZE = struct.calcsize(ATTACK_DATA_FORMAT)
 
-    def __init__(self, frames: list[Frame], name: str = None, extra_data: bytes = b''):
+    def __init__(self, frames: list[Frame], name: str = None, attack_data: list[AttackData] = None):
         self.frames = frames
         self.name = name
-        self.extra_data = extra_data
+        self.attack_data = attack_data or []
 
     @property
-    def damage(self) -> int:
-        return int.from_bytes(self.extra_data[6:8], 'little')
-
-    @property
-    def attack_type(self) -> int:
-        return self.extra_data[8] if len(self.extra_data) > 8 else 0
+    def is_attack(self) -> bool:
+        return not all(data.is_empty for data in self.attack_data)
 
     @functools.cache
     def convert_frame(self, i: int) -> tuple[np.ndarray, list[np.ndarray]]:
@@ -119,7 +170,12 @@ class Animation(FileFormat):
         return '.ANI'
 
     @classmethod
-    def read(cls, f: BinaryIO, **kwargs) -> Self:
+    def read(cls, f: BinaryIO, *, header_size: int = DEFAULT_HEADER_SIZE, **kwargs) -> Self:
+        header = f.read(header_size)
+        attack_data = []
+        for i in range(0, header_size, cls.ATTACK_DATA_SIZE):
+            attack_data.append(AttackData(*struct.unpack_from(cls.ATTACK_DATA_FORMAT, header, i)))
+
         prev_values = struct.unpack('<48hI', f.read(100))
         frames = [Frame.from_raw(prev_values)]
 
@@ -137,12 +193,10 @@ class Animation(FileFormat):
             frames.append(Frame.from_raw(values))
             prev_values = values
 
-        # seems to only be present for actor animations
-        extra_data = f.read()[-cls.EXTRA_DATA_SIZE:]
-        return cls(frames, extra_data=extra_data)
+        return cls(frames, attack_data=attack_data)
 
     def write(self, f: BinaryIO, **kwargs):
-        # FIXME: this code is out of date (doesn't write extra data; need to pad frames to multiple of 4)
+        # FIXME: this code is out of date (doesn't write attack data; need to pad frames to multiple of 4)
         prev_values = self.frames[0].to_raw()
         f.write(struct.pack('<48hI', *prev_values))
 
@@ -167,11 +221,9 @@ class Animation(FileFormat):
 
 class AnimationDb(Archive[Animation | None]):
     SECTOR_SIZE = 0x800
-    DEFAULT_HEADER = b'\0' * 0x48
 
-    def __init__(self, animations: list[Animation | None] = None, header: bytes = DEFAULT_HEADER):
+    def __init__(self, animations: list[Animation | None] = None):
         super().__init__()
-        self.header = header
         self.animations = animations or []
 
     @property
@@ -181,14 +233,6 @@ class AnimationDb(Archive[Animation | None]):
     @property
     def suggested_extension(self) -> str:
         return '.ADB'
-
-    @property
-    def metadata(self) -> dict[str, str]:
-        return {'header': base64.b64encode(self.header).decode()}
-
-    @classmethod
-    def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
-        return cls(None, base64.b64decode(metadata['header']))
 
     def __getitem__(self, item: int) -> Animation | None:
         return self.animations[item]
@@ -245,31 +289,31 @@ class AnimationDb(Archive[Animation | None]):
         directory_len = len(directory)
         data_size = util.int_from_bytes(f.read(4))
         data = util.read_exact(f, data_size)
-        header = data[:directory[1]]
         animations = []
         for i in range(0, directory_len, 2):
-            size = directory[i]
-            offset = directory[i + 1]
-            if size == 0 and offset == 0:
+            header_offset = directory[i]
+            data_offset = directory[i + 1]
+            header_size = data_offset - header_offset
+            if header_offset == 0 and data_offset == 0:
                 animations.append(None)
             else:
                 for j in range(i + 2, directory_len, 2):
-                    next_offset = directory[j + 1]
+                    next_offset = directory[j]
                     if next_offset > 0:
-                        with BytesIO(data[offset:next_offset]) as buf:
-                            animations.append(Animation.read(buf))
+                        with BytesIO(data[header_offset:next_offset]) as buf:
+                            animations.append(Animation.read(buf, header_size=header_size))
                         break
                 else:
-                    with BytesIO(data[offset:]) as buf:
-                        animations.append(Animation.read(buf))
+                    with BytesIO(data[header_offset:]) as buf:
+                        animations.append(Animation.read(buf, header_size=header_size))
         # we read the whole first sector as the directory, but there aren't that many entries, so delete all the dummy
         # empty entries we added at the end
         while animations and not animations[-1]:
             del animations[-1]
-        return cls(animations, header)
+        return cls(animations)
 
     def write(self, f: BinaryIO, **kwargs):
-        # FIXME: this code is out of date
+        # FIXME: this code is out of date and broken
         total_size = 0
         offset = len(self.header)
         for animation in self.animations:
