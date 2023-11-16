@@ -3,8 +3,8 @@ Editor and utilities for the PSX game Galerians (1999). Requires Python 3.11.
 
 ## Editor
 The editor is a GUI application for exploring the game's files. Run it from the repo's root directory with
-`python -m galsdk.editor`. At the moment, it supports editing rooms, strings, and art textures. Support for editing
-other files will be added in the future.
+`python -m galsdk.editor`. At the moment, it supports editing rooms, strings, art textures, and some animation data.
+Support for editing other files will be added in the future.
 
 ### Projects
 A project is a folder where the editor extracts game files and their metadata. Before you can view anything in the
@@ -119,6 +119,14 @@ them up based on the file modification timestamps.
   any animation on any actor. Finally, you can right-click on an actor in the list for an option to export the model
   and/or texture. When exporting to glTF or GLB, the currently selected animation set will also be included in the
   export.
+- **Animation** - This tab allows you to view and edit character animations. The game contains multiple animation
+  "databases", each of which contains zero or more animations. Animation databases that are associated with a particular
+  character will show that character's name. The remaining databases generally contain animations for cutscenes or
+  player-specific actions. Each animation contains a list of attack data, which is used for melee attacks, and multiple
+  animation frames. You can edit the flags and translation for each frame. Rotation editing is not currently supported.
+  If you right-click on animation in the list, you can delete it or copy another animation in its place. If you
+  right-click on an animation database, you can choose to copy all animations from another database over the animations
+  of this database, or to copy only animations that are missing in this database.
 - **Background** - This tab shows the background images associated with each stage of the game. Each entry in the list
   contains one or more images. The first image is always the background image itself. Subsequent images are overlaid
   in front of the background depending on their 3D position defined by the camera angle being viewed. These are mainly

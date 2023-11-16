@@ -9,7 +9,7 @@ from direct.showbase.ShowBase import ShowBase
 from galsdk.animation import Animation, AnimationDb
 from galsdk.model import Model
 from galsdk.project import Project
-from galsdk.ui.animation import ActiveAnimation
+from galsdk.ui.active_animation import ActiveAnimation
 from galsdk.ui.tab import Tab
 from galsdk.ui.viewport import Viewport
 
@@ -22,10 +22,33 @@ class ModelViewer(Viewport):
         self.node_path = None
         self.active_animation = None
 
+    @property
+    def is_playing(self) -> bool:
+        return self.active_animation.is_playing if self.active_animation else False
+
+    @property
+    def animation_position(self) -> tuple[int, int]:
+        if self.active_animation:
+            return self.active_animation.frame_index, self.active_animation.num_frames - 1
+        else:
+            return 0, 0
+
     def start_animation(self, animation: Animation):
         self.stop_animation()
         self.active_animation = ActiveAnimation(self.base, f'{self.name}_animation', self.node_path, animation)
         self.active_animation.play()
+
+    def play_animation(self):
+        if self.active_animation:
+            self.active_animation.play()
+
+    def pause_animation(self):
+        if self.active_animation:
+            self.active_animation.pause()
+
+    def set_animation_frame(self, frame: int):
+        if self.active_animation:
+            self.active_animation.frame_index = frame
 
     def stop_animation(self):
         if self.active_animation:
@@ -148,6 +171,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         try:
             index = int(self.tree.identify_row(event.y))
         except ValueError:
+            self.export_menu.unpost()
             return
 
         self.export_index = index
@@ -177,6 +201,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
             model.set_animations(None)
 
     def select_model(self, _):
+        self.export_menu.unpost()
         try:
             index = int(self.tree.selection()[0])
         except ValueError:

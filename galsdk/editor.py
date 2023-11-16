@@ -12,8 +12,8 @@ from panda3d.core import getModelPath
 
 from galsdk.project import Project
 from galsdk.game import GameVersion
-from galsdk.ui import (ActorTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab, StringTab, Tab,
-                       VoiceTab)
+from galsdk.ui import (ActorTab, AnimationTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab,
+                       StringTab, Tab, VoiceTab)
 from galsdk.ui.export import ExportDialog
 
 
@@ -235,8 +235,8 @@ class Editor(ShowBase):
             self.notebook.forget(tab)
 
         tabs = [RoomTab(self.project, self), StringTab(self.project), ActorTab(self.project, self),
-                BackgroundTab(self.project), ItemTab(self.project, self), ModelTab(self.project, self),
-                ArtTab(self.project), MenuTab(self.project), MovieTab(self.project, self),
+                AnimationTab(self.project, self), BackgroundTab(self.project), ItemTab(self.project, self),
+                ModelTab(self.project, self), ArtTab(self.project), MenuTab(self.project), MovieTab(self.project, self),
                 VoiceTab(self.project, self)]
         self.tabs = []
         for tab in tabs:
