@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import io
+import os
 import struct
 from dataclasses import astuple, dataclass
 from enum import IntFlag
@@ -176,6 +177,9 @@ class Animation(FileFormat):
 
     @classmethod
     def read(cls, f: BinaryIO, *, header_size: int = DEFAULT_HEADER_SIZE, **kwargs) -> Self:
+        start = f.tell()
+        end = f.seek(0, os.SEEK_END)
+        f.seek(start)
         header = f.read(header_size)
         attack_data = []
         for i in range(0, header_size, cls.ATTACK_DATA_SIZE):
@@ -185,7 +189,7 @@ class Animation(FileFormat):
         frames = [Frame.from_raw(prev_values)]
 
         # remaining frames are differential
-        while not frames[-1].flags & AnimationFlag.END:
+        while not frames[-1].flags & AnimationFlag.END and f.tell() < end:
             values = []
             for i in range(cls.NUM_ROTATIONS * 3):
                 byte = int.from_bytes(f.read(1), 'little', signed=True)

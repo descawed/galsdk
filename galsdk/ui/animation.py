@@ -382,6 +382,9 @@ class AnimationTab(Tab):
         if not selection:
             return
 
+        self.selected_animation_index = None
+        self.selected_element_index = None
+
         iid = selection[0]
         pieces = iid.split('_')
         old_db_index = self.selected_db_index

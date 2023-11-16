@@ -57,7 +57,7 @@ class Manifest:
 
     files: list[ManifestFile]
 
-    def __init__(self, path: Path, name: str = None, db_type: str = 'cdb', original: Path = None,
+    def __init__(self, path: Path, name: str = None, db_type: str | None = 'cdb', original: Path = None,
                  metadata: dict[str, bool | int | float | str | list | tuple | dict] = None):
         """
         Create a new empty manifest at the given path with the given name
@@ -331,5 +331,17 @@ class Manifest:
         """
         manifest = cls(manifest_path, name)
         manifest.unpack_archive(archive, extension, sniff, flatten, recursive, original_path)
+        manifest.save()
+        return manifest
+
+    @classmethod
+    def from_directory(cls, manifest_path: Path, name: str):
+        manifest = cls(manifest_path, name, None)
+        for path in sorted(manifest_path.iterdir()):
+            if not path.is_file() or path.name == 'manifest.json':
+                continue
+            mf = ManifestFile(path.stem, path)
+            manifest.files.append(mf)
+            manifest.name_map[path.stem] = mf
         manifest.save()
         return manifest
