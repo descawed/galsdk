@@ -171,6 +171,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         try:
             index = int(self.tree.identify_row(event.y))
         except ValueError:
+            self.export_menu.unpost()
             return
 
         self.export_index = index
@@ -200,6 +201,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
             model.set_animations(None)
 
     def select_model(self, _):
+        self.export_menu.unpost()
         try:
             index = int(self.tree.selection()[0])
         except ValueError:

@@ -4,7 +4,7 @@ from tkinter import ttk
 
 from direct.showbase.ShowBase import ShowBase, Task
 
-from galsdk.animation import AnimationDb, AnimationFlag
+from galsdk.animation import Animation, AnimationDb, AnimationFlag
 from galsdk.project import Project
 from galsdk.ui.model_viewer import ModelViewer
 from galsdk.ui.room.util import validate_int, validate_float
@@ -23,6 +23,19 @@ class AnimationTab(Tab):
         self.selected_animation_index = None
         self.selected_element_index = None
         self.changed_dbs = set()
+        self.context_menu_iid = None
+
+        self.db_menu = tk.Menu(self, tearoff=False)
+        self.copy_missing_menu = tk.Menu(self.db_menu, tearoff=False)
+        self.copy_all_menu = tk.Menu(self.db_menu, tearoff=False)
+        self.db_menu.add_cascade(label='Copy missing', menu=self.copy_missing_menu)
+        self.db_menu.add_cascade(label='Copy all', menu=self.copy_all_menu)
+
+        self.animation_menu = tk.Menu(self, tearoff=False)
+        self.copy_animation_menu = tk.Menu(self.animation_menu, tearoff=False)
+        self.animation_menu.add_cascade(label='Copy from', menu=self.copy_animation_menu)
+        self.copy_animation_db_menus = []
+        self.animation_menu.add_command(label='Delete', command=self.delete_animation)
 
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
@@ -75,18 +88,7 @@ class AnimationTab(Tab):
             for j, animation in enumerate(db):
                 anim_iid = f'{db_iid}_{j}'
                 self.tree.insert(db_iid, 'end', anim_iid, text=f'#{j}')
-                if animation is None:
-                    continue
-
-                attack_data_iid = f'{anim_iid}_attack'
-                self.tree.insert(anim_iid, 'end', attack_data_iid, text='Attack Data')
-                for k in range(len(animation.attack_data)):
-                    self.tree.insert(attack_data_iid, 'end', f'{attack_data_iid}_{k}', text=f'#{k}')
-
-                frame_iid = f'{anim_iid}_frame'
-                self.tree.insert(anim_iid, 'end', frame_iid, text='Frames')
-                for k in range(len(animation.frames)):
-                    self.tree.insert(frame_iid, 'end', f'{frame_iid}_{k}', text=f'#{k}')
+                self.add_animation_children(animation, anim_iid)
 
         self.viewport = ModelViewer('animation', base, 1280, 720, self)
 
@@ -124,10 +126,146 @@ class AnimationTab(Tab):
         self.frame_detail = self.make_frame_detail()
 
         self.tree.bind('<<TreeviewSelect>>', self.select_item)
-        # self.tree.bind('<Button-3>', self.handle_right_click)
+        self.tree.bind('<Button-3>', self.handle_right_click)
         self.bind('<Configure>', self.resize_3d)
 
         self.base.taskMgr.add(self.update_ui, 'animation_timer')
+
+    def delete_animation(self, *_):
+        pieces = self.context_menu_iid.split('_')
+        db_index = int(pieces[0])
+        anim_index = int(pieces[1])
+        self.animation_dbs[db_index][anim_index] = None
+        self.tree.delete(*self.tree.get_children(self.context_menu_iid))
+        self.tree.item(self.context_menu_iid, text=f'* #{anim_index}')
+        self.update_model()
+
+    def add_animation_children(self, animation: Animation, iid: str):
+        if animation is None:
+            self.tree.delete(*self.tree.get_children(iid))
+            return
+
+        attack_data_iid = f'{iid}_attack'
+        self.tree.insert(iid, 'end', attack_data_iid, text='Attack Data')
+        for i in range(len(animation.attack_data)):
+            self.tree.insert(attack_data_iid, 'end', f'{attack_data_iid}_{i}', text=f'* #{i}')
+
+        frame_iid = f'{iid}_frame'
+        self.tree.insert(iid, 'end', frame_iid, text='Frames')
+        for i in range(len(animation.frames)):
+            self.tree.insert(frame_iid, 'end', f'{frame_iid}_{i}', text=f'* #{i}')
+
+    def change_db(self, index: int):
+        self.changed_dbs.add(index)
+        self.notify_change()
+        db_iid = str(index)
+        db_name = self.manifest[index].name
+        self.tree.item(db_iid, text=f'* #{self.selected_db_index}: {db_name}')
+        if self.selected_db_index == index:
+            self.update_model()
+
+    def copy_db_missing(self, from_index: int, *_):
+        to_index = int(self.context_menu_iid)
+        to_db = self.animation_dbs[to_index]
+        any_added = False
+        for i, animation in enumerate(self.animation_dbs[from_index]):
+            iid = f'{to_index}_{i}'
+            if i >= len(to_db):
+                to_db.append(None)
+                self.tree.insert(self.context_menu_iid, 'end', iid, text=f'* #{i}')
+                any_added = True
+
+            if to_db[i] is None and animation is not None:
+                self.tree.item(iid, text=f'* #{i}')
+                to_db[i] = animation
+                self.add_animation_children(animation, iid)
+                any_added = True
+
+        if any_added:
+            self.change_db(to_index)
+
+    def copy_db_all(self, from_index: int, *_):
+        to_index = int(self.context_menu_iid)
+        to_db = self.animation_dbs[to_index]
+        for i, animation in enumerate(self.animation_dbs[from_index]):
+            iid = f'{to_index}_{i}'
+            if i >= len(to_db):
+                to_db.append(None)
+                self.tree.insert(self.context_menu_iid, 'end', iid, text=f'* #{i}')
+            else:
+                self.tree.delete(*self.tree.get_children(self.context_menu_iid))
+
+            to_db[i] = animation
+            self.add_animation_children(animation, iid)
+
+        self.change_db(to_index)
+
+    def copy_animation(self, from_db_index: int, from_anim_index: int, *_):
+        pieces = self.context_menu_iid.split('_')
+        to_db_index = int(pieces[0])
+        to_anim_index = int(pieces[1])
+        animation = self.animation_dbs[from_db_index][from_anim_index]
+        self.animation_dbs[to_db_index][to_anim_index] = animation
+        self.add_animation_children(animation, self.context_menu_iid)
+        self.tree.item(self.context_menu_iid, text=f'* #{to_anim_index}')
+        mf = self.manifest[to_db_index]
+        self.tree.item(str(to_db_index), text=f'* #{to_db_index}: {mf.name}')
+        self.changed_dbs.add(to_db_index)
+        self.notify_change()
+        if self.selected_db_index == to_db_index and self.selected_animation_index == to_anim_index:
+            self.update_model()
+
+    def populate_db_menu(self):
+        selected_db_index = int(self.context_menu_iid)
+        self.copy_missing_menu.delete(0, 'end')
+        self.copy_all_menu.delete(0, 'end')
+        for i, mf in enumerate(self.manifest):
+            if i == selected_db_index:
+                continue
+
+            self.copy_missing_menu.add_command(label=f'#{i}: {mf.name}', command=partial(self.copy_db_missing, i))
+            self.copy_all_menu.add_command(label=f'#{i}: {mf.name}', command=partial(self.copy_db_all, i))
+
+    def populate_animation_menu(self):
+        pieces = self.context_menu_iid.split('_')
+        db_index = int(pieces[0])
+        anim_index = int(pieces[1])
+
+        self.copy_animation_menu.delete(0, 'end')
+        for menu in self.copy_animation_db_menus:
+            menu.destroy()
+        self.copy_animation_db_menus.clear()
+
+        for i, mf in enumerate(self.manifest):
+            db = self.animation_dbs[i]
+            sub_menu = tk.Menu(self.copy_animation_menu, tearoff=False)
+            for j, animation in enumerate(db):
+                if i == db_index and j == anim_index:
+                    continue
+                sub_menu.add_command(label=f'#{j}', command=partial(self.copy_animation, i, j))
+            self.copy_animation_menu.add_cascade(label=f'#{i}: {mf.name}', menu=sub_menu)
+            self.copy_animation_db_menus.append(sub_menu)
+
+    def handle_right_click(self, event: tk.Event):
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            self.db_menu.unpost()
+            self.animation_menu.unpost()
+            return
+
+        depth = iid.count('_')
+        if depth > 1:
+            self.db_menu.unpost()
+            self.animation_menu.unpost()
+            return
+
+        self.context_menu_iid = iid
+        if depth == 0:
+            self.populate_db_menu()
+            self.db_menu.post(event.x_root, event.y_root)
+        else:
+            self.populate_animation_menu()
+            self.animation_menu.post(event.x_root, event.y_root)
 
     def mark_change(self, change_type: str):
         if (self.selected_db_index is None or self.selected_animation_index is None
@@ -237,6 +375,9 @@ class AnimationTab(Tab):
             self.timeline.configure(to=self.viewport.animation_position[1])
 
     def select_item(self, _=None):
+        self.db_menu.unpost()
+        self.animation_menu.unpost()
+
         selection = self.tree.selection()
         if not selection:
             return
