@@ -655,6 +655,7 @@ class Project:
             with model_file.path.open('rb') as f:
                 yield ActorModel.read(f, actor=actor, anim_index=anim_index)
 
+    @functools.cache
     def get_animations(self) -> Manifest:
         return Manifest.load_from(self.project_dir / 'animations')
 

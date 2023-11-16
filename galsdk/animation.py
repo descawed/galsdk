@@ -3,7 +3,7 @@ from __future__ import annotations
 import functools
 import io
 import struct
-from dataclasses import dataclass
+from dataclasses import astuple, dataclass
 from enum import IntFlag
 from io import BytesIO
 from pathlib import Path
@@ -132,6 +132,7 @@ class Animation(FileFormat):
     DEFAULT_HEADER_SIZE = 72
     ATTACK_DATA_FORMAT = '<4h2bh'
     ATTACK_DATA_SIZE = struct.calcsize(ATTACK_DATA_FORMAT)
+    NUM_ROTATIONS = 16
 
     def __init__(self, frames: list[Frame], name: str = None, attack_data: list[AttackData] = None):
         self.frames = frames
@@ -141,6 +142,10 @@ class Animation(FileFormat):
     @property
     def is_attack(self) -> bool:
         return not all(data.is_empty for data in self.attack_data)
+
+    @property
+    def header_len(self) -> int:
+        return len(self.attack_data) * self.ATTACK_DATA_SIZE
 
     @functools.cache
     def convert_frame(self, i: int) -> tuple[np.ndarray, list[np.ndarray]]:
@@ -182,7 +187,7 @@ class Animation(FileFormat):
         # remaining frames are differential
         while not frames[-1].flags & AnimationFlag.END:
             values = []
-            for i in range(48):
+            for i in range(cls.NUM_ROTATIONS * 3):
                 byte = int.from_bytes(f.read(1), 'little', signed=True)
                 if byte & 1:
                     second = f.read(1)[0]
@@ -196,7 +201,9 @@ class Animation(FileFormat):
         return cls(frames, attack_data=attack_data)
 
     def write(self, f: BinaryIO, **kwargs):
-        # FIXME: this code is out of date (doesn't write attack data; need to pad frames to multiple of 4)
+        for attack_data in self.attack_data:
+            f.write(struct.pack(self.ATTACK_DATA_FORMAT, *astuple(attack_data)))
+
         prev_values = self.frames[0].to_raw()
         f.write(struct.pack('<48hI', *prev_values))
 
@@ -210,6 +217,12 @@ class Animation(FileFormat):
                     f.write(((value << 1) | 0x100).to_bytes(2, 'big', signed=True))
             f.write(values[-1].to_bytes(4, 'little'))
             prev_values = values
+
+        # pad length to multiple of 4
+        offset = f.tell()
+        bytes_over = offset % 4
+        if bytes_over > 0:
+            f.write(bytes(4 - bytes_over))
 
     @classmethod
     def import_(cls, path: Path, fmt: str = None) -> Self:
@@ -313,28 +326,27 @@ class AnimationDb(Archive[Animation | None]):
         return cls(animations)
 
     def write(self, f: BinaryIO, **kwargs):
-        # FIXME: this code is out of date and broken
-        total_size = 0
-        offset = len(self.header)
+        directory = []
+        directory_offset = f.tell()
+        f.write(bytes(self.SECTOR_SIZE + 4))
+        offset = 0
         for animation in self.animations:
-            size = len(animation)
-            if size > 0:
-                f.write(total_size.to_bytes(4, 'little'))
-                f.write(offset.to_bytes(4, 'little'))
+            if animation is None:
+                directory.append((0, 0))
             else:
-                f.write(b'\0\0\0\0\0\0\0\0')
-            total_size += size
-            offset += size
-        bytes_remaining = self.SECTOR_SIZE - f.tell()
-        if bytes_remaining < 0:
-            raise ValueError('Too many animations')
-        if bytes_remaining > 0:
-            f.write(b'\0' * bytes_remaining)
-        f.write(total_size.to_bytes(4, 'little'))
-        f.write(self.header)
-        for animation in self.animations:
-            if animation:
+                directory.append((offset, offset + animation.header_len))
+                start = f.tell()
                 animation.write(f)
+                offset += f.tell() - start
+
+        end = f.tell()
+        f.seek(directory_offset)
+        for header_offset, data_offset in directory:
+            f.write(header_offset.to_bytes(4, 'little'))
+            f.write(data_offset.to_bytes(4, 'little'))
+        f.seek(directory_offset + self.SECTOR_SIZE)
+        f.write(offset.to_bytes(4, 'little'))
+        f.seek(end)
 
 
 def pack_db(db: AnimationDb, files: Iterable[Path]):

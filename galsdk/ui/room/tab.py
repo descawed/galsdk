@@ -24,7 +24,7 @@ from galsdk.room import (CircleColliderObject, RectangleColliderObject, RoomObje
                          WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject,
                          EntranceObject)
 from galsdk.tim import TimDb
-from galsdk.ui.animation import ActiveAnimation
+from galsdk.ui.active_animation import ActiveAnimation
 from galsdk.ui.room.actor import ActorEditor
 from galsdk.ui.room.camera import CameraEditor
 from galsdk.ui.room.collider import ColliderEditor, ColliderObject
