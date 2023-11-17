@@ -61,7 +61,11 @@ class Editor(ShowBase):
         self.file_menu.add_separator()
         self.file_menu.add_command(label='Exit', underline=1, command=self.exit)
 
+        self.tools_menu = tk.Menu(menu_bar, tearoff=False)
+        self.tools_menu.add_command(label='Export XA.MXA', command=self.export_xa_mxa, state=tk.DISABLED)
+
         menu_bar.add_cascade(label='File', menu=self.file_menu, underline=0)
+        menu_bar.add_cascade(label='Tools', menu=self.tools_menu, underline=0)
 
         # tabs for open project (will be populated later)
         self.tabs = []
@@ -146,6 +150,14 @@ class Editor(ShowBase):
             x = self.saved_geometry['x']
             y = self.saved_geometry['y']
             self.tkRoot.geometry(f'550x75+{x}+{y}')
+
+    def export_xa_mxa(self, *_):
+        try:
+            self.project.export_xa_mxa()
+        except Exception as e:
+            tkmsg.showerror('Error', str(e))
+        else:
+            tkmsg.showinfo('Success', 'XA.MXA and the XDB file have been created in the export directory')
 
     def set_title(self):
         if self.project is None:
@@ -269,6 +281,7 @@ class Editor(ShowBase):
 
         self.file_menu.entryconfigure(4, state=tk.NORMAL)
         self.file_menu.entryconfigure(5, state=tk.NORMAL)
+        self.tools_menu.entryconfigure(1, state=tk.NORMAL)
 
     def on_tab_change(self, tab: Tab):
         num_tabs = self.notebook.index('end')

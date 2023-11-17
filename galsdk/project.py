@@ -65,8 +65,8 @@ class Project:
                  create_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
-        self.create_date = create_date or datetime.datetime.utcnow()
-        self.last_export_date = last_export_date or datetime.datetime.utcnow()
+        self.create_date = create_date or datetime.datetime.now(datetime.timezone.utc)
+        self.last_export_date = last_export_date or datetime.datetime.now(datetime.timezone.utc)
         self.actor_graphics = actor_graphics or []
         self.module_sets = module_sets or []
         self.x_scales = x_scales or []
@@ -183,11 +183,8 @@ class Project:
             project_art_dir.mkdir(exist_ok=True)
             Manifest.from_archive(project_art_dir, art_db_path.stem, art_db,
                                   sniff=[LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Credits],
-                                  flatten=True, original_path=art_db_path)
+                                  original_path=art_db_path)
 
-        display_db_path = game_data / 'DISPLAY.CDB'
-        with display_db_path.open('rb') as f:
-            display_db = Database.read(f)
         display_manifest = Manifest.load_from(art_dir / 'DISPLAY')
 
         num_stage_ints = len(Stage)
@@ -525,7 +522,7 @@ class Project:
             for f in manifest:
                 yield XaAudio(f.path)
 
-    def get_voice_audio(self) -> Iterable[XaAudio]:
+    def get_xa_databases(self) -> list[XaDatabase]:
         voice_dir = self.project_dir / 'voice'
         voice_manifest = Manifest.load_from(voice_dir)
 
@@ -562,22 +559,35 @@ class Project:
                 xa_dbs.append(XaDatabase(region_sets[index], mf.path.read_bytes()))
         else:
             display_manifest = Manifest.load_from(self.project_dir / 'art' / 'DISPLAY')
-            xa_map = display_manifest[self.version.disc].path.read_bytes()
+            xa_map = display_manifest[self.version.disc - 1].path.read_bytes()
             for mf in voice_manifest:
                 xa_db = XaDatabase.read_bytes(xa_map)
                 xa_db.set_data(mf.path.read_bytes())
                 xa_dbs.append(xa_db)
 
-        extract_dir = voice_dir / 'extract'
+        return xa_dbs
+
+    def get_voice_audio(self) -> Iterable[XaAudio]:
+        extract_dir = self.project_dir / 'voice' / 'extract'
         shutil.rmtree(extract_dir, ignore_errors=True)
         extract_dir.mkdir(exist_ok=True)
-        for i, xa_db in enumerate(xa_dbs):
+        for i, xa_db in enumerate(self.get_xa_databases()):
             db_dir = extract_dir / str(i)
             db_dir.mkdir(exist_ok=True)
             xa_db.unpack(db_dir)
             for xa_path in db_dir.iterdir():
                 if xa_path.is_file():
                     yield XaAudio(xa_path)
+
+    def export_xa_mxa(self):
+        out_db = XaDatabase()
+        for xa_db in self.get_xa_databases():
+            out_db.extend(xa_db)
+
+        export_dir = self.project_dir / 'export'
+        with (export_dir / f'{self.version.disc - 1:03}.XDB').open('wb') as f:
+            out_db.write(f)
+        (export_dir / 'XA.MXA').write_bytes(out_db.get_raw())
 
     def get_font(self) -> Font:
         font_type = JapaneseFont if self.version.region == Region.NTSC_J else LatinFont

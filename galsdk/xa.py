@@ -46,6 +46,14 @@ class XaRegion:
     def as_str(self) -> str:
         return f'{self.channel} {self.start} {self.end}'
 
+    @property
+    def first_audio_sector(self) -> int:
+        for i in range(0, len(self.data), Sector.SIZE):
+            sector = Sector(self.data[i:i + Sector.SIZE])
+            if sector.sub_mode & SubMode.AUDIO:
+                return i // Sector.SIZE
+        return 0
+
 
 class XaDatabase(Archive[bytes]):
     MAGIC = b'\x41\x89'
@@ -60,15 +68,20 @@ class XaDatabase(Archive[bytes]):
         if len(data) % Sector.SIZE != 0:
             raise ValueError('XA data appears incomplete')
 
+        self.clean_regions(data)
+
+    def clean_regions(self, data: ByteString = None):
         for region in self.regions:
+            input_data = region.data if data is None else data
             sector_data = bytearray()
-            for i in range(region.start, region.end+1):
-                start = i*Sector.SIZE
+            for i in range(region.start, region.end + 1):
+                start = i * Sector.SIZE
                 # FIXME: some regions ask for sectors a couple past the end of XA.MXA. this probably means that we need
                 #  to grab some extra sectors past the end of where the filesystem says it ends.
-                if start >= len(data):
+                if start >= len(input_data):
                     break
-                sector = Sector(data[start:(i+1)*Sector.SIZE])
+                end = (i + 1) * Sector.SIZE
+                sector = Sector(input_data[start:end])
                 if sector.channel != region.channel:
                     # zero out other channels
                     sector.sub_mode = SubMode.DATA
@@ -99,6 +112,51 @@ class XaDatabase(Archive[bytes]):
 
     def append(self, item: bytes | Self):
         raise NotImplementedError
+
+    def extend(self, other: XaDatabase):
+        num_sectors = 0
+        max_data = b''
+        for region in self.regions:
+            if region.end >= num_sectors:
+                num_sectors = region.end + 1
+                max_data = region.data[:num_sectors * Sector.SIZE]
+        for region in other.regions:
+            num_bytes = (region.end + 1) * Sector.SIZE
+            self.regions.append(XaRegion(region.channel, region.start + num_sectors, region.end + num_sectors,
+                                         max_data + region.data[:num_bytes]))
+        self.clean_regions()
+
+    def get_raw(self) -> bytes:
+        if len(self.regions) == 0:
+            return b''
+
+        raw_data = bytearray(sorted(self.regions, key=lambda r: r.end, reverse=True)[0].data)
+        channels = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: []}
+        for region in sorted(self.regions, key=lambda r: (r.start, r.channel), reverse=True):
+            channels[region.channel].append(region)
+        channel_id = 0
+        channel_counters = [0, 0, 0, 0, 0, 0, 0, 0]
+        while any(channel for channel in channels.values()):
+            if channel_regions := channels[channel_id]:
+                current_region = channel_regions[-1]
+                counter = channel_counters[channel_id]
+                raw_start_sector = current_region.start + (counter * 8) + current_region.first_audio_sector
+                if raw_start_sector > current_region.end:
+                    channel_regions.pop()
+                    if not channel_regions:
+                        channel_id = (channel_id + 1) % 8
+                        continue
+                    current_region = channel_regions[-1]
+                    counter = 0
+                    raw_start_sector = current_region.start + current_region.first_audio_sector
+                raw_start = raw_start_sector * Sector.SIZE
+                region_start = (counter * 8 + current_region.first_audio_sector) * Sector.SIZE
+                raw_data[raw_start:raw_start + Sector.SIZE] = current_region.data[region_start:region_start
+                                                                                  + Sector.SIZE]
+                channel_counters[channel_id] = counter + 1
+            channel_id = (channel_id + 1) % 8
+
+        return bytes(raw_data)
 
     def append_raw(self, item: bytes):
         raise NotImplementedError
@@ -183,7 +241,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Export Galerians XA audio')
     parser.add_argument('-c', '--convert', help='Convert the audio to wav when exporting. If not given, the audio '
-                        'will be exported in the original XA format.')
+                                                'will be exported in the original XA format.')
     parser.add_argument('db', help='Path to the XA database')
     parser.add_argument('xa', help='Path to the XA audio data')
     parser.add_argument('target', help='Path to the directory where audio files will be exported')

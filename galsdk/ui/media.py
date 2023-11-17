@@ -86,6 +86,10 @@ class MediaPlayer(ttk.Frame):
 
         return self._window
 
+    @property
+    def is_playing(self) -> bool:
+        return self.player.status() == AudioSound.PLAYING if self.player is not None else False
+
     def update_ui(self, _) -> int:
         if self.player.status() == AudioSound.PLAYING:
             sfx_len = self.player.length()
