@@ -529,30 +529,12 @@ class Project:
         xa_dbs = []
         if self.version.region == Region.NTSC_J:
             addresses = ADDRESSES[self.version.id]
-            xa_def1 = addresses['XaDef1']
-            xa_def2 = addresses['XaDef2']
-            xa_def3 = addresses['XaDef3']
-            xa_def_end = addresses['XaDefEnd']
-            xa_def_offsets = [(xa_def1, xa_def2), (xa_def2, xa_def3), (xa_def3, xa_def_end)]
-            start, end = xa_def_offsets[self.version.disc - 1]
-            region_sets = []
 
             exe_path = self.project_dir / 'boot' / self.version.exe_name
             with exe_path.open('rb') as f:
                 exe = Exe.read(f)
 
-            data = exe[start:end]
-            last_channel = 8
-            for i in range(0, len(data), 4):
-                channel = data[i]
-                if channel < last_channel:
-                    region_sets.append([])
-                last_channel = channel
-                minute = data[i + 1]
-                second = data[i + 2]
-                sector = data[i + 3]
-                absolute_sector = minute * 75 * 60 + second * 75 + sector
-                region_sets[-1].append(XaRegion(channel, 0, absolute_sector))
+            region_sets = XaRegion.get_jp_xa_regions(addresses, self.version.disc, exe)
 
             for mf in voice_manifest:
                 index = int(mf.name[-2:])
