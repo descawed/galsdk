@@ -194,9 +194,9 @@ interfaces:
   the recordings to. This tool doesn't currently work with the Japanese version because the XA layouts are hard-coded
   in the exe.
 - `psx.cd` - Patch updated files into a BIN CD image. After you make changes to game files, you can use this to replace
-  the old versions of the files on the CD. You should try to make sure the size of the changed file is the same as (or
-  possibly less than) the original file. The tool tries to handle shuffling things around if the size changes, but it
-  doesn't really work.
+  the old versions of the files on the CD. For best results, try to keep the size of the changed file less than or equal
+  to the size of the original file. The tool tries to handle shuffling things around if a file gets bigger, but I'm not
+  yet 100% confident in it.
 - `psx.tim` - Convert TIM images to other formats.
 - `ash.bd` - Extract Galerians: Ash .BD1 and .BD2 archives.
 - `ash.tex` - Convert Galerians: Ash texture images to other formats.

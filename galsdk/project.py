@@ -65,8 +65,8 @@ class Project:
                  create_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
-        self.create_date = create_date or datetime.datetime.utcnow()
-        self.last_export_date = last_export_date or datetime.datetime.utcnow()
+        self.create_date = create_date or datetime.datetime.now(datetime.timezone.utc)
+        self.last_export_date = last_export_date or datetime.datetime.now(datetime.timezone.utc)
         self.actor_graphics = actor_graphics or []
         self.module_sets = module_sets or []
         self.x_scales = x_scales or []
@@ -183,11 +183,8 @@ class Project:
             project_art_dir.mkdir(exist_ok=True)
             Manifest.from_archive(project_art_dir, art_db_path.stem, art_db,
                                   sniff=[LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Credits],
-                                  flatten=True, original_path=art_db_path)
+                                  original_path=art_db_path)
 
-        display_db_path = game_data / 'DISPLAY.CDB'
-        with display_db_path.open('rb') as f:
-            display_db = Database.read(f)
         display_manifest = Manifest.load_from(art_dir / 'DISPLAY')
 
         num_stage_ints = len(Stage)
@@ -418,40 +415,13 @@ class Project:
         voice_dir.mkdir(exist_ok=True)
 
         if version.region == Region.NTSC_J:
-            xa_def1 = addresses['XaDef1']
-            xa_def2 = addresses['XaDef2']
-            xa_def3 = addresses['XaDef3']
-            xa_def_end = addresses['XaDefEnd']
-            xa_def_offsets = [(xa_def1, xa_def2), (xa_def2, xa_def3), (xa_def3, xa_def_end)]
-            start, end = xa_def_offsets[version.disc - 1]
-            region_sets = []
-            data = exe[start:end]
-            last_channel = 8
-            for i in range(0, len(data), 4):
-                channel = data[i]
-                if channel < last_channel:
-                    region_sets.append([])
-                last_channel = channel
-                minute = data[i + 1]
-                second = data[i + 2]
-                sector = data[i + 3]
-                absolute_sector = minute * 75 * 60 + second * 75 + sector
-                region_sets[-1].append(XaRegion(channel, 0, absolute_sector))
-
             xa_dir = game_data / 'XA'
             for xa_bin in xa_dir.iterdir():
                 if xa_bin.suffix == '.BIN':
-                    index = int(xa_bin.stem[-2:])
-                    voice_sub_dir = voice_dir / xa_bin.stem
-                    voice_sub_dir.mkdir(exist_ok=True)
-                    xa_db = XaDatabase(region_sets[index], xa_bin.read_bytes())
-                    Manifest.from_archive(voice_sub_dir, xa_bin.stem, xa_db, '.XA')
+                    shutil.copy(xa_bin, voice_dir)
         else:
-            xa_map = display_db[version.disc]
-            mxa_path = game_data / 'XA.MXA'
-            xa_db = XaDatabase.read_bytes(xa_map)
-            xa_db.set_data(mxa_path.read_bytes())
-            Manifest.from_archive(voice_dir, 'XA', xa_db, '.XA')
+            shutil.copy(game_data / 'XA.MXA', voice_dir)
+        Manifest.from_directory(voice_dir, 'XA')
 
         # prepare export directory
         export_dir = project_path / 'export'
@@ -552,8 +522,72 @@ class Project:
             for f in manifest:
                 yield XaAudio(f.path)
 
+    def get_xa_databases(self) -> list[XaDatabase]:
+        voice_dir = self.project_dir / 'voice'
+        voice_manifest = Manifest.load_from(voice_dir)
+
+        xa_dbs = []
+        if self.version.region == Region.NTSC_J:
+            addresses = ADDRESSES[self.version.id]
+            xa_def1 = addresses['XaDef1']
+            xa_def2 = addresses['XaDef2']
+            xa_def3 = addresses['XaDef3']
+            xa_def_end = addresses['XaDefEnd']
+            xa_def_offsets = [(xa_def1, xa_def2), (xa_def2, xa_def3), (xa_def3, xa_def_end)]
+            start, end = xa_def_offsets[self.version.disc - 1]
+            region_sets = []
+
+            exe_path = self.project_dir / 'boot' / self.version.exe_name
+            with exe_path.open('rb') as f:
+                exe = Exe.read(f)
+
+            data = exe[start:end]
+            last_channel = 8
+            for i in range(0, len(data), 4):
+                channel = data[i]
+                if channel < last_channel:
+                    region_sets.append([])
+                last_channel = channel
+                minute = data[i + 1]
+                second = data[i + 2]
+                sector = data[i + 3]
+                absolute_sector = minute * 75 * 60 + second * 75 + sector
+                region_sets[-1].append(XaRegion(channel, 0, absolute_sector))
+
+            for mf in voice_manifest:
+                index = int(mf.name[-2:])
+                xa_dbs.append(XaDatabase(region_sets[index], mf.path.read_bytes()))
+        else:
+            display_manifest = Manifest.load_from(self.project_dir / 'art' / 'DISPLAY')
+            xa_map = display_manifest[self.version.disc - 1].path.read_bytes()
+            for mf in voice_manifest:
+                xa_db = XaDatabase.read_bytes(xa_map)
+                xa_db.set_data(mf.path.read_bytes())
+                xa_dbs.append(xa_db)
+
+        return xa_dbs
+
     def get_voice_audio(self) -> Iterable[XaAudio]:
-        return self._get_voice_from_dir(self.project_dir / 'voice')
+        extract_dir = self.project_dir / 'voice' / 'extract'
+        shutil.rmtree(extract_dir, ignore_errors=True)
+        extract_dir.mkdir(exist_ok=True)
+        for i, xa_db in enumerate(self.get_xa_databases()):
+            db_dir = extract_dir / str(i)
+            db_dir.mkdir(exist_ok=True)
+            xa_db.unpack(db_dir)
+            for xa_path in db_dir.iterdir():
+                if xa_path.is_file():
+                    yield XaAudio(xa_path)
+
+    def export_xa_mxa(self):
+        out_db = XaDatabase()
+        for xa_db in self.get_xa_databases():
+            out_db.extend(xa_db)
+
+        export_dir = self.project_dir / 'export'
+        with (export_dir / f'{self.version.disc - 1:03}.XDB').open('wb') as f:
+            out_db.write(f)
+        (export_dir / 'XA.MXA').write_bytes(out_db.get_raw())
 
     def get_font(self) -> Font:
         font_type = JapaneseFont if self.version.region == Region.NTSC_J else LatinFont
@@ -578,7 +612,7 @@ class Project:
         if self.version.region == Region.NTSC_J:
             return manifest.load_file(string_path.name, JapaneseStringDb, kanji_index=stage_index)
         else:
-            return manifest.load_file(string_path.name, LatinStringDb)
+            return manifest.load_file(string_path.stem, LatinStringDb)
 
     @functools.cache
     def get_unmapped_strings(self) -> list[FromManifest[StringDb]]:
@@ -837,14 +871,13 @@ class Project:
                     output_files.append(PurePath(f'T4/MOV{suffix}/{movie.path.name}'))
                     input_files.append(movie.path.relative_to(self.project_dir))
 
-        for manifest in self._get_voice_manifests(self.project_dir / 'voice'):
-            voice_files = list(manifest.get_files_modified_since(mtime))
-            if voice_files:
-                if self.version.region == Region.NTSC_J:
-                    output_files.append(PurePath(f'T4/XA/{manifest.name}.BIN'))
-                else:
-                    output_files.append(PurePath(f'T4/{manifest.name}.MXA'))
-            input_files.extend(voice_file.path.relative_to(self.project_dir) for voice_file in voice_files)
+        voice_manifest = Manifest.load_from(self.project_dir / 'voice')
+        for voice_file in voice_manifest.get_files_modified_since(mtime):
+            input_files.append(voice_file.path.relative_to(self.project_dir))
+            if self.version.region == Region.NTSC_J:
+                output_files.append(PurePath(f'T4/XA/{voice_file.name}.BIN'))
+            else:
+                output_files.append(PurePath(f'T4/{voice_file.name}.MXA'))
 
         return input_files, output_files
 
@@ -899,9 +932,12 @@ class Project:
                     suffix = f'_{stage}' if stage != Stage.A else ''
                     patches.append(Patch(rf'\T4\MOV{suffix}\{movie.path.name};1', movie.path.read_bytes(), True))
 
-        for voice_manifest in self._get_voice_manifests(self.project_dir / 'voice'):
-            if voice_manifest.is_modified_since(mtime):
-                raise NotImplementedError('Exporting voice audio is not currently supported')
+        voice_manifest = Manifest.load_from(self.project_dir / 'voice')
+        for voice_file in voice_manifest.get_files_modified_since(mtime):
+            if self.version.region == Region.NTSC_J:
+                patches.append(Patch(rf'\T4\XA\{voice_file.name}.BIN;1', voice_file.path.read_bytes(), True))
+            else:
+                patches.append(Patch(rf'\T4\{voice_file.name}.MXA;1', voice_file.path.read_bytes(), True))
 
         with base_image.open('rb') as f:
             cd = PsxCd(f)
