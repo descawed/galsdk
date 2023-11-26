@@ -4,12 +4,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, ByteString, Iterable, Self
 
-import ffmpeg
+try:
+    import ffmpeg
+except ModuleNotFoundError:
+    # we allow this to be not found because the mxa CLI command doesn't require it
+    ffmpeg = None
 
-from galsdk import util
+import galsdk.util.file as util
 from galsdk.format import Archive
 from galsdk.media import Media
 from psx.cd.disc import Sector, SubMode
+from psx.exe import Exe
 
 
 class XaAudio(Media):
@@ -26,6 +31,31 @@ class XaRegion:
     start: int
     end: int
     data: bytes = None
+
+    @classmethod
+    def get_jp_xa_regions(cls, addresses: dict[str, int | list[int]], disc: int, exe: Exe) -> list[list[Self]]:
+        xa_def1 = addresses['XaDef1']
+        xa_def2 = addresses['XaDef2']
+        xa_def3 = addresses['XaDef3']
+        xa_def_end = addresses['XaDefEnd']
+        xa_def_offsets = [(xa_def1, xa_def2), (xa_def2, xa_def3), (xa_def3, xa_def_end)]
+        start, end = xa_def_offsets[disc - 1]
+        region_sets = []
+
+        data = exe[start:end]
+        last_channel = 8
+        for i in range(0, len(data), 4):
+            channel = data[i]
+            if channel < last_channel:
+                region_sets.append([])
+            last_channel = channel
+            minute = data[i + 1]
+            second = data[i + 2]
+            sector = data[i + 3]
+            absolute_sector = minute * 75 * 60 + second * 75 + sector
+            region_sets[-1].append(cls(channel, 0, absolute_sector))
+
+        return region_sets
 
     def convert(self, fmt: str) -> bytes:
         if self.data is None:
@@ -236,15 +266,47 @@ def unpack(db_path: str, xa_path: str, out_path: str, convert: bool):
     db.export(Path(out_path), 'wav' if convert else None)
 
 
+def export_mxa(exe_path: Path, disc: int, target_path: Path, packs: list[Path]):
+    from galsdk.game import REGION_ADDRESSES
+
+    addresses = REGION_ADDRESSES['ja']
+    with exe_path.open('rb') as f:
+        exe = Exe.read(f)
+
+    region_sets = XaRegion.get_jp_xa_regions(addresses, disc, exe)
+    out_db = XaDatabase()
+    for region_set, pack in zip(region_sets, packs, strict=True):
+        out_db.extend(XaDatabase(region_set, pack.read_bytes()))
+
+    with (target_path / f'{disc - 1:03}.XDB').open('wb') as f:
+        out_db.write(f)
+    (target_path / 'XA.MXA').write_bytes(out_db.get_raw())
+
+
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Export Galerians XA audio')
-    parser.add_argument('-c', '--convert', help='Convert the audio to wav when exporting. If not given, the audio '
-                                                'will be exported in the original XA format.')
-    parser.add_argument('db', help='Path to the XA database')
-    parser.add_argument('xa', help='Path to the XA audio data')
-    parser.add_argument('target', help='Path to the directory where audio files will be exported')
+    subparsers = parser.add_subparsers()
+
+    unpack_parser = subparsers.add_parser('unpack', help='Unpack individual audio tracks into a directory')
+    unpack_parser.add_argument('-c', '--convert', help='Convert the audio to wav when exporting. If not given, the '
+                                                       'audio will be exported in the original XA format.',
+                               action='store_true')
+    unpack_parser.add_argument('db', help='Path to the XA database')
+    unpack_parser.add_argument('xa', help='Path to the XA audio data')
+    unpack_parser.add_argument('target', help='Path to the directory where audio files will be exported')
+    unpack_parser.set_defaults(action=lambda a: unpack(a.db, a.xa, a.target, a.convert))
+
+    mxa_parser = subparsers.add_parser('mxa', help='Export Japanese XA audio in the Western XA.MXA format')
+    mxa_parser.add_argument('exe', help='Path to the game EXE', type=Path)
+    mxa_parser.add_argument('disc', help='Number of the disc the audio was taken from', type=int,
+                            choices=[1, 2, 3])
+    mxa_parser.add_argument('target', help='Path to the directory where the MXA and XDB files will be created',
+                            type=Path)
+    mxa_parser.add_argument('packs', help='Japanese XA pack files to include in the export', nargs='+',
+                            type=Path)
+    mxa_parser.set_defaults(action=lambda a: export_mxa(a.exe, a.disc, a.target, a.packs))
 
     args = parser.parse_args()
-    unpack(args.db, args.xa, args.target, args.convert)
+    args.action(args)

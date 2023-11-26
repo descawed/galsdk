@@ -292,3 +292,6 @@ if __name__ == '__main__':
     unpack_parser.add_argument('db', help='Path to VAB DB to be unpacked')
     unpack_parser.add_argument('target', help='Path to directory where files will be unpacked')
     unpack_parser.set_defaults(action=lambda a: unpack(a.db, a.target))
+
+    args = parser.parse_args()
+    args.action(args)

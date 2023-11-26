@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import BinaryIO, Generic, Iterable, Self, TypeVar
 
-from galsdk.util import KeepReader
+from galsdk.util.file import KeepReader
 
 
 class FileFormat(ABC):
