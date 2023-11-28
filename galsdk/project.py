@@ -148,8 +148,10 @@ class Project:
 
         # determine game version
         version = cls.detect_files_version(game_dir)
-        if version.region == Region.PAL or version.is_demo:
-            raise NotImplementedError('Currently only the US and Japanese retail versions of the game are supported')
+        if version.language in ['en-GB', 'fr'] or version.is_demo:
+            raise NotImplementedError(
+                'Currently only the US, Japanese, and German retail versions of the game are supported'
+            )
 
         addresses = ADDRESSES[version.id]
         # locate files we're interested in
@@ -170,13 +172,13 @@ class Project:
 
         art_dir = project_path / 'art'
         art_dir.mkdir(exist_ok=True)
-        if version.region == Region.NTSC_J:
-            art_dbs = ['CARD.CDB', 'DISPLAY.CDB', 'FONT.CDB', 'ITEMTIM.CDB', 'MAIN_TEX.CDB', 'MENU.CDB', 'TIT.CDB']
-        else:
-            art_dbs = ['DISPLAY.CDB', 'ITEMTIM.CDB', 'MENU.CDB']
+        art_dbs = ['CARD.CDB', 'DISPLAY.CDB', 'FONT.CDB', 'ITEMTIM.CDB', 'MAIN_TEX.CDB', 'MENU.CDB', 'TIT.CDB']
 
         for art_db_name in art_dbs:
             art_db_path = game_data / art_db_name
+            if not art_db_path.exists():  # several of these only exist in the Japanese version
+                continue
+
             with art_db_path.open('rb') as f:
                 art_db = Database.read(f)
             project_art_dir = art_dir / art_db_path.stem
@@ -193,20 +195,21 @@ class Project:
 
         message_dir = project_path / 'messages'
         message_dir.mkdir(exist_ok=True)
-        if version.region == Region.NTSC_J:
-            message_db_path = game_data / 'MES.CDB'
+        message_db_path = game_data / 'MES.CDB'
+        if message_db_path.exists():
             with message_db_path.open('rb') as f:
                 message_db = Database.read(f)
             message_manifest = Manifest.from_archive(message_dir, 'MES', message_db, original_path=message_db_path)
             message_manifest.rename(0, 'Debug')
             message_manifest.save()
         else:
-            ge_db_path = game_data / 'GE.CDB'
-            with ge_db_path.open('rb') as f:
-                ge_db = Database.read(f)
-            ge_manifest = Manifest.from_archive(message_dir, 'GE', ge_db, original_path=ge_db_path)
-            ge_manifest.rename(0, 'GE')
-            ge_manifest.save()
+            ge_db_path = game_data / 'GE.CDB'  # debug strings only present in the US version
+            if ge_db_path.exists():
+                with ge_db_path.open('rb') as f:
+                    ge_db = Database.read(f)
+                ge_manifest = Manifest.from_archive(message_dir, 'GE', ge_db, original_path=ge_db_path)
+                ge_manifest.rename(0, 'GE')
+                ge_manifest.save()
             message_manifest = display_manifest
 
         font_path = project_path / 'font.json'
@@ -223,8 +226,12 @@ class Project:
             with font_path.open('w') as f:
                 json.dump(font, f)
         else:
+            if version.region == Region.NTSC_U:
+                font_image_index = 4
+            else:
+                font_image_index = 1
             font_metrics = exe[addresses['FontMetrics']:addresses['FontMetrics']+224]
-            font = {'image': str(display_manifest[4].path.relative_to(project_path)), 'widths': {}}
+            font = {'image': str(display_manifest[font_image_index].path.relative_to(project_path)), 'widths': {}}
             for i, width in enumerate(font_metrics):
                 font['widths'][i + 0x20] = width
             with font_path.open('w') as f:
@@ -344,13 +351,19 @@ class Project:
         option_menu = []
         if version.region != Region.NTSC_J:
             # read menu data
-            x_scales = list(struct.unpack('<3I', exe[addresses['MenuXScaleStart']:addresses['MenuXScaleStop']]))
+            x_scale_start = addresses['MenuXScale']
+            x_scale_stop = x_scale_start + 3 * 4
+            x_scales = list(struct.unpack('<3I', exe[x_scale_start:x_scale_stop]))
             raw_instances = exe[addresses['OptionMenuStart']:addresses['OptionMenuStop']]
             for i in range(0, len(raw_instances), 12):
                 x, y, component_index, r, g, b, draw = struct.unpack('<2H4BI', raw_instances[i:i + 12])
                 option_menu.append(ComponentInstance(x, y, component_index, (r, g, b), draw))
 
-            display_manifest.rename(3, 'Option')
+            if version.region == Region.NTSC_U:
+                option_menu_index = 3
+            else:
+                option_menu_index = 2
+            display_manifest.rename(option_menu_index, 'Option')
             display_manifest.save()
 
         menu_manifest = Manifest.load_from(art_dir / 'MENU')
@@ -360,7 +373,8 @@ class Project:
                 item_art_id = 8
             else:
                 item_art_id = 53
-                menu_manifest.rename(55, 'Inventory')
+                if version.region == Region.NTSC_U:
+                    menu_manifest.rename(55, 'Inventory')
             menu_manifest.rename(item_art_id, 'item_art')
             item_art_dir = menu_manifest[item_art_id].path
             item_art_manifest = Manifest.load_from(item_art_dir)
@@ -541,7 +555,12 @@ class Project:
                 xa_dbs.append(XaDatabase(region_sets[index], mf.path.read_bytes()))
         else:
             display_manifest = Manifest.load_from(self.project_dir / 'art' / 'DISPLAY')
-            xa_map = display_manifest[self.version.disc - 1].path.read_bytes()
+            disc_index = self.version.disc - 1
+            if self.version.region == Region.NTSC_U:
+                xa_map_offset = 0
+            else:
+                xa_map_offset = 4
+            xa_map = display_manifest[xa_map_offset + disc_index].path.read_bytes()
             for mf in voice_manifest:
                 xa_db = XaDatabase.read_bytes(xa_map)
                 xa_db.set_data(mf.path.read_bytes())
@@ -611,7 +630,10 @@ class Project:
                 stage_info = json.load(f)
             mapped_strings.add(self.project_dir / stage_info['strings'])
 
-        messages = Manifest.load_from(self.project_dir / 'messages')
+        messages = Manifest.try_load_from(self.project_dir / 'messages')
+        if not messages:
+            return []
+
         databases = []
         for entry in messages:
             if entry.path not in mapped_strings:
@@ -741,20 +763,21 @@ class Project:
         return actors, items, other
 
     def get_menus(self) -> Iterable[tuple[str, Menu]]:
-        if self.version.region == Region.NTSC_J:
-            return
-
         display_manifest = Manifest.load_from(self.project_dir / 'art' / 'DISPLAY')
-        option_menu_file = display_manifest['Option']
-        with option_menu_file.path.open('rb') as f:
-            option_menu = Menu.read(f)
-        option_menu.instantiate(self.option_menu, self.x_scales)
-        yield 'Option', option_menu
+        # menu files only exist in Western versions
+        if 'Option' in display_manifest:
+            option_menu_file = display_manifest['Option']
+            with option_menu_file.path.open('rb') as f:
+                option_menu = Menu.read(f)
+            option_menu.instantiate(self.option_menu, self.x_scales)
+            yield 'Option', option_menu
 
         menu_manifest = Manifest.load_from(self.project_dir / 'art' / 'MENU')
-        inventory_menu_file = menu_manifest['Inventory']
-        with inventory_menu_file.path.open('rb') as f:
-            yield 'Inventory', Menu.read(f)
+        # inventory menu seems to only be in the US version
+        if 'Inventory' in menu_manifest:
+            inventory_menu_file = menu_manifest['Inventory']
+            with inventory_menu_file.path.open('rb') as f:
+                yield 'Inventory', Menu.read(f)
 
     @functools.cache
     def get_actor_instance_health(self) -> list[tuple[int, int]]:

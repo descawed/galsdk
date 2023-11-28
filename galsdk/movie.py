@@ -22,7 +22,7 @@ class Movie(Media):
 
         :param path: Path to the STR video
         """
-        super().__init__(path, 'avi')
+        super().__init__(path, 'mp4')
 
     @property
     def name(self) -> str:
@@ -32,8 +32,6 @@ class Movie(Media):
     def convert(self, playable_path: Path):
         # apad + shortest pads the audio with silence out to the length of the video, because some videos have audio
         # streams shorter than the video stream and this causes panda to stop playing the video early
-        # we use the mjpeg codec because panda seems to have trouble with mpeg video (the video restarts after a second
-        # and ends up out of sync with the audio)
         in_video = ffmpeg.input(str(self.path))
         audio = in_video.audio.filter('apad')
-        ffmpeg.output(in_video.video, audio, str(playable_path), shortest=None, vcodec='mjpeg').run()
+        ffmpeg.output(in_video.video, audio, str(playable_path), shortest=None).run()

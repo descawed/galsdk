@@ -212,6 +212,19 @@ class Manifest:
         else:
             return self.files[item]
 
+    def __contains__(self, item: int | str) -> bool:
+        """Check if a given index or name exists in the manifest"""
+        if isinstance(item, str):
+            pieces = item.split('/', 1)
+            if mf := self.name_map.get(pieces[0]):
+                if mf.is_manifest and len(pieces) > 1:
+                    sub_manifest = Manifest.load_from(mf.path)
+                    return pieces[1] in sub_manifest
+                return True
+            return False
+        else:
+            return item < len(self.files)
+
     def __iter__(self) -> Iterable[ManifestFile]:
         """Iterate over the files in the manifest"""
         yield from self.files

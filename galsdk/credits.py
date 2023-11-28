@@ -7,6 +7,7 @@ from typing import BinaryIO, Self, Iterable
 
 from galsdk.format import Archive
 from galsdk.tim import TimFormat
+from galsdk.util import file as util
 from psx.tim import Tim
 
 
@@ -143,7 +144,7 @@ class Credits(Archive[Tim]):
                         break
                     data_row = []
                     for j in range(num_data):
-                        data_row.append(f.read(0x20))
+                        data_row.append(util.read_some(f, 0x20))
                     control_data.append(data_row)
 
                 control.append(CreditControl(unknown, rects, control_data))
