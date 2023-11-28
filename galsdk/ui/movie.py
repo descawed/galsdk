@@ -33,7 +33,7 @@ class MovieTab(Tab):
                 self.movies.append(movie)
                 self.tree.insert(stage, tk.END, text=movie.name, iid=str(movie_id))
 
-        self.player = MediaPlayer(self.base, 'movie', 320, 240, self)
+        self.player = MediaPlayer(self.base, 'movie', 320, 176, self)
 
         self.tree.grid(row=0, column=0, sticky=tk.NS+tk.W)
         scroll.grid(row=0, column=1, sticky=tk.NS)

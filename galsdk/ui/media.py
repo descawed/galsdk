@@ -59,7 +59,7 @@ class MediaPlayer(ttk.Frame):
             self.update()
             x, y, width, height = self.grid_bbox(0, 0)
             # for videos, we always want to keep the same aspect ratio
-            new_width, new_height = util.scale_to_fit(320, 240, width, height, 10)
+            new_width, new_height = util.scale_to_fit(320, 176, width, height, 10)
             props = WindowProperties()
             # center the window
             x_offset = (width - new_width) // 2

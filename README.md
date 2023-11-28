@@ -9,8 +9,9 @@ Support for editing other files will be added in the future.
 ### Projects
 A project is a folder where the editor extracts game files and their metadata. Before you can view anything in the
 editor, you need to create a project by using File > New Project (or ctrl-N) and selecting a CD image to extract.
-The image should be in BIN/CUE format (although any CUE file is actually ignored). Currently, only the US and Japanese
-retail versions of the game are supported. Support for demos and European versions is planned for the future.
+The image should be in BIN/CUE format (although any CUE file is actually ignored). Currently, the US, Japanese, and
+German retail versions of the game are supported. Support for demos and other European versions is planned for the
+future.
 
 After selecting the appropriate BIN image, the GUI will display some information about the version of the game it
 contains. Choose a directory for the project to be created in with the Browse button and then click Create Project. Wait
@@ -153,7 +154,7 @@ them up based on the file modification timestamps.
   can also display a preview of the full menu rendered together. This is not currently supported for the inventory menu.
   You can right-click on an image in the list to export.
 - **Movie** - On this tab you can view the game's FMVs. There's no export option in the UI, but if you watch a video
-  in the editor, you can find a copy of it in .avi format in \<project dir>/stages/\<stage letter>/movies. Which stage's
+  in the editor, you can find a copy of it in .mp4 format in \<project dir>/stages/\<stage letter>/movies. Which stage's
   FMVs are available to view depends on which disc you created the project from, although you can manually copy the
   FMVs from other discs into the appropriate directory in the project if you want to have them all available.
 - **Voice** - This tab allows you to listen to the game's spoken dialogue. Like the Movie tab, there is no export option
