@@ -2,6 +2,7 @@ import re
 
 from dataclasses import dataclass
 from math import ceil
+from pathlib import Path
 from typing import BinaryIO, ByteString, Iterable, Optional
 
 from psx.cd.region import CdRegion, SystemArea, Directory, Free
@@ -249,6 +250,14 @@ class PsxCd:
             path = path[:-1]
         return path.lower()
 
+    def is_dir(self, path: str) -> bool:
+        cleaned_path = self._clean_path(path)
+        index = self.name_map.get(cleaned_path)
+        if index is None:
+            return False
+        directory = self.regions[index]
+        return isinstance(directory, Directory)
+
     def list_dir(self, path: str = None) -> Iterable[DirectoryEntry]:
         """
         List the contents of a directory on the primary volume of the CD
@@ -318,14 +327,55 @@ def patch_cd(image_path: str, cd_path: str, input_path: str, raw: bool):
         cd.write(f)
 
 
+def extract_file(cd: PsxCd, output_path: Path, cd_path: str, raw: bool):
+    if cd.is_dir(cd_path):
+        for entry in cd.list_dir(cd_path):
+            extract_file(cd, output_path, entry.path, raw)
+    else:
+        base_name = cd_path.rsplit('\\', 1)[-1].split(';', 1)[0]
+        new_path = output_path / base_name
+        with new_path.open('wb') as f:
+            cd.extract(cd_path, f, raw)
+
+
+def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw: bool):
+    with image_path.open('rb') as f:
+        cd = PsxCd(f)
+
+    if (len(cd_paths) > 1 or cd.is_dir(cd_paths[0])) and not output_path.is_dir():
+        if not output_path.exists():
+            output_path.mkdir()
+        else:
+            raise NotADirectoryError('Output path must be a directory when extracting multiple files')
+
+    if output_path.is_dir():
+        for cd_path in cd_paths:
+            extract_file(cd, output_path, cd_path, raw)
+    else:
+        with output_path.open('wb') as f:
+            cd.extract(cd_paths[0], f, raw)
+
+
 def cli_main():
     import argparse
 
-    parser = argparse.ArgumentParser(description='Patch CD images')
-    parser.add_argument('-r', '--raw', help='The input file is raw CD sectors', action='store_true')
-    parser.add_argument('cd', help='Path to the CD image to be patched')
-    parser.add_argument('path', help='Path on the CD to be patched')
-    parser.add_argument('input', help='Path to the file that will be patched into the CD')
+    parser = argparse.ArgumentParser(description='Patch or extract files in CD images')
+    subparsers = parser.add_subparsers()
+
+    patch_parser = subparsers.add_parser('patch', help='Patch a file in the CD image')
+    patch_parser.add_argument('-r', '--raw', help='The input file is raw CD sectors', action='store_true')
+    patch_parser.add_argument('cd', help='Path to the CD image to be patched')
+    patch_parser.add_argument('path', help='Path on the CD to be patched')
+    patch_parser.add_argument('input', help='Path to the file that will be patched into the CD')
+    patch_parser.set_defaults(action=lambda a: patch_cd(a.cd, a.path, a.input, a.raw))
+
+    extract_parser = subparsers.add_parser('extract', help='Extract files from the CD image')
+    extract_parser.add_argument('-r', '--raw', help='Extract the file(s) as raw CD sectors', action='store_true')
+    extract_parser.add_argument('cd', help='Path to the CD image', type=Path)
+    extract_parser.add_argument('output', help='Path to extract file(s) to. If more than one file is being '
+                                'extracted, this must be a directory.', type=Path)
+    extract_parser.add_argument('paths', help='Path(s) on the CD to be extracted', nargs='+')
+    extract_parser.set_defaults(action=lambda a: extract_files(a.cd, a.output, a.paths, a.raw))
 
     args = parser.parse_args()
-    patch_cd(args.cd, args.path, args.input, args.raw)
+    args.action(args)

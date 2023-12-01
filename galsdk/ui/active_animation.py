@@ -3,7 +3,7 @@ from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
 from panda3d.core import LQuaternionf, NodePath
 
-from galsdk import util
+from galsdk import graphics
 from galsdk.animation import Animation
 from galsdk.coords import Point
 
@@ -60,13 +60,13 @@ class ActiveAnimation:
                 next_translation = Point(*self.animation.frames[frame_index + 1].translation)
                 this_tnp = np.array([this_translation.panda_x, this_translation.panda_y, this_translation.panda_z])
                 next_tnp = np.array([next_translation.panda_x, next_translation.panda_y, next_translation.panda_z])
-                translation = util.interpolate(interp_amount, this_tnp, next_tnp)
+                translation = graphics.interpolate(interp_amount, this_tnp, next_tnp)
 
                 this_rotations = self.animation.convert_frame(frame_index)[1]
                 next_rotations = self.animation.convert_frame(frame_index + 1)[1]
                 rotations = []
                 for this_rotation, next_rotation in zip(this_rotations, next_rotations, strict=True):
-                    rotations.append(util.interpolate(interp_amount, this_rotation, next_rotation))
+                    rotations.append(graphics.interpolate(interp_amount, this_rotation, next_rotation))
             else:
                 point = Point(*self.animation.frames[frame_index].translation)
                 translation = np.array([point.panda_x, point.panda_y, point.panda_z])
@@ -83,7 +83,7 @@ class ActiveAnimation:
                 qy = np.array([0., sy, 0., cy], np.float32)
                 qz = np.array([0., 0., sz, cz], np.float32)
                 # still need to order the rotations as the game would
-                quaternion = util.quat_mul(qx, util.quat_mul(qz, qy))
+                quaternion = graphics.quat_mul(qx, graphics.quat_mul(qz, qy))
                 norm = np.linalg.norm(quaternion)
                 if norm != 0:
                     quaternion /= norm

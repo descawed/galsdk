@@ -7,7 +7,7 @@ from typing import BinaryIO, Self, Iterable
 
 from galsdk.format import Archive
 from galsdk.tim import TimFormat
-from galsdk.util import file as util
+from galsdk import file as util
 from psx.tim import Tim
 
 

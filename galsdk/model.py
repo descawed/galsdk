@@ -6,7 +6,7 @@ import json
 import struct
 from abc import abstractmethod
 from dataclasses import dataclass
-from enum import Enum, IntEnum, auto
+from enum import IntEnum
 from pathlib import Path
 from typing import Any, BinaryIO, Iterable, Self
 
@@ -15,7 +15,7 @@ from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVert
     PandaNode, PNMImage, StringStream, Texture
 from PIL import Image
 
-from galsdk import util
+from galsdk import file, graphics
 from galsdk.animation import Animation, AnimationDb
 from galsdk.coords import Dimension, Point
 from galsdk.format import FileFormat
@@ -543,7 +543,7 @@ class Model(FileFormat):
                             qx = np.array([sx, 0., 0., cx], np.float32)
                             qy = np.array([0., sy, 0., cy], np.float32)
                             qz = np.array([0., 0., sz, cz], np.float32)
-                            quaternion = util.quat_mul(qx, util.quat_mul(qy, qz))
+                            quaternion = graphics.quat_mul(qx, graphics.quat_mul(qy, qz))
                             norm = np.linalg.norm(quaternion)
                             if norm != 0:
                                 quaternion /= norm
@@ -762,7 +762,7 @@ illum 0
                 model = self.get_panda3d_model()
                 texture = self.get_panda3d_texture()
                 model.setTexture(texture)
-                model.writeBamFile(util.panda_path(new_path))
+                model.writeBamFile(file.panda_path(new_path))
             case 'gltf':
                 new_path = path.with_suffix('.gltf')
                 texture_path = path.with_suffix('.png')
@@ -803,7 +803,7 @@ illum 0
         num_shorts = num_vertices * 3
         num_bytes = num_vertices * 2
         data_size = num_shorts * 2 + num_bytes
-        count = util.int_from_bytes(f.read(2))
+        count = file.int_from_bytes(f.read(2))
         attributes = []
         for k in range(count):
             data = f.read(data_size)

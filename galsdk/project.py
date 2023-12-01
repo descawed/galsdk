@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePath
 from typing import Iterable
 
-from galsdk import util
+from galsdk import file
 from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
@@ -148,10 +148,8 @@ class Project:
 
         # determine game version
         version = cls.detect_files_version(game_dir)
-        if version.language in ['en-GB', 'fr'] or version.is_demo:
-            raise NotImplementedError(
-                'Currently only the US, Japanese, and German retail versions of the game are supported'
-            )
+        if version.language == 'fr' or version.is_demo:
+            raise NotImplementedError('Demos and the French version are not currently supported')
 
         addresses = ADDRESSES[version.id]
         # locate files we're interested in
@@ -521,21 +519,6 @@ class Project:
         for path in (self.project_dir / 'stages' / stage / 'movies').glob('*.STR'):
             yield Movie(path)
 
-    @classmethod
-    def _get_voice_manifests(cls, voice_dir: Path) -> Iterable[Manifest]:
-        if manifest := Manifest.try_load_from(voice_dir):
-            yield manifest
-        else:
-            for sub_path in voice_dir.iterdir():
-                if sub_path.is_dir():
-                    yield from cls._get_voice_manifests(sub_path)
-
-    @classmethod
-    def _get_voice_from_dir(cls, voice_dir: Path) -> Iterable[XaAudio]:
-        for manifest in cls._get_voice_manifests(voice_dir):
-            for f in manifest:
-                yield XaAudio(f.path)
-
     def get_xa_databases(self) -> list[XaDatabase]:
         voice_dir = self.project_dir / 'voice'
         voice_manifest = Manifest.load_from(voice_dir)
@@ -796,7 +779,7 @@ class Project:
             data = exe[address:address + num_bytes]
 
         return [
-            (util.int_from_bytes(data[i:i+2]), util.int_from_bytes(data[i+2:i+4]))
+            (file.int_from_bytes(data[i:i+2]), file.int_from_bytes(data[i+2:i+4]))
             for i in range(0, num_bytes, 4)
         ]
 

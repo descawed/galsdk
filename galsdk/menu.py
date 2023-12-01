@@ -9,7 +9,7 @@ from typing import BinaryIO, Self, Iterable
 from PIL import Image
 
 from galsdk.format import FileFormat
-from galsdk.util import int_from_bytes
+from galsdk.file import int_from_bytes
 from psx.tim import BitsPerPixel, Tim
 
 

@@ -1,6 +1,6 @@
 from panda3d.core import CollisionEntry, GeomNode, Mat3, NodePath, Point3, Vec3
 
-from galsdk import util
+from galsdk import graphics
 from galsdk.coords import Line2d, Point, Triangle2d
 from galsdk.module import CameraCut
 from galsdk.room.object import RoomObject
@@ -50,7 +50,7 @@ class CameraCutObject(RoomObject):
         self.node_path.setTwoSided(True)
 
     def get_model(self) -> NodePath:
-        geom = util.make_quad(
+        geom = graphics.make_quad(
             (self.p1.panda_x - self.position.panda_x, self.p1.panda_y - self.position.panda_y),
             (self.p2.panda_x - self.position.panda_x, self.p2.panda_y - self.position.panda_y),
             (self.p4.panda_x - self.position.panda_x, self.p4.panda_y - self.position.panda_y),
@@ -89,7 +89,7 @@ class CameraCutObject(RoomObject):
 
     def set_relative(self, p1: Point3, p2: Point3, p3: Point3, p4: Point3):
         vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
-        util.update_quad(vdata, p1, p2, p4, p3)
+        graphics.update_quad(vdata, p1, p2, p4, p3)
         self.relative_p1.panda_point = p1
         self.relative_p2.panda_point = p2
         self.relative_p3.panda_point = p3

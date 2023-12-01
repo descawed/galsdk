@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import BinaryIO, Iterable, Self
 
-from galsdk import util
+from galsdk import file
 from galsdk.format import Archive
 
 
@@ -59,12 +59,12 @@ class VabDb(Archive[bytes]):
         toc_len = int.from_bytes(f.read(4), 'little')
         # should be the length of the header section below, but sometimes it's not? just ignore it for now
 
-        vh_len = util.int_from_bytes(f.read(4))
-        vh_count = util.int_from_bytes(f.read(4))
-        seq_len = util.int_from_bytes(f.read(4))
-        seq_count = util.int_from_bytes(f.read(4))
-        vb_len = util.int_from_bytes(f.read(4))
-        vb_count = util.int_from_bytes(f.read(4), signed=True)
+        vh_len = file.int_from_bytes(f.read(4))
+        vh_count = file.int_from_bytes(f.read(4))
+        seq_len = file.int_from_bytes(f.read(4))
+        seq_count = file.int_from_bytes(f.read(4))
+        vb_len = file.int_from_bytes(f.read(4))
+        vb_count = file.int_from_bytes(f.read(4), signed=True)
 
         if toc_len + vh_len + seq_len == 0 or vb_count <= 0:
             # try alternate read
@@ -73,19 +73,19 @@ class VabDb(Archive[bytes]):
 
         vh_offsets = []
         for i in range(vh_count):
-            offset = util.int_from_bytes(f.read(4))
+            offset = file.int_from_bytes(f.read(4))
             if i == 0 or offset != 0:
                 vh_offsets.append(offset)
 
         seq_offsets = []
         for _ in range(seq_count):
-            offset = util.int_from_bytes(f.read(4))
+            offset = file.int_from_bytes(f.read(4))
             if offset != 0:
                 seq_offsets.append(offset)
 
         vb_offsets = []
         for _ in range(vb_count):
-            offset = util.int_from_bytes(f.read(4))
+            offset = file.int_from_bytes(f.read(4))
             if offset != 0:
                 vb_offsets.append(offset)
 
@@ -104,19 +104,19 @@ class VabDb(Archive[bytes]):
         for offset in vh_offsets:
             size = sizes[offset]
             f.seek(data_start + offset)
-            vhs.append(util.read_some(f, size))
+            vhs.append(file.read_some(f, size))
 
         seqs = []
         for offset in seq_offsets:
             size = sizes[offset]
             f.seek(data_start + offset)
-            seqs.append(util.read_some(f, size))
+            seqs.append(file.read_some(f, size))
 
         vbs = []
         for offset in vb_offsets:
             size = sizes[offset]
             f.seek(data_start + offset)
-            vbs.append(util.read_some(f, size))
+            vbs.append(file.read_some(f, size))
 
         return cls(vhs, seqs, vbs)
 

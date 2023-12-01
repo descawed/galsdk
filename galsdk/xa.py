@@ -10,7 +10,7 @@ except ModuleNotFoundError:
     # we allow this to be not found because the mxa CLI command doesn't require it
     ffmpeg = None
 
-import galsdk.util.file as util
+import galsdk.file as util
 from galsdk.format import Archive
 from galsdk.media import Media
 from psx.cd.disc import Sector, SubMode

@@ -9,7 +9,7 @@ from typing import BinaryIO, Container, Iterable, Self
 
 from PIL import Image
 
-from galsdk import util
+from galsdk import file
 from galsdk.compress import dictionary as dictcmp
 from galsdk.format import Archive, FileFormat
 from psx.tim import Tim
@@ -164,11 +164,11 @@ class TimDb(Archive[Tim]):
                     f.seek(-1, 1)
             return db
 
-        num_images = util.int_from_bytes(f.read(4))
+        num_images = file.int_from_bytes(f.read(4))
         if fmt == cls.Format.ALTERNATE:
             f.seek(4)
             header_size = (num_images + 1) * 4  # +1 for the image count itself
-            directory = [(header_size + util.int_from_bytes(f.read(4)) * 4, 0) for _ in range(num_images)]
+            directory = [(header_size + file.int_from_bytes(f.read(4)) * 4, 0) for _ in range(num_images)]
             for i in range(num_images):
                 offset = directory[i][0]
                 if i + 1 < num_images:
@@ -176,11 +176,11 @@ class TimDb(Archive[Tim]):
                 else:
                     directory[i] = (offset, file_size - offset)
         else:
-            directory = [(util.int_from_bytes(f.read(4)), util.int_from_bytes(f.read(4)) & 0xffffff)
+            directory = [(file.int_from_bytes(f.read(4)), file.int_from_bytes(f.read(4)) & 0xffffff)
                          for _ in range(num_images)]
         for offset, size in directory:
             f.seek(offset)
-            data = util.read_some(f, size)
+            data = file.read_some(f, size)
             with io.BytesIO(data) as buf:
                 if fmt == cls.Format.COMPRESSED_DB:
                     # make sure the sub-DB hangs on to its raw data for the benefit of manifests

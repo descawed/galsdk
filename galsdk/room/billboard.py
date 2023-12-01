@@ -1,7 +1,7 @@
 from panda3d.core import BitMask32, GeomNode, NodePath, Texture
 from PIL.Image import Image
 
-from galsdk import util
+from galsdk import graphics
 from galsdk.coords import Point
 from galsdk.room.object import RoomObject
 
@@ -18,7 +18,7 @@ class BillboardObject(RoomObject):
         self.pickable = pickable
 
     def get_model(self) -> NodePath:
-        geom = util.make_quad(
+        geom = graphics.make_quad(
             (-self.width, -self.height),
             (self.width, -self.height),
             (self.width, self.height),
@@ -30,7 +30,7 @@ class BillboardObject(RoomObject):
         return NodePath(node)
 
     def get_texture(self) -> Texture | None:
-        return util.create_texture_from_image(self.image)
+        return graphics.create_texture_from_image(self.image)
 
     def add_to_scene(self, scene: NodePath):
         super().add_to_scene(scene)

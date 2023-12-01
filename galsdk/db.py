@@ -4,7 +4,7 @@ import os.path
 from pathlib import Path
 from typing import BinaryIO, Container, Iterable, Self
 
-import galsdk.util.file as util
+import galsdk.file as util
 from galsdk.format import Archive
 
 

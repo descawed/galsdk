@@ -13,7 +13,7 @@ from panda3d.core import (CollisionHandlerQueue, CollisionNode, CollisionRay, Co
                           GeomNode, KeyboardButton, MouseButton, NodePath, Plane, Point3, Vec3)
 from PIL import Image
 
-from galsdk import util
+from galsdk import graphics
 from galsdk.animation import AnimationDb
 from galsdk.model import ActorModel
 from galsdk.module import (ActorInstance, CircleCollider, Collider, ColliderType, RectangleCollider, RoomModule,
@@ -260,7 +260,7 @@ class RoomViewport(Viewport):
             self.camera_target = self.render_target.attachNewNode('room_viewport_camera_target')
             width = self.CAMERA_TARGET_WIDTH / 2
             height = self.CAMERA_TARGET_HEIGHT / 2
-            geom = util.make_quad(
+            geom = graphics.make_quad(
                 (-width, -height),
                 (width, -height),
                 (width, height),
@@ -270,7 +270,7 @@ class RoomViewport(Viewport):
             node = GeomNode('room_viewport_camera_target_model')
             node.addGeom(geom)
             self.camera_target_model = NodePath(node)
-            self.camera_target_model.setTexture(util.create_texture_from_image(self.target_icon), 1)
+            self.camera_target_model.setTexture(graphics.create_texture_from_image(self.target_icon), 1)
             self.camera_target_model.reparentTo(self.camera_target)
             if not self.should_show_camera_target:
                 self.camera_target_model.hide()

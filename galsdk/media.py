@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from galsdk import util
+from galsdk import file
 
 
 class Media(ABC):
@@ -24,7 +24,7 @@ class Media(ABC):
             converted_stat = playable_path.lstat()
             if original_stat.st_mtime <= converted_stat.st_mtime:
                 # if we've already converted the file since the last time the original was changed, use that
-                return util.panda_path(playable_path)
+                return file.panda_path(playable_path)
             playable_path.unlink()
         self.convert(playable_path)
-        return util.panda_path(playable_path)
+        return file.panda_path(playable_path)

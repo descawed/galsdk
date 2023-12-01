@@ -12,7 +12,7 @@ from typing import BinaryIO, Iterable, Self, Sequence
 
 import numpy as np
 
-from galsdk import util
+from galsdk import file
 from galsdk.coords import Dimension
 from galsdk.format import Archive, FileFormat
 
@@ -302,10 +302,10 @@ class AnimationDb(Archive[Animation | None]):
 
     @classmethod
     def read(cls, f: BinaryIO, **kwargs) -> Self:
-        directory = struct.unpack('<512I', util.read_exact(f, cls.SECTOR_SIZE))
+        directory = struct.unpack('<512I', file.read_exact(f, cls.SECTOR_SIZE))
         directory_len = len(directory)
-        data_size = util.int_from_bytes(f.read(4))
-        data = util.read_exact(f, data_size)
+        data_size = file.int_from_bytes(f.read(4))
+        data = file.read_exact(f, data_size)
         animations = []
         for i in range(0, directory_len, 2):
             header_offset = directory[i]

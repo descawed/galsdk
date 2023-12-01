@@ -4,7 +4,7 @@ from tkinter import ttk
 
 from PIL import ImageTk
 
-from galsdk import util
+from galsdk import graphics
 from galsdk.game import Stage
 from galsdk.manifest import FromManifest
 from galsdk.project import Project
@@ -95,7 +95,7 @@ class StringTab(Tab):
         # resize the image to fill the available space
         x, y, available_width, available_height = self.grid_bbox(2, 0)
         original_width, original_height = pil_image.size
-        new_size = util.scale_to_fit(original_width, original_height, available_width, available_height, 3)
+        new_size = graphics.scale_to_fit(original_width, original_height, available_width, available_height, 3)
 
         pil_image = pil_image.resize(new_size)
         tk_image = ImageTk.PhotoImage(pil_image)

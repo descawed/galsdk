@@ -3,7 +3,7 @@ import math
 from panda3d.core import CollisionEntry, GeomNode, Mat3, NodePath, Point2, SamplerState, Texture, Vec3, Point3
 from PIL import Image, ImageDraw
 
-from galsdk import util
+from galsdk import graphics
 from galsdk.coords import Dimension, Line2d, Point, Triangle2d
 from galsdk.module import CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room.object import RoomObject
@@ -29,7 +29,7 @@ class RectangleColliderObject(RoomObject):
     def get_model(self) -> NodePath:
         half_x = (self.width / 2).panda_units
         half_z = (self.height / 2).panda_units
-        geom = util.make_quad((-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
+        geom = graphics.make_quad((-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
         node = GeomNode('rectangle_collider_quad')
         node.addGeom(geom)
         return NodePath(node)
@@ -168,7 +168,7 @@ class RectangleColliderObject(RoomObject):
         half_x = new_width.panda_units / 2
         half_z = new_height.panda_units / 2
         vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
-        util.update_quad(vdata, (-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
+        graphics.update_quad(vdata, (-half_x, -half_z), (half_x, -half_z), (half_x, half_z), (-half_x, half_z))
         self.width = new_width
         self.height = new_height
         self.notify_transform()
@@ -227,7 +227,7 @@ class TriangleColliderObject(RoomObject):
         ]
 
     def get_model(self) -> NodePath:
-        geom = util.make_triangle(
+        geom = graphics.make_triangle(
             (self.p1.panda_x - self.position.panda_x, self.p1.panda_y - self.position.panda_y),
             (self.p2.panda_x - self.position.panda_x, self.p2.panda_y - self.position.panda_y),
             (self.p3.panda_x - self.position.panda_x, self.p3.panda_y - self.position.panda_y),
@@ -267,7 +267,7 @@ class TriangleColliderObject(RoomObject):
 
     def set_relative(self, p1: Point3, p2: Point3, p3: Point3):
         vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
-        util.update_triangle(vdata, p1, p2, p3)
+        graphics.update_triangle(vdata, p1, p2, p3)
         self.relative.p1.panda_point = p1
         self.relative.p2.panda_point = p2
         self.relative.p3.panda_point = p3
@@ -383,7 +383,7 @@ class CircleColliderObject(RoomObject):
         draw = ImageDraw.Draw(image)
         draw.ellipse([(0, 0), (width - 1, height - 1)], tuple(int(c * 255) for c in color))
 
-        texture = util.create_texture_from_image(image)
+        texture = graphics.create_texture_from_image(image)
         # prevents artifacts around the edge of the circle
         texture.setMagfilter(SamplerState.FT_nearest)
         texture.setMinfilter(SamplerState.FT_nearest)
@@ -396,7 +396,7 @@ class CircleColliderObject(RoomObject):
 
     def get_model(self) -> NodePath:
         radius = self.radius.panda_units
-        geom = util.make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True, False)
+        geom = graphics.make_quad((-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True, False)
         node = GeomNode('circle_collider_quad')
         node.addGeom(geom)
         return NodePath(node)
@@ -447,5 +447,5 @@ class CircleColliderObject(RoomObject):
         # I tried using scaling instead of changing the vertex data because I thought it might be easier and more
         # efficient, but for some reason, the mouse ray stopped detecting collisions on objects after I scaled them
         vdata = self.original_model.node().modifyGeom(0).modifyVertexData()
-        util.update_quad(vdata, (-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
+        graphics.update_quad(vdata, (-radius, -radius), (radius, -radius), (radius, radius), (-radius, radius), True)
         self.notify_transform()

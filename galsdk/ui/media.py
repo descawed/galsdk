@@ -6,7 +6,7 @@ from direct.task import Task
 from panda3d.core import AudioSound, CardMaker, GraphicsWindow, NativeWindowHandle, NodePath, MovieTexture,\
     WindowProperties
 
-from galsdk import util
+from galsdk import graphics
 
 
 class MediaPlayer(ttk.Frame):
@@ -59,7 +59,7 @@ class MediaPlayer(ttk.Frame):
             self.update()
             x, y, width, height = self.grid_bbox(0, 0)
             # for videos, we always want to keep the same aspect ratio
-            new_width, new_height = util.scale_to_fit(320, 176, width, height, 10)
+            new_width, new_height = graphics.scale_to_fit(320, 176, width, height, 10)
             props = WindowProperties()
             # center the window
             x_offset = (width - new_width) // 2

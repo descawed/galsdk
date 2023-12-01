@@ -9,9 +9,8 @@ Support for editing other files will be added in the future.
 ### Projects
 A project is a folder where the editor extracts game files and their metadata. Before you can view anything in the
 editor, you need to create a project by using File > New Project (or ctrl-N) and selecting a CD image to extract.
-The image should be in BIN/CUE format (although any CUE file is actually ignored). Currently, the US, Japanese, and
-German retail versions of the game are supported. Support for demos and other European versions is planned for the
-future.
+The image should be in BIN/CUE format (although any CUE file is actually ignored). Currently, all retail versions of the
+game except for the French version are supported. Support for demos and the French version is planned for the future.
 
 After selecting the appropriate BIN image, the GUI will display some information about the version of the game it
 contains. Choose a directory for the project to be created in with the Browse button and then click Create Project. Wait
@@ -161,8 +160,7 @@ them up based on the file modification timestamps.
   in the UI, but playing a voice recording will create a copy in .wav format in \<project dir>/voice.
 
 ## CLI utilities
-galsdk also comes with a number of CLI tools for manipulating the game's files. Since the editor is currently read-only,
-these are what you want if you actually want to make changes to the game. Each tool can be run with
+galsdk also comes with a number of CLI tools for manipulating the game's files. Each tool can be run with
 `python -m <module name>` and has usage help available with the `-h` option. There are also a couple bonus scripts for
 working with Galerians: Ash files (no additional Ash support is planned at this time). The following modules have CLI
 interfaces:
@@ -192,12 +190,13 @@ interfaces:
   US version, DISPLAY.CDB entries 0, 1, and 2 are a kind of header-only database defining where in the XA file to find
   the various dialogue recordings for discs 1, 2, and 3 respectively. Run this tool with the path to the file from
   DISPLAY.CDB for the disc you want, followed by the path to the XA file, and finally the path to a directory to extract
-  the recordings to. This tool doesn't currently work with the Japanese version because the XA layouts are hard-coded
-  in the exe.
+  the recordings to. The unpack command doesn't work with the Japanese version because the XA layouts are hard-coded
+  in the exe. However, you can use the mxa command to export Japanese audio in the Western XA.MXA format and then unpack
+  that.
 - `psx.cd` - Patch updated files into a BIN CD image. After you make changes to game files, you can use this to replace
   the old versions of the files on the CD. For best results, try to keep the size of the changed file less than or equal
   to the size of the original file. The tool tries to handle shuffling things around if a file gets bigger, but I'm not
-  yet 100% confident in it.
+  yet 100% confident in it. It can also extract files from the CD image.
 - `psx.tim` - Convert TIM images to other formats.
 - `ash.bd` - Extract Galerians: Ash .BD1 and .BD2 archives.
 - `ash.tex` - Convert Galerians: Ash texture images to other formats.

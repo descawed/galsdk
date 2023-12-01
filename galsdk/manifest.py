@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import io
 import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Generic, Iterable, TypeVar
 
-from galsdk import util
+from galsdk import file
 from galsdk.db import Database
 from galsdk.format import Archive, FileFormat
 from galsdk.sniff import sniff_file
@@ -92,9 +91,9 @@ class Manifest:
                 mf.format = detected_format.suggested_extension
                 new_path = mf.path.with_suffix(detected_format.suggested_extension)
                 if new_path != mf.path:
-                    util.unlink(new_path)
+                    file.unlink(new_path)
                 if recursive and isinstance(detected_format, Archive) and detected_format.is_ready:
-                    util.unlink(mf.path)
+                    file.unlink(mf.path)
                     mf.path = new_path
                     archive = detected_format
                 else:
@@ -130,7 +129,7 @@ class Manifest:
             name = f'{i:03}'
             filename = f'{name}{extension}'
             file_path = self.path / filename
-            util.unlink(file_path)
+            file.unlink(file_path)
             mf = ManifestFile(name, file_path)
             self.files.append(mf)
             self.name_map[mf.name] = mf
@@ -287,7 +286,7 @@ class Manifest:
                 new_path = mf.path.with_stem(name)
                 if ext is not None:
                     new_path = new_path.with_suffix(ext)
-                util.unlink(new_path)
+                file.unlink(new_path)
                 mf.path = mf.path.rename(new_path)
                 if mf.is_manifest:
                     sub_manifest = Manifest.load_from(mf.path)

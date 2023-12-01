@@ -19,7 +19,7 @@ import functools
 import math
 import io
 
-from galsdk import util
+from galsdk import file
 
 
 CHUNK_SIZE = 5000  # this is accurate to how the game's original compression worked
@@ -574,7 +574,7 @@ def decompress(data: bytes) -> list[tuple[int, bytes]]:
         while f.tell() < stream_end:
             offset = f.tell()
             output = bytearray()
-            data_len = util.int_from_bytes(f.read(4))
+            data_len = file.int_from_bytes(f.read(4))
             if data_len == 0:
                 break
             if data_len > stream_end - f.tell():
@@ -604,7 +604,7 @@ def decompress(data: bytes) -> list[tuple[int, bytes]]:
                             dictionary[index] = (byte, f.read(1)[0])
                         index += 1
 
-                stream_len = util.int_from_bytes(f.read(2), 'big')
+                stream_len = file.int_from_bytes(f.read(2), 'big')
                 end = f.tell() + stream_len
                 while f.tell() != end:
                     stack = [f.read(1)[0]]
