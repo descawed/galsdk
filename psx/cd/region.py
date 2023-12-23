@@ -32,8 +32,8 @@ class CdRegion(ABC):
         """
         if num_sectors > len(self.sectors):
             raise ValueError(f'Tried to shrink by {num_sectors} sectors but only {len(self.sectors)} available')
-        if shift_data:
-            for i in range(len(self.sectors) - 1, num_sectors + 1, -1):
+        if shift_data and num_sectors > 0:
+            for i in range(len(self.sectors) - 1, num_sectors - 1, -1):
                 self.sectors[i].copy(self.sectors[i - num_sectors])
         result = self.sectors[:num_sectors]
         del self.sectors[:num_sectors]
@@ -63,9 +63,9 @@ class CdRegion(ABC):
         :param shift_data: If True, the data in this region will be copied back to start at the new first sector
         """
         self.sectors = sectors + self.sectors
-        self.start -= len(sectors)
-        if shift_data:
-            num_new_sectors = len(sectors)
+        num_new_sectors = len(sectors)
+        self.start -= num_new_sectors
+        if shift_data and num_new_sectors > 0:
             for i in range(num_new_sectors, len(self.sectors)):
                 self.sectors[i - num_new_sectors].copy(self.sectors[i])
 

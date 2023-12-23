@@ -31,6 +31,7 @@ from galsdk.ui.room.collider import ColliderEditor, ColliderObject
 from galsdk.ui.room.cut import CameraCutEditor
 from galsdk.ui.room.entrance import EntranceEditor
 from galsdk.ui.room.replaceable import Replaceable
+from galsdk.ui.room.module import ModuleEditor
 from galsdk.ui.room.trigger import TriggerEditor
 from galsdk.ui.tab import Tab
 from galsdk.ui.viewport import Cursor, Viewport
@@ -763,8 +764,8 @@ class RoomTab(Tab):
                 trigger_iid = f'triggers_{room_id}'
                 self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
 
-        maps = self.project.get_room_indexes_by_map()
-        self.room_names_by_map = [[self.rooms_by_index[index].file.name for index in map_] for map_ in maps]
+        self.maps = self.project.get_room_indexes_by_map()
+        self.room_names_by_map = [[self.rooms_by_index[index].file.name for index in map_] for map_ in self.maps]
 
         self.viewport = RoomViewport(self.base, 1024, 768, self.project, self)
         self.viewport.on_select(self.on_viewport_select)
@@ -1081,7 +1082,9 @@ class RoomTab(Tab):
         room_level_ids = ['room', 'actors', 'colliders', 'cameras', 'cuts', 'triggers', 'entrances']
         object_ids = ['collider', 'trigger', 'cut', 'camera']
         if any(iid.startswith(f'{room_level_id}_') for room_level_id in room_level_ids):
-            room_id = int(iid.split('_')[1])
+            pieces = iid.split('_')
+            level = pieces[0]
+            room_id = int(pieces[1])
             if self.current_room != room_id:
                 self.set_room(room_id)
                 self.add_children(room_id, 'collider', self.viewport.colliders)
@@ -1109,7 +1112,10 @@ class RoomTab(Tab):
                                 model_name = self.viewport.actor_models[actor_instance.type].name
                                 name = f'#{actor_instance.id}: {model_name}'
                             self.tree.insert(layout_iid, tk.END, text=name, iid=actor_iid)
-            self.set_detail_widget(None)
+            detail_widget = None
+            if level == 'room':
+                detail_widget = ModuleEditor(self.rooms[self.current_room], self.maps, self)
+            self.set_detail_widget(detail_widget)
             self.viewport.select(None)
         elif any(iid.startswith(f'{object_id}_') for object_id in object_ids):
             pieces = iid.split('_')
