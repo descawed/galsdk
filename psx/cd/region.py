@@ -84,9 +84,9 @@ class CdRegion(ABC):
 
         This is ideal for patching files with important data in the sector headers (such as XA audio and STR videos).
 
-        :param sectors: The list of sectors to replace this region with. The number of sectors must be not be greater
-            than the number of sectors in this region. If fewer sectors are provided, the remaining sectors at the end
-            of the region are left unchanged.
+        :param sectors: The list of sectors to replace this region with. The number of sectors must not be greater than
+            the number of sectors in this region. If fewer sectors are provided, the remaining sectors at the end of the
+            region are left unchanged.
         """
         if len(sectors) > len(self.sectors):
             raise ValueError('Region is not large enough to patch')
@@ -136,6 +136,12 @@ class CdRegion(ABC):
         # default implementation has nothing to do, so just pass the message along to subregions
         for r in self.sub_regions:
             r.update_paths(region)
+
+    def __str__(self) -> str:
+        description = f'{self.start:06d}-{self.end:06d} ({self.size:05d}): {self.__class__.__name__}'
+        if self.name:
+            description += f' ({self.name})'
+        return description
 
     @property
     def size(self) -> int:
