@@ -316,14 +316,14 @@ class PsxCd:
         return new_num_sectors - region.size
 
 
-def patch_cd(image_path: str, cd_path: str, input_path: str, raw: bool):
-    with open(image_path, 'rb') as f:
+def patch_cd(image_path: Path, cd_path: str, input_path: Path, raw: bool):
+    with image_path.open('rb') as f:
         cd = PsxCd(f)
-    with open(input_path, 'rb') as f:
+    with input_path.open('rb') as f:
         data = f.read()
     patch = Patch(cd_path, data, raw)
     cd.patch([patch])
-    with open(image_path, 'wb') as f:
+    with image_path.open('wb') as f:
         cd.write(f)
 
 
@@ -356,6 +356,32 @@ def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw:
             cd.extract(cd_paths[0], f, raw)
 
 
+def print_dir(cd: PsxCd, dir_path: str | None, recursive: bool, depth: int = 0):
+    indent = '\t' * depth
+    for entry in cd.list_dir(dir_path):
+        name = entry.name
+        if entry.is_directory:
+            name += '/'
+        print(f'{indent}{name}')
+        if entry.is_directory and recursive:
+            print_dir(cd, entry.path, recursive, depth + 1)
+
+
+def dir_cmd(image_path: Path, cd_path: str | None, recursive: bool):
+    with image_path.open('rb') as f:
+        cd = PsxCd(f)
+
+    print_dir(cd, cd_path, recursive)
+
+
+def print_layout(image_path: Path):
+    with image_path.open('rb') as f:
+        cd = PsxCd(f)
+
+    for region in cd.regions:
+        print(region)
+
+
 def cli_main():
     import argparse
 
@@ -364,9 +390,9 @@ def cli_main():
 
     patch_parser = subparsers.add_parser('patch', help='Patch a file in the CD image')
     patch_parser.add_argument('-r', '--raw', help='The input file is raw CD sectors', action='store_true')
-    patch_parser.add_argument('cd', help='Path to the CD image to be patched')
+    patch_parser.add_argument('cd', help='Path to the CD image to be patched', type=Path)
     patch_parser.add_argument('path', help='Path on the CD to be patched')
-    patch_parser.add_argument('input', help='Path to the file that will be patched into the CD')
+    patch_parser.add_argument('input', help='Path to the file that will be patched into the CD', type=Path)
     patch_parser.set_defaults(action=lambda a: patch_cd(a.cd, a.path, a.input, a.raw))
 
     extract_parser = subparsers.add_parser('extract', help='Extract files from the CD image')
@@ -376,6 +402,16 @@ def cli_main():
                                 'extracted, this must be a directory.', type=Path)
     extract_parser.add_argument('paths', help='Path(s) on the CD to be extracted', nargs='+')
     extract_parser.set_defaults(action=lambda a: extract_files(a.cd, a.output, a.paths, a.raw))
+
+    dir_parser = subparsers.add_parser('dir', help='List directory structure of the CD image')
+    dir_parser.add_argument('-r', '--recursive', help='List directories recursively', action='store_true')
+    dir_parser.add_argument('cd', help='Path to the CD image', type=Path)
+    dir_parser.add_argument('dir', help='Path to the directory to list. Defaults to root directory.', nargs='?')
+    dir_parser.set_defaults(action=lambda a: dir_cmd(a.cd, a.dir, a.recursive))
+
+    layout_parser = subparsers.add_parser('layout', help='Print the layout of the CD image')
+    layout_parser.add_argument('cd', help='Path to the CD image', type=Path)
+    layout_parser.set_defaults(action=lambda a: print_layout(a.cd))
 
     args = parser.parse_args()
     args.action(args)
