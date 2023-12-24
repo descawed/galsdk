@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum, IntEnum, auto
 from typing import Self
 
-from psx import Region
+from psx.exe import Region
 
 
 class Stage(str, Enum):

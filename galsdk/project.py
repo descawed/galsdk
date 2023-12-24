@@ -27,10 +27,9 @@ from galsdk.string import StringDb, LatinStringDb, JapaneseStringDb
 from galsdk.tim import TimDb, TimFormat
 from galsdk.vab import VabDb
 from galsdk.xa import XaAudio, XaDatabase, XaRegion
-from psx import Region
 from psx.cd import Patch, PsxCd
 from psx.config import Config
-from psx.exe import Exe
+from psx.exe import Exe, Region
 
 
 @dataclass

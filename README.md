@@ -197,6 +197,7 @@ interfaces:
   the old versions of the files on the CD. For best results, try to keep the size of the changed file less than or equal
   to the size of the original file. The tool tries to handle shuffling things around if a file gets bigger, but I'm not
   yet 100% confident in it. It can also extract files from the CD image.
+- `psx.exe` - Apply binary patches to an EXE by address.
 - `psx.tim` - Convert TIM images to other formats.
 - `ash.bd` - Extract Galerians: Ash .BD1 and .BD2 archives.
 - `ash.tex` - Convert Galerians: Ash texture images to other formats.
