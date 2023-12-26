@@ -24,17 +24,35 @@ class BitsPerPixel(IntEnum):
     BPP_16 = 2
     BPP_24 = 3
 
+    @classmethod
+    def from_bpp(cls, bpp: int) -> Self:
+        match bpp:
+            case 4:
+                return cls.BPP_4
+            case 8:
+                return cls.BPP_8
+            case 16:
+                return cls.BPP_16
+            case 24:
+                return cls.BPP_24
+            case _:
+                raise ValueError(f'Invalid bits-per-pixel {bpp}')
+
     @property
-    def num_colors(self) -> int:
+    def bpp(self) -> int:
         match self:
             case BitsPerPixel.BPP_4:
-                return 2**4
+                return 4
             case BitsPerPixel.BPP_8:
-                return 2**8
+                return 8
             case BitsPerPixel.BPP_16:
-                return 2**16
+                return 16
             case BitsPerPixel.BPP_24:
-                return 2**24
+                return 24
+
+    @property
+    def num_colors(self) -> int:
+        return 2 ** self.bpp
 
 
 class Transparency(Enum):
@@ -225,11 +243,13 @@ class Tim:
             pixels = [tuple(rgba_data[i:i + 4]) for i in range(0, len(rgba_data), 4)]
             data = self._encode_pixel_16(pixels)
         else:
-            quantized = image.quantize(bpp.num_colors)
+            num_colors = bpp.num_colors
+            quantized = image.quantize(num_colors)
             palette = quantized.getpalette('RGBA')
             self.palettes = [
                 [(palette[i], palette[i+1], palette[i+2], palette[i+3]) for i in range(0, len(palette), 4)]
             ]
+            self.raw_clut_bounds = (self.clut_x, self.clut_y, num_colors, len(self.palettes))
             indexes = quantized.getdata()
             if bpp == BitsPerPixel.BPP_8:
                 data = bytes(indexes)
@@ -343,36 +363,57 @@ class Tim:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Convert TIM images to another format')
+    parser = argparse.ArgumentParser(description='Convert TIM images to and from other formats. Direct TIM-to-TIM '
+                                                 'conversion is not currently supported.')
     parser.add_argument('-n', '--no-transparency', help='Disable transparency', action='store_false',
                         dest='with_transparency')
     parser.add_argument('-c', '--combine', help='Combine all selected palettes into a single image',
                         action='store_true')
     parser.add_argument('-p', '--palettes', help='Palette (CLUT) indexes to extract; default is all', nargs='+',
                         type=int)
-    parser.add_argument('input', help='Path to TIM file to convert')
-    parser.add_argument('output', help='Path at which to store the converted image(s). If not using the --combine '
-                        'option, this may include a Python format specifier to format the palette index.')
+    parser.add_argument('-b', '--bpp', type=int, default=16,
+                        help='If converting to TIM, number of bits per pixel in the output (default: 16)')
+    parser.add_argument('--clut-x', help='X coordinate of the CLUT in the frame buffer', type=int, default=0)
+    parser.add_argument('--clut-y', help='Y coordinate of the CLUT in the frame buffer', type=int, default=0)
+    parser.add_argument('--image-x', help='X coordinate of the image in the frame buffer', type=int, default=0)
+    parser.add_argument('--image-y', help='Y coordinate of the image in the frame buffer', type=int, default=0)
+    parser.add_argument('input', help='Path to file to convert')
+    parser.add_argument('output', help='Path at which to store the converted image(s). If converting a TIM and '
+                                       'not using the --combine option, this may include a Python format specifier '
+                                       'to format the palette index.')
 
     args = parser.parse_args()
-    with open(args.input, 'rb') as f:
-        input_tim = Tim.read(f)
-    palette_indexes = args.palettes or range(input_tim.num_palettes or 1)
-    images = [
-        (i, input_tim.to_image(i, Transparency.FULL if args.with_transparency else Transparency.NONE))
-        for i in palette_indexes
-    ]
-    if args.combine:
-        combined_image = Image.new('RGBA', (input_tim.width, input_tim.height*len(palette_indexes)))
-        for i, (_, im) in enumerate(images):
-            combined_image.paste(im, (0, input_tim.height*i))
-        combined_image.save(args.output)
+    try:
+        with open(args.input, 'rb') as f:
+            input_tim = Tim.read(f)
+    except (ValueError, NotImplementedError):
+        input_image = Image.open(args.input)
+        if not args.with_transparency:
+            input_image = input_image.convert('RGB')
+        output_tim = Tim.from_image(input_image, BitsPerPixel.from_bpp(args.bpp))
+        output_tim.clut_x = args.clut_x
+        output_tim.clut_y = args.clut_y
+        output_tim.image_x = args.image_x
+        output_tim.image_y = args.image_y
+        with open(args.output, 'wb') as f:
+            output_tim.write(f)
     else:
-        output_filename = args.output
-        # was an index format provided?
-        if output_filename.format(1) == output_filename:
-            filename, ext = os.path.splitext(output_filename)
-            output_filename = filename + '_{:02d}' + ext
-        for index, im in images:
-            image_filename = output_filename.format(index)
-            im.save(image_filename)
+        palette_indexes = args.palettes or range(input_tim.num_palettes or 1)
+        images = [
+            (i, input_tim.to_image(i, Transparency.FULL if args.with_transparency else Transparency.NONE))
+            for i in palette_indexes
+        ]
+        if args.combine:
+            combined_image = Image.new('RGBA', (input_tim.width, input_tim.height*len(palette_indexes)))
+            for i, (_, im) in enumerate(images):
+                combined_image.paste(im, (0, input_tim.height*i))
+            combined_image.save(args.output)
+        else:
+            output_filename = args.output
+            # was an index format provided?
+            if output_filename.format(1) == output_filename:
+                filename, ext = os.path.splitext(output_filename)
+                output_filename = filename + '_{:02d}' + ext
+            for index, im in images:
+                image_filename = output_filename.format(index)
+                im.save(image_filename)
