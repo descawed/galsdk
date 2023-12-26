@@ -22,7 +22,7 @@ class XaAudio(Media):
         super().__init__(path, 'wav')
 
     def convert(self, playable_path: Path):
-        ffmpeg.input(str(self.path), format='psxstr').audio.output(str(playable_path)).run()
+        ffmpeg.input(self.path, format='psxstr').audio.output(str(playable_path)).run()
 
 
 @dataclass

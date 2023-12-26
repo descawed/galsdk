@@ -7,6 +7,7 @@ from panda3d.core import AudioSound, CardMaker, GraphicsWindow, NativeWindowHand
     WindowProperties
 
 from galsdk import graphics
+from galsdk.media import MediaStats
 
 
 class MediaPlayer(ttk.Frame):
@@ -17,6 +18,7 @@ class MediaPlayer(ttk.Frame):
         self.base = base
         self.name = name
         self.player = None
+        self.stats = None
         self.card = None
         self.use_video = use_video
         self.movie_frame = None
@@ -26,14 +28,20 @@ class MediaPlayer(ttk.Frame):
         self.card_maker = None
 
         self.controls_frame = ttk.Frame(self)
-        self.play_pause_text = tk.StringVar(value='\u25b6')
+        self.play_pause_text = tk.StringVar(self, '\u25b6')
         self.play_pause = ttk.Button(self.controls_frame, textvariable=self.play_pause_text, command=self.play_pause)
-        self.timeline_var = tk.DoubleVar(value=0.)
+        self.timeline_var = tk.DoubleVar(self, 0.)
         self.timeline = ttk.Scale(self.controls_frame, from_=0., to=1., variable=self.timeline_var,
                                   command=self.change_timeline)
+        self.play_time_var = tk.StringVar(self, '00:00:000 / 00:00:000')
+        self.play_time = ttk.Label(self.controls_frame, textvariable=self.play_time_var)
+        self.frame_counter_var = tk.StringVar(self, '0 / 0')
+        self.frame_counter = ttk.Label(self.controls_frame, textvariable=self.frame_counter_var)
 
         self.play_pause.pack(anchor=tk.CENTER, side=tk.LEFT)
         self.timeline.pack(expand=1, anchor=tk.CENTER, fill=tk.BOTH, side=tk.LEFT)
+        self.frame_counter.pack(anchor=tk.CENTER, side=tk.RIGHT)
+        self.play_time.pack(anchor=tk.CENTER, side=tk.RIGHT, padx=10)
 
         if use_video:
             self.movie_frame = ttk.Frame(self, width=width, height=height)
@@ -48,10 +56,10 @@ class MediaPlayer(ttk.Frame):
             self.movie_frame.grid(row=0, column=0, sticky=tk.NSEW)
             self.controls_frame.grid(row=1, column=0, sticky=tk.S + tk.EW)
             self.bind('<Configure>', self.resize_panda)
+            self.grid_rowconfigure(0, weight=1)
         else:
-            self.controls_frame.grid(row=0, column=0, sticky=tk.NSEW)
+            self.controls_frame.grid(row=0, column=0, sticky=tk.EW)
 
-        self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
     def resize_panda(self, _=None):
@@ -90,11 +98,25 @@ class MediaPlayer(ttk.Frame):
     def is_playing(self) -> bool:
         return self.player.status() == AudioSound.PLAYING if self.player is not None else False
 
+    @staticmethod
+    def _format_time(time: float) -> str:
+        minutes = int(time / 60)
+        time -= minutes * 60
+        seconds = int(time)
+        time -= seconds
+        milliseconds = int(time * 1000)
+        return f'{minutes:02d}:{seconds:02d}:{milliseconds:03d}'
+
     def update_ui(self, _) -> int:
+        sfx_len = self.player.length()
+        sfx_time = self.player.getTime()
+        self.timeline_var.set(sfx_time / sfx_len)
+        self.play_time_var.set(f'{self._format_time(sfx_time)} / {self._format_time(sfx_len)}')
+        if self.stats:
+            self.frame_counter_var.set(f'{int(sfx_time / self.stats.frame_time)} / {self.stats.num_frames}')
+        else:
+            self.frame_counter_var.set('')
         if self.player.status() == AudioSound.PLAYING:
-            sfx_len = self.player.length()
-            sfx_time = self.player.getTime()
-            self.timeline_var.set(sfx_time / sfx_len)
             self.play_pause_text.set('\u23f8')
         else:
             self.play_pause_text.set('\u25b6')
@@ -120,11 +142,12 @@ class MediaPlayer(ttk.Frame):
             else:
                 self.player.play()
 
-    def set_media(self, audio: AudioSound, movie: MovieTexture = None):
+    def set_media(self, audio: AudioSound, movie: MovieTexture = None, stats: MediaStats = None):
         first_set = self.player is None
         if not first_set:
             self.player.stop()
         self.player = audio
+        self.stats = stats
         if self.card is not None:
             self.card.removeNode()
         if self.movie_frame is not None:

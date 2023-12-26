@@ -56,9 +56,9 @@ class MovieTab(Tab):
             movie = self.movies[index]
             movie_tex = MovieTexture(f'movie{index}')
             # TODO: change this assert to an error dialog
-            assert movie_tex.read(movie.playable_path)
-            audio = self.base.loader.loadSfx(movie.playable_path)
-            self.player.set_media(audio, movie_tex)
+            assert movie_tex.read(movie.playable_panda_path)
+            audio = self.base.loader.loadSfx(movie.playable_panda_path)
+            self.player.set_media(audio, movie_tex, movie.stats)
 
     def set_active(self, is_active: bool):
         self.player.set_active(is_active)
