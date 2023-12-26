@@ -2,8 +2,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
-import ffmpeg
-
 from galsdk import file
 
 
@@ -28,6 +26,8 @@ class Media(ABC):
 
     @property
     def stats(self) -> MediaStats | None:
+        import ffmpeg
+
         stats = ffmpeg.probe(self.playable_path)
         # if there's a video stream, choose that; otherwise, take the audio stream
         chosen_stream = None
@@ -55,7 +55,7 @@ class Media(ABC):
             frames, seconds = frame_rate.split('/')
             frames = int(frames)
             seconds = int(seconds)
-            # don't know what to do if it's not 1
+            # not sure what to make of a non-integer frame-rate
             if seconds == 1:
                 fps = frames
                 if nb_frames := chosen_stream.get('nb_frames'):

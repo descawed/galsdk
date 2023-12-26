@@ -4,12 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, ByteString, Iterable, Self
 
-try:
-    import ffmpeg
-except ModuleNotFoundError:
-    # we allow this to be not found because the mxa CLI command doesn't require it
-    ffmpeg = None
-
 import galsdk.file as util
 from galsdk.format import Archive
 from galsdk.media import Media
@@ -22,6 +16,8 @@ class XaAudio(Media):
         super().__init__(path, 'wav')
 
     def convert(self, playable_path: Path):
+        import ffmpeg
+
         ffmpeg.input(self.path, format='psxstr').audio.output(str(playable_path)).run()
 
 
