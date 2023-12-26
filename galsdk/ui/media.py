@@ -127,11 +127,18 @@ class MediaPlayer(ttk.Frame):
             sfx_len = self.player.length()
             new_time = self.timeline_var.get()*sfx_len
             is_playing = self.player.status() == AudioSound.PLAYING
+            # this seemingly redundant sequence of events is necessary for everything to work correctly. first, we can't
+            # set the time if the player is playing, so if it is, we stop it. then we set the time. but for getTime and
+            # the image on the screen to reflect this change, we have to play it afterwards. so, once we do that, if we
+            # were already paused, we need to stop it now. BUT, stopping it loses the time we just set, so now we have
+            # to set the time again.
             if is_playing:
                 self.player.stop()
             self.player.setTime(new_time)
-            if is_playing:
-                self.player.play()
+            self.player.play()
+            if not is_playing:
+                self.player.stop()
+                self.player.setTime(new_time)
 
     def play_pause(self):
         if self.player is not None:
