@@ -47,12 +47,14 @@ class LatinFont(Font):
     CHAR_WIDTH = 16
     CHAR_HEIGHT = 16
     SPACE_WIDTH = 8
-    # TODO: verify how the game actually handles tab characters (I've only seen one in one string in stage C)
-    TAB_WIDTH = 4
+    LINE_HEIGHT = 15
+    TAB_WIDTH = 1
+    WRAP_WIDTH = 320 - CHAR_WIDTH  # 320 is the horizontal screen resolution
 
     def __init__(self, image: Tim, char_widths: dict[int, int]):
         self.tile_set = TileSet(image, self.CHAR_WIDTH, self.CHAR_HEIGHT)
-        self.char_widths = char_widths
+        # the game always subtracts one when adding the char width
+        self.char_widths = {c: w - 1 for c, w in char_widths.items()}
 
     def _parse_string(self, string: bytes) -> tuple[list, int, int]:
         expect = 'char'
@@ -72,13 +74,27 @@ class LatinFont(Font):
                             current_width += self.SPACE_WIDTH * self.TAB_WIDTH
                         else:
                             current_width += self.char_widths[c]
+                            if self.WRAP_WIDTH < current_width:
+                                # wrap the line
+                                new_width = 0
+                                for i in range(len(result) - 1, -1, -1):
+                                    wrap_c = result[i]
+                                    if wrap_c in b' \t\r\n':
+                                        result.insert(i + 1, b'\n')
+                                        height += self.LINE_HEIGHT
+                                        current_width -= new_width
+                                        if current_width > max_width:
+                                            max_width = current_width
+                                        current_width = new_width
+                                        break
+                                    elif wrap_c in self.char_widths:
+                                        new_width += self.char_widths[c]
                         result.append(c)
                 case 'function':
-                    if c in b'pc':
-                        if c in b'p':
-                            expect = 'pause'
-                        else:
-                            expect = 'color'
+                    if c in b'p':
+                        expect = 'pause'
+                    elif c in b'c':
+                        expect = 'color'
                     else:
                         if c in b'$':
                             # literal dollar sign
@@ -92,7 +108,7 @@ class LatinFont(Font):
                             if current_width > max_width:
                                 max_width = current_width
                             current_width = 0
-                            height += self.CHAR_HEIGHT
+                            height += self.LINE_HEIGHT
                         elif c in b'w':
                             result.append(Wait)
                         elif c in b'y':
@@ -115,7 +131,9 @@ class LatinFont(Font):
                         operand.append(c)
         if current_width > max_width:
             max_width = current_width
-        return result, max_width, height
+        # since we subtract 1 when adding the width for each character, the last column of pixels is cut off unless we
+        # add 1 here
+        return result, max_width + 1, height
 
     def draw(self, text: bytes, stage_index: int = 0,
              bg_color: tuple[int, int, int, int] = (0, 0, 0, 0)) -> Image.Image:
@@ -131,7 +149,7 @@ class LatinFont(Font):
                 x = 0
             elif elem == b'\n':
                 x = 0
-                y += self.CHAR_HEIGHT
+                y += self.LINE_HEIGHT
             elif elem in b' ':
                 x += self.SPACE_WIDTH
             elif elem in b'\t':
@@ -140,7 +158,7 @@ class LatinFont(Font):
                 # regular character
                 width = self.char_widths[elem]
                 char = self.tile_set.get(elem - 0x20, clut)
-                image.paste(char, (x, y))
+                image.alpha_composite(char, (x, y))
                 x += width
         return image
 

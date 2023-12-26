@@ -85,8 +85,10 @@ class Project:
                 base_name = entry.name.rsplit(';', 1)[0]
                 sub_path = destination / base_name
                 with sub_path.open('wb') as f:
-                    # raw extraction if requested for the dir or if this is the XA archive in the NA version
-                    cd.extract(entry.path, f, raw or entry.name == 'XA.MXA;1')
+                    # raw extraction if requested for the dir or if this is the XA archive in the NA version. we also
+                    # set the extend flag because the filesystem doesn't record the true full size of XA.MXA.
+                    is_xa = entry.name == 'XA.MXA;1'
+                    cd.extract(entry.path, f, raw or is_xa, is_xa)
 
     @classmethod
     def _detect_version(cls, system_cnf: str) -> GameVersion:
@@ -557,10 +559,10 @@ class Project:
         for i, xa_db in enumerate(self.get_xa_databases()):
             db_dir = extract_dir / str(i)
             db_dir.mkdir(exist_ok=True)
-            xa_db.unpack(db_dir)
-            for xa_path in db_dir.iterdir():
-                if xa_path.is_file():
-                    yield XaAudio(xa_path)
+            for j in range(len(xa_db)):
+                xa_path = db_dir / f'{j:03}'
+                xa_db.unpack_one(xa_path, j)
+                yield XaAudio(xa_path)
 
     def export_xa_mxa(self):
         out_db = XaDatabase()
