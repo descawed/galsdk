@@ -143,10 +143,9 @@ them up based on the file modification timestamps.
   animations work on this tab and how they affect exporting.
 - **Art** - This tab allows viewing and exporting of all known images in the game except for backgrounds and model
   textures (which are available on other tabs). The exact organization of images on this tab varies depending on your
-  game version. You can right-click on an image in the list to export, or to import a replacement image. For 16-bit and
-  24-bit TIMs, you can import any common image format and it will be converted to TIM automatically. However, the game
-  doesn't use many (any?) of these. For 4-bit and 8-bit TIMs, you can only import images already in TIM format. Use a
-  tool like [TIMedit](https://github.com/Lameguy64/TIMedit) to convert other images to the appropriate format.
+  game version. You can right-click on an image in the list to export, or to import a replacement image. You can import
+  any common image format and it will be converted to TIM automatically, but only a single CLUT is supported. If you
+  need multiple palettes, use a tool like [TIMedit](https://github.com/Lameguy64/TIMedit) to create a TIM with the appropriate structure and import that.
 - **Menu** - This tab displays images defined in menu files. These files don't exist in the Japanese version, so this
   tab won't appear for Japan-version projects. The other versions have two menu files, one for the option menu and
   one for the inventory. In addition to displaying the icons within each menu, the top-level entry for the option menu

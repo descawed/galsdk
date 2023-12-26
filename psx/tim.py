@@ -24,6 +24,18 @@ class BitsPerPixel(IntEnum):
     BPP_16 = 2
     BPP_24 = 3
 
+    @property
+    def num_colors(self) -> int:
+        match self:
+            case BitsPerPixel.BPP_4:
+                return 2**4
+            case BitsPerPixel.BPP_8:
+                return 2**8
+            case BitsPerPixel.BPP_16:
+                return 2**16
+            case BitsPerPixel.BPP_24:
+                return 2**24
+
 
 class Transparency(Enum):
     NONE = 0
@@ -88,6 +100,38 @@ class Tim:
             b = pixel_data[i+2]
             pixels.append((r, g, b, 0xff))
         return pixels
+
+    @property
+    def clut_x(self) -> int:
+        return self.raw_clut_bounds[0]
+
+    @clut_x.setter
+    def clut_x(self, x: int):
+        self.raw_clut_bounds = (x, *self.raw_clut_bounds[1:])
+
+    @property
+    def clut_y(self) -> int:
+        return self.raw_clut_bounds[1]
+
+    @clut_y.setter
+    def clut_y(self, y: int):
+        self.raw_clut_bounds = (self.raw_clut_bounds[0], y, *self.raw_clut_bounds[2:])
+
+    @property
+    def image_x(self) -> int:
+        return self.raw_image_bounds[0]
+
+    @image_x.setter
+    def image_x(self, x: int):
+        self.raw_image_bounds = (x, *self.raw_image_bounds[1:])
+
+    @property
+    def image_y(self) -> int:
+        return self.raw_image_bounds[1]
+
+    @image_y.setter
+    def image_y(self, y: int):
+        self.raw_image_bounds = (self.raw_image_bounds[0], y, *self.raw_image_bounds[2:])
 
     def is_compatible_with(self, other: Tim) -> bool:
         """Check whether a TIM is compatible with another TIM, meaning they have the same attributes"""
@@ -168,22 +212,34 @@ class Tim:
                 return self._decode_pixel_24(self.image_data)
 
     def _update_image(self, image: Image.Image, bpp: BitsPerPixel):
-        if bpp in [BitsPerPixel.BPP_4, BitsPerPixel.BPP_8]:
-            raise NotImplementedError('Importing images as 4- or 8-bit TIMs is not supported')
-
         width, _ = image.size
         if bpp == BitsPerPixel.BPP_24:
             rgb = image.convert('RGB')
             data = rgb.tobytes()
             if len(data) & 1:
                 data += b'0'
-            self.set_image(data, bpp, width * 3 // 2)
-        else:
+            width = width * 3 // 2
+        elif bpp == BitsPerPixel.BPP_16:
             rgba = image.convert('RGBA')
-            data = rgba.tobytes()
-            pixels = [tuple(data[i:i + 4]) for i in range(0, len(data), 4)]
-            tim_data = self._encode_pixel_16(pixels)
-            self.set_image(tim_data, bpp, width)
+            rgba_data = rgba.tobytes()
+            pixels = [tuple(rgba_data[i:i + 4]) for i in range(0, len(rgba_data), 4)]
+            data = self._encode_pixel_16(pixels)
+        else:
+            quantized = image.quantize(bpp.num_colors)
+            palette = quantized.getpalette('RGBA')
+            self.palettes = [
+                [(palette[i], palette[i+1], palette[i+2], palette[i+3]) for i in range(0, len(palette), 4)]
+            ]
+            indexes = quantized.getdata()
+            if bpp == BitsPerPixel.BPP_8:
+                data = bytes(indexes)
+                width //= 2
+            else:
+                data = bytearray()
+                for i in range(0, len(indexes), 2):
+                    data.append(indexes[i] | (indexes[i+1] << 4))
+                width //= 4
+        self.set_image(data, bpp, width, self.image_x, self.image_y)
 
     @classmethod
     def from_image(cls, image: Image.Image, bpp: BitsPerPixel = BitsPerPixel.BPP_24) -> Self:

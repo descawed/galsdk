@@ -113,13 +113,9 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
         if not (image := self.get_image_from_iid(self.context_iid)):
             return
 
-        can_import_non_tim = False
-        extensions = []
-        if is_tim := isinstance(image, Tim):
+        extensions = ['*.png', '*.jpg', '*.bmp', '*.tga', '*.webp']
+        if isinstance(image, Tim):
             extensions.append('*.tim')
-            can_import_non_tim = image.bpp >= BitsPerPixel.BPP_16
-        if can_import_non_tim or not is_tim:
-            extensions.extend(['*.png', '*.jpg', '*.bmp', '*.tga', '*.webp'])
         if filename := tkfile.askopenfilename(filetypes=[('Images', ' '.join(extensions)), ('All Files', '*.*')]):
             self.do_import(Path(filename), self.context_iid)
             self.update_image()
