@@ -275,7 +275,7 @@ class PsxCd:
         for entry in directory.contents:
             yield DirectoryEntry(entry.name.rsplit('\\', 1)[1], entry.name, isinstance(entry, Directory))
 
-    def extract(self, path: str, destination: BinaryIO, raw: bool = False):
+    def extract(self, path: str, destination: BinaryIO, raw: bool = False, extend: bool = False):
         """
         Extract a file at the given path to the provided destination byte stream
 
@@ -283,17 +283,25 @@ class PsxCd:
         :param destination: File-like object to write the extracted file to
         :param raw: If True, the full raw sectors of the file will be extracted, including sector header and error
             correction codes
+        :param extend: If True, include any sectors marked free after the end of the file.
         """
         cleaned_path = self._clean_path(path)
         index = self.name_map.get(cleaned_path)
         if index is None:
             raise FileNotFoundError(f'{path} does not exist')
         region = self.regions[index]
+        next_region = None
+        if extend and index + 1 < len(self.regions) and isinstance(self.regions[index + 1], Free):
+            next_region = self.regions[index + 1]
         if raw:
             disc = Disc(destination)
             region.write(disc)
+            if next_region is not None:
+                next_region.write(disc)
         else:
             region.write_data(destination)
+            if next_region is not None:
+                next_region.write_data(destination)
 
     def write(self, destination: BinaryIO):
         """
@@ -327,18 +335,18 @@ def patch_cd(image_path: Path, cd_path: str, input_path: Path, raw: bool):
         cd.write(f)
 
 
-def extract_file(cd: PsxCd, output_path: Path, cd_path: str, raw: bool):
+def extract_file(cd: PsxCd, output_path: Path, cd_path: str, raw: bool, extend: bool):
     if cd.is_dir(cd_path):
         for entry in cd.list_dir(cd_path):
-            extract_file(cd, output_path, entry.path, raw)
+            extract_file(cd, output_path, entry.path, raw, extend)
     else:
         base_name = cd_path.rsplit('\\', 1)[-1].split(';', 1)[0]
         new_path = output_path / base_name
         with new_path.open('wb') as f:
-            cd.extract(cd_path, f, raw)
+            cd.extract(cd_path, f, raw, extend)
 
 
-def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw: bool):
+def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw: bool, extend: bool):
     with image_path.open('rb') as f:
         cd = PsxCd(f)
 
@@ -350,10 +358,10 @@ def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw:
 
     if output_path.is_dir():
         for cd_path in cd_paths:
-            extract_file(cd, output_path, cd_path, raw)
+            extract_file(cd, output_path, cd_path, raw, extend)
     else:
         with output_path.open('wb') as f:
-            cd.extract(cd_paths[0], f, raw)
+            cd.extract(cd_paths[0], f, raw, extend)
 
 
 def print_dir(cd: PsxCd, dir_path: str | None, recursive: bool, depth: int = 0):
@@ -397,11 +405,13 @@ def cli_main():
 
     extract_parser = subparsers.add_parser('extract', help='Extract files from the CD image')
     extract_parser.add_argument('-r', '--raw', help='Extract the file(s) as raw CD sectors', action='store_true')
+    extract_parser.add_argument('-x', '--extend', help='Include any sectors marked free after the end of each file',
+                                action='store_true')
     extract_parser.add_argument('cd', help='Path to the CD image', type=Path)
     extract_parser.add_argument('output', help='Path to extract file(s) to. If more than one file is being '
                                 'extracted, this must be a directory.', type=Path)
     extract_parser.add_argument('paths', help='Path(s) on the CD to be extracted', nargs='+')
-    extract_parser.set_defaults(action=lambda a: extract_files(a.cd, a.output, a.paths, a.raw))
+    extract_parser.set_defaults(action=lambda a: extract_files(a.cd, a.output, a.paths, a.raw, a.extend))
 
     dir_parser = subparsers.add_parser('dir', help='List directory structure of the CD image')
     dir_parser.add_argument('-r', '--recursive', help='List directories recursively', action='store_true')

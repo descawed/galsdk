@@ -30,7 +30,7 @@ class VoiceTab(Tab):
 
         self.tree.grid(row=0, column=0, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, sticky=tk.NS)
-        self.player.grid(row=0, column=2, sticky=tk.NSEW)
+        self.player.grid(row=0, column=2, sticky=tk.EW)
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(2, weight=1)
@@ -45,8 +45,9 @@ class VoiceTab(Tab):
 
         if index != self.current_index:
             self.current_index = index
-            audio = self.base.loader.loadSfx(self.audio[index].playable_path)
-            self.player.set_media(audio)
+            media = self.audio[index]
+            audio = self.base.loader.loadSfx(media.playable_panda_path)
+            self.player.set_media(audio, stats=media.stats)
 
     def set_active(self, is_active: bool):
         self.player.set_active(is_active)

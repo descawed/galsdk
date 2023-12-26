@@ -32,6 +32,6 @@ class Movie(Media):
     def convert(self, playable_path: Path):
         # apad + shortest pads the audio with silence out to the length of the video, because some videos have audio
         # streams shorter than the video stream and this causes panda to stop playing the video early
-        in_video = ffmpeg.input(str(self.path))
+        in_video = ffmpeg.input(self.path)
         audio = in_video.audio.filter('apad')
         ffmpeg.output(in_video.video, audio, str(playable_path), shortest=None).run()
