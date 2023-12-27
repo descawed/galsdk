@@ -26,6 +26,7 @@ import functools
 import math
 import io
 
+from collections.abc import Container
 from galsdk import file
 
 
@@ -37,7 +38,7 @@ class DictionaryCompressor:
     # these two values were chosen by trial and error based on what got the compression process to run in a reasonable
     # amount of time
     MAX_STRING_LEN = 100
-    SPLIT_LENGTH_FACTOR = 25
+    SPLIT_LENGTH_FACTOR = 11
 
     def __init__(self, data: bytes):
         self.data = data
@@ -80,23 +81,16 @@ class DictionaryCompressor:
 
         # prioritize highest value first, but substrings of a longer string must always come first so they're available
         # to use as components. the additional lexical sort is to make sure the result is stable.
-        prioritized_strings = sorted(final_strings, key=lambda s: (final_strings[s] * len(s), len(s), s), reverse=True)
-        num_strings = len(prioritized_strings)
-        for i in range(1, num_strings):
-            string = prioritized_strings[i]
-            new_index = min(j if string in s else num_strings for j, s in enumerate(prioritized_strings[:i]))
-            if new_index < i:
-                del prioritized_strings[i]
-                prioritized_strings.insert(new_index, string)
-
-        for s in prioritized_strings:
+        prioritized_strings = sorted(final_strings, key=lambda s: (final_strings[s] * len(s), len(s), s))
+        while prioritized_strings:
             if len(self.dictionary) == self.num_free_bytes:
                 break
 
+            string = prioritized_strings.pop()
             # we reset this each time to keep memory usage from getting out of control
             self.known_costs = {}
             try:
-                self.add_to_dictionary(s, final_strings)
+                self.add_to_dictionary(string, set(prioritized_strings), final_strings)
             except OverflowError:
                 pass
 
@@ -122,8 +116,8 @@ class DictionaryCompressor:
         # finally, look for any stragglers in the data that could be compressed using entries that are in the
         # dictionary. this can happen with entries that were added to the dictionary solely to facilitate longer
         # entries, meaning they weren't around when we produced the initial byte map.
-        for s, index in self.string_indexes.items():
-            compressed = compressed.replace(s, bytes([index]))
+        for string, index in self.string_indexes.items():
+            compressed = compressed.replace(string, bytes([index]))
 
         return raw_dictionary + len(compressed).to_bytes(2, 'big') + compressed
 
@@ -190,7 +184,8 @@ class DictionaryCompressor:
 
         return bytes(raw_dictionary)
 
-    def add_to_dictionary(self, s: bytes, final_strings: dict[bytes, int] = None) -> int:
+    def add_to_dictionary(self, s: bytes, desired_strings: Container[bytes],
+                          final_strings: dict[bytes, int] = None) -> int:
         if s in self.string_indexes:
             return self.string_indexes[s]
 
@@ -211,10 +206,10 @@ class DictionaryCompressor:
         # to keep the number of comparisons reasonable, we'll divide our max by the log of the length of the string.
         # max_splits = max(int(self.SPLIT_LENGTH_FACTOR / self.log2(str_len)), 2)
         # increasing max_splits even a little bit can massively increase the compression takes, and in practice, our
-        # heuristic seems to be pretty effective at finding the best split somewhere in the first few options. 2 seems
-        # to provide consistently good performance.
-        max_splits = 2
-        cost, new_strings, split_point = self.cost_to_add(s, self.string_indexes, 99999, max_splits)
+        # heuristic seems to be pretty effective at finding the best split somewhere in the first few options. just take
+        # the best guess and call it a day.
+        max_splits = 1
+        cost, new_strings, split_point = self.cost_to_add(s, self.string_indexes, 99999, desired_strings, max_splits)
         # for top-level strings, make sure the string is worth it before we add it to the dictionary
         if final_strings is not None and s in final_strings:
             value = (str_len - 1) * final_strings[s] - cost * 2
@@ -228,11 +223,11 @@ class DictionaryCompressor:
         right = s[split_point:]
         for sub in sorted(new_strings, key=lambda n: (len(n), n)):
             if sub != s:  # we're adding this string right now; if we try to do it again we'll get stuck in a loop
-                self.add_to_dictionary(sub)
+                self.add_to_dictionary(sub, desired_strings)
         # although we know we just added left and right to the dictionary, this will handle the case where one is a
         # single character without us having to repeat that logic
-        left_index = self.add_to_dictionary(left)
-        right_index = self.add_to_dictionary(right)
+        left_index = self.add_to_dictionary(left, desired_strings)
+        right_index = self.add_to_dictionary(right, desired_strings)
         index = self.dictionary_slots.pop()
         self.dictionary[index] = (left_index, right_index)
         self.string_indexes[s] = index
@@ -244,7 +239,8 @@ class DictionaryCompressor:
         return math.log(num, 2)
 
     @staticmethod
-    def check_half(s: bytes, indexes: dict[bytes, int | None], is_odd: bool) -> tuple[int, bool, int, int]:
+    def check_half(s: bytes, indexes: dict[bytes, int | None], desired_strings: Container[bytes],
+                   is_odd: bool) -> tuple[int, bool, int, int]:
         length = len(s)
         partial_match = False
         symmetrical = 0
@@ -257,6 +253,9 @@ class DictionaryCompressor:
                 # we only want to prioritize these for odd-length strings because even-length strings are often
                 # easier to build up from smaller pieces
                 partial_match = is_odd
+            elif s in desired_strings:
+                # if the string isn't in the dictionary, but we want to add it to the dictionary, consider that a match
+                partial_match = True
         else:
             partial_match = True
 
@@ -269,8 +268,8 @@ class DictionaryCompressor:
 
         return index, partial_match, symmetrical, repeating
 
-    def cost_to_add(self, s: bytes, indexes: dict[bytes, int | None], max_cost: int, max_splits: int = 35,
-                    max_entropy: float = 0.75) -> tuple[int, dict[bytes, int | None], int]:
+    def cost_to_add(self, s: bytes, indexes: dict[bytes, int | None], max_cost: int, desired_strings: Container[bytes],
+                    max_splits: int = 35, max_entropy: float = 0.75) -> tuple[int, dict[bytes, int | None], int]:
         str_len = len(s)
         if s in indexes or str_len < 2:
             return 0, {}, 0  # it costs nothing to add a string that's already in the dictionary
@@ -298,8 +297,10 @@ class DictionaryCompressor:
             right = s[i:]
             right_len = len(right)
 
-            left_index, left_partial_match, left_symmetrical, left_repeating = self.check_half(left, indexes, is_odd)
+            left_index, left_partial_match, left_symmetrical, left_repeating = self.check_half(left, indexes,
+                                                                                               desired_strings, is_odd)
             right_index, right_partial_match, right_symmetrical, right_repeating = self.check_half(right, indexes,
+                                                                                                   desired_strings,
                                                                                                    is_odd)
             partial_match_len = len(left) if left_partial_match else len(right) if right_partial_match else -1
 
@@ -338,11 +339,11 @@ class DictionaryCompressor:
         split_index = 0
         # to keep the number of comparisons reasonable, we only consider the first max_splits options
         for not_partial_match, _, _, entropy, i in by_entropy[:max_splits]:
-            left_cost, left_indexes, _ = self.cost_to_add(s[:i], indexes, best_cost, max_splits)
+            left_cost, left_indexes, _ = self.cost_to_add(s[:i], indexes, best_cost, desired_strings, max_splits)
             if left_cost >= best_cost:
                 continue
             right_cost, right_indexes, _ = self.cost_to_add(s[i:], left_indexes | indexes, best_cost - left_cost,
-                                                            max_splits)
+                                                            desired_strings, max_splits)
             cost = left_cost + right_cost
             if best_cost > cost:
                 best_cost = cost
