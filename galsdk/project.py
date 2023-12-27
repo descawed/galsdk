@@ -73,13 +73,14 @@ class Project:
         self.addresses = ADDRESSES[self.version.id]
 
     @classmethod
-    def _extract_dir(cls, path: str, destination: Path, cd: PsxCd, raw: bool = False):
+    def _extract_dir(cls, path: str, destination: Path, cd: PsxCd, raw: bool = False, extend: bool = False):
         for entry in cd.list_dir(path):
             if entry.is_directory:
                 sub_path = destination / entry.name
                 sub_path.mkdir(exist_ok=True)
                 # raw extraction if this is the XA directory in the Japanese version or a movie directory in any version
-                cls._extract_dir(entry.path, sub_path, cd, entry.name == 'XA' or entry.name.startswith('MOV'))
+                is_xa = entry.name == 'XA'
+                cls._extract_dir(entry.path, sub_path, cd, is_xa or entry.name.startswith('MOV'), is_xa)
             else:
                 # remove the CD file version number
                 base_name = entry.name.rsplit(';', 1)[0]
@@ -88,7 +89,7 @@ class Project:
                     # raw extraction if requested for the dir or if this is the XA archive in the NA version. we also
                     # set the extend flag because the filesystem doesn't record the true full size of XA.MXA.
                     is_xa = entry.name == 'XA.MXA;1'
-                    cd.extract(entry.path, f, raw or is_xa, is_xa)
+                    cd.extract(entry.path, f, raw or is_xa, extend or is_xa)
 
     @classmethod
     def _detect_version(cls, system_cnf: str) -> GameVersion:
@@ -572,7 +573,7 @@ class Project:
         export_dir = self.project_dir / 'export'
         with (export_dir / f'{self.version.disc - 1:03}.XDB').open('wb') as f:
             out_db.write(f)
-        (export_dir / 'XA.MXA').write_bytes(out_db.get_raw())
+        (export_dir / 'XA.MXA').write_bytes(out_db.data)
 
     def get_font(self) -> Font:
         font_type = JapaneseFont if self.version.region == Region.NTSC_J else LatinFont
