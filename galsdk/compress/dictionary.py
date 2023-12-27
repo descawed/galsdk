@@ -14,6 +14,13 @@
 # to keep the performance reasonable. Ultimately, the algorithm I've come up with is kind of complicated, not especially
 # fast, and doesn't compress as well as what the devs used, but it's good enough and I'm sick of working on this code,
 # so this is what it's going to be for now.
+# Update 2023-12-27: After some optimizations, the speed is now significantly better, at a cost of only ~1% increase in
+# file size. I think the next best target for enhancement is looking at how strings are prioritized for insertion into
+# the dictionary. There should be some space-saving potential if that can be improved.
+# On another note, I was informed on Discord that gdkchan actually wrote compression code for this game years ago:
+# https://github.com/gdkchan/GalTTT. I considered replacing this implementation with a new one based on that code, but
+# I think it's kind of a wash. While that code is faster, even after these latest optimizations, this code seems to have
+# the edge in compression efficiency in the majority (but not all) of the cases I tested.
 
 import functools
 import math
@@ -202,8 +209,12 @@ class DictionaryCompressor:
         # this string's parts aren't already part of the dictionary. in that case, find the lowest-cost way to add it
         # and use that.
         # to keep the number of comparisons reasonable, we'll divide our max by the log of the length of the string.
-        max_splits = max(int(self.SPLIT_LENGTH_FACTOR / self.log2(str_len)), 2)
-        cost, new_strings, split_point = self.cost_to_add(s, self.string_indexes, 99999, max_splits, True)
+        # max_splits = max(int(self.SPLIT_LENGTH_FACTOR / self.log2(str_len)), 2)
+        # increasing max_splits even a little bit can massively increase the compression takes, and in practice, our
+        # heuristic seems to be pretty effective at finding the best split somewhere in the first few options. 2 seems
+        # to provide consistently good performance.
+        max_splits = 2
+        cost, new_strings, split_point = self.cost_to_add(s, self.string_indexes, 99999, max_splits)
         # for top-level strings, make sure the string is worth it before we add it to the dictionary
         if final_strings is not None and s in final_strings:
             value = (str_len - 1) * final_strings[s] - cost * 2
@@ -290,7 +301,7 @@ class DictionaryCompressor:
             left_index, left_partial_match, left_symmetrical, left_repeating = self.check_half(left, indexes, is_odd)
             right_index, right_partial_match, right_symmetrical, right_repeating = self.check_half(right, indexes,
                                                                                                    is_odd)
-            partial_match = left_partial_match or right_partial_match
+            partial_match_len = len(left) if left_partial_match else len(right) if right_partial_match else -1
 
             if left_index is not None and right_index is not None:
                 new_index = {s: None}
@@ -311,7 +322,7 @@ class DictionaryCompressor:
             known_combos.add(pair)
             repeating = left_repeating + right_repeating
             symmetrical = left_symmetrical + right_symmetrical
-            by_entropy.append((not partial_match, -repeating, -symmetrical,
+            by_entropy.append((-partial_match_len, -repeating, -symmetrical,
                                (len(set(left)) / i + len(set(right)) / right_len) / 2, i))
 
         # at this point, the best cost we can hope for is 2: 1 for ourselves and 1 for at least one substring we'll need
@@ -505,7 +516,7 @@ class DictionaryCompressor:
         while True:
             num_substrings = len(self.substrings)
             sub_substrings = set()
-            # first, we'll identify all the strings that are prefixes of another string, because we can do that quickly
+            # we'll identify all the strings that are prefixes of another string, which we can do quickly
             i = 0
             while i < data_len:
                 p = self.lcp[i]
@@ -533,8 +544,6 @@ class DictionaryCompressor:
                     i += 1
 
             superstrings = self.substrings - sub_substrings - known_good
-            # now that we've removed the prefixes, we'll do an exhaustive search of the remaining strings
-            superstrings = {s for s in superstrings if all(s not in ss or s == ss for ss in superstrings)}
             for superstring in superstrings:
                 if self.data.count(superstring) <= 2:
                     self.substrings.remove(superstring)
