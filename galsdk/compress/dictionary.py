@@ -34,7 +34,7 @@ MAX_ITERATIONS = 10000
 
 
 class DictionaryCompressor:
-    # these two values were chose by trial and error based on what got the compression process to run in a reasonable
+    # these two values were chosen by trial and error based on what got the compression process to run in a reasonable
     # amount of time
     MAX_STRING_LEN = 100
     SPLIT_LENGTH_FACTOR = 25
