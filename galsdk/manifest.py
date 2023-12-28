@@ -34,6 +34,16 @@ class ManifestFile:
     path: Path
     is_manifest: bool = False
     format: str = None
+    flatten: bool = False
+
+    @property
+    def ext_name(self) -> str:
+        name = self.name
+        if self.format:
+            if self.format[0] != '.':
+                name += '.'
+            name += self.format
+        return name
 
 
 T = TypeVar('T', bound=FileFormat)
@@ -108,8 +118,13 @@ class Manifest:
         if flatten and len(archive) == 1:
             self._unpack_file(mf, archive, 0, sniff, flatten, False)
         else:
-            Manifest.from_archive(mf.path, f'{self.name}_{mf.name}', archive, sniff=sniff, flatten=flatten)
+            manifest = Manifest.from_archive(mf.path, f'{self.name}_{mf.name}', archive, sniff=sniff, flatten=flatten)
             mf.is_manifest = True
+            if archive.should_flatten:
+                mf.flatten = True
+                # push this filename down to the flattened file
+                with manifest:
+                    manifest.rename(0, mf.name, False)
 
     def unpack_archive(self, archive: Archive, extension: str = '', sniff: bool | list[type[FileFormat]] = False,
                        flatten: bool = False, recursive: bool = True, original_path: Path = None):
@@ -168,7 +183,8 @@ class Manifest:
         self.files = []
         for entry in manifest['files']:
             path = self.path / entry['path']
-            self.files.append(ManifestFile(entry['name'], path, (path / 'manifest.json').exists(), entry['format']))
+            self.files.append(ManifestFile(entry['name'], path, (path / 'manifest.json').exists(), entry['format'],
+                                           entry.get('flatten', False)))
         self.name_map = {mf.name: mf for mf in self.files}
         self.type = manifest['type']
         self.metadata = manifest['metadata']
@@ -192,11 +208,21 @@ class Manifest:
         with (self.path / 'manifest.json').open('w') as f:
             json.dump({
                 'name': self.name,
-                'files': [{'name': mf.name, 'path': mf.path.name, 'format': mf.format} for mf in self.files],
+                'files': [
+                    {'name': mf.name, 'path': mf.path.name, 'format': mf.format, 'flatten': mf.flatten}
+                    for mf in self.files
+                ],
                 'type': self.type,
                 'metadata': self.metadata,
                 'original': str(self.original.relative_to(self.path)) if self.original is not None else None,
             }, f)
+
+    @classmethod
+    def expand_file(cls, mf: ManifestFile) -> ManifestFile:
+        if mf.is_manifest and mf.flatten:
+            sub_manifest = Manifest.load_from(mf.path)
+            return cls.expand_file(sub_manifest[0])
+        return mf
 
     def __getitem__(self, item: int | str) -> ManifestFile:
         """Retrieve an item from the manifest by index or name"""
@@ -207,9 +233,9 @@ class Manifest:
                 sub_manifest = Manifest.load_from(mf.path)
                 return sub_manifest[pieces[1]]
             else:
-                return mf
+                return self.expand_file(mf)
         else:
-            return self.files[item]
+            return self.expand_file(self.files[item])
 
     def __contains__(self, item: int | str) -> bool:
         """Check if a given index or name exists in the manifest"""
@@ -226,7 +252,12 @@ class Manifest:
 
     def __iter__(self) -> Iterable[ManifestFile]:
         """Iterate over the files in the manifest"""
-        yield from self.files
+        for mf in self.files:
+            if mf.is_manifest and mf.flatten:
+                sub_manifest = Manifest.load_from(mf.path)
+                yield from sub_manifest
+            else:
+                yield mf
 
     def __len__(self) -> int:
         """Number of files in the manifest"""
