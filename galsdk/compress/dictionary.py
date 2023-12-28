@@ -240,7 +240,7 @@ class DictionaryCompressor:
 
     @staticmethod
     def check_half(s: bytes, indexes: dict[bytes, int | None], desired_strings: Container[bytes],
-                   is_odd: bool) -> tuple[int, bool, int, int]:
+                   is_odd: bool) -> tuple[int | None, bool, int, int]:
         length = len(s)
         partial_match = False
         symmetrical = 0

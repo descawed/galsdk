@@ -75,6 +75,15 @@ class Archive(FileFormat, Generic[T]):
         return True
 
     @property
+    def should_flatten(self) -> bool:
+        """
+        This archive should be treated as the single element it contains.
+
+        The value of this property is a suggestion and not a requirement.
+        """
+        return False
+
+    @property
     def metadata(self) -> dict[str, bool | int | float | str | list | tuple | dict]:
         return {}
 

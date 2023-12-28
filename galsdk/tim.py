@@ -285,6 +285,10 @@ class TimDb(Archive[Tim]):
         return True
 
     @property
+    def should_flatten(self) -> bool:
+        return self.format.is_stream and len(self.images) == 1
+
+    @property
     def metadata(self) -> dict[str, str]:
         return {'fmt': self.format.extension}
 

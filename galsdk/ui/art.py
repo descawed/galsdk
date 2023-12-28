@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 
 from galsdk.project import Project
-from galsdk.manifest import ManifestFile
+from galsdk.manifest import Manifest, ManifestFile
 from galsdk.ui.image import ImageViewerTab
 from psx.tim import Tim
 
@@ -22,24 +22,28 @@ class ArtTab(ImageViewerTab):
         self.images_changed = set()
         self.current_image = None
 
-        paths_seen = set()
         for art_manifest in self.project.get_art_manifests():
             self.tree.insert('', tk.END, text=art_manifest.name, iid=art_manifest.name, open=False)
-            for art_file in art_manifest.iter_flat():
-                if art_file.path.suffix.lower() != '.tim':
-                    # ignore files that aren't images
-                    continue
-                relative_path = art_file.path.relative_to(art_manifest.path)
-                iid = art_manifest.name
-                for part in relative_path.parts:
-                    new_iid = f'{iid}/{part}'
-                    if new_iid not in paths_seen:
-                        self.tree.insert(iid, tk.END, text=part, iid=new_iid)
-                        paths_seen.add(new_iid)
-                    iid = new_iid
-                with art_file.path.open('rb') as f:
-                    self.images[iid] = (art_file, Tim.read(f))
-                self.context_ids.add(iid)
+            self.add_level(art_manifest, art_manifest.name)
+
+    def add_level(self, manifest: Manifest, base_iid: str):
+        for art_file in manifest:
+            new_iid = f'{base_iid}/{art_file.name}'
+
+            if art_file.is_manifest:
+                sub_manifest = Manifest.load_from(art_file.path)
+                self.tree.insert(base_iid, tk.END, text=art_file.ext_name, iid=new_iid, open=False)
+                self.add_level(sub_manifest, new_iid)
+                continue
+
+            if art_file.path.suffix.lower() != '.tim':
+                # ignore files that aren't images
+                continue
+
+            self.tree.insert(base_iid, tk.END, text=art_file.ext_name, iid=new_iid)
+            with art_file.path.open('rb') as f:
+                self.images[new_iid] = (art_file, Tim.read(f))
+            self.context_ids.add(new_iid)
 
     def get_image_from_iid(self, iid: str) -> Tim | None:
         # for some reason, PyCharm thinks that every index in this tuple is a ManifestFile

@@ -28,6 +28,7 @@ class Editor(ShowBase):
     def __init__(self):
         super().__init__(windowType='none')
         self.project = None
+        self.project_open_complete = False
 
         cwd = pathlib.Path.cwd()
         getModelPath().appendDirectory(cwd / 'assets')
@@ -235,6 +236,7 @@ class Editor(ShowBase):
     def open_project(self, project: Project):
         first_open = self.project is None
         self.project = project
+        self.project_open_complete = False
 
         self.default_message.pack_forget()
         self.new_project_view.pack_forget()
@@ -282,6 +284,8 @@ class Editor(ShowBase):
         self.file_menu.entryconfigure(4, state=tk.NORMAL)
         self.file_menu.entryconfigure(5, state=tk.NORMAL)
         self.tools_menu.entryconfigure(1, state=tk.NORMAL)
+
+        self.project_open_complete = True
 
     def on_tab_change(self, tab: Tab):
         num_tabs = self.notebook.index('end')
@@ -352,7 +356,7 @@ class Editor(ShowBase):
             if not confirm:
                 return
 
-        if self.project:
+        if self.project and self.project_open_complete:
             # if a project is open, save the current window position and size
             width = self.tkRoot.winfo_width()
             height = self.tkRoot.winfo_height()
