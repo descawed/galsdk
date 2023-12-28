@@ -4,4 +4,4 @@ pillow==10.1.*
 Pmw==2.1.*
 ffmpeg-python==0.2.*
 numpy==1.26.*
-rabbitizer==1.8.*
+rabbitizer~=1.8.1

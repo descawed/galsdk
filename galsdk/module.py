@@ -1028,8 +1028,7 @@ class RoomModule(FileFormat):
                             room_address.entrances.add(regs[inst.rt.value].source)
                             found_entrance_array = True
 
-                        # for some reason, this function can return a signed number, so do the two's complement
-                        dest = (inst.getBranchVramGeneric() + (1 << 32)) & 0xffffffff
+                        dest = inst.getBranchVramGeneric()
                         if had_found_entrance_array != found_entrance_array:
                             # if we just found the entrance array, try to follow the branch and see if it leads us to
                             # the condition checking the count
@@ -1037,8 +1036,7 @@ class RoomModule(FileFormat):
 
                     if is_branch or inst.isJump():
                         ever_branched = True
-                        # for some reason, this function can return a signed number, so do the two's complement
-                        dest = (inst.getBranchVramGeneric() + (1 << 32)) & 0xffffffff
+                        dest = inst.getBranchVramGeneric()
 
                         # we only care about forward branches because we don't want to revisit code we've already seen
                         if dest > i:
