@@ -202,12 +202,14 @@ class XaDatabase(Archive[bytes]):
         while any(channels):
             channel = channels[i]
             region_index = channel_regions[i]
-            if region_index < 0:
-                channel_regions[i] = region_index = len(regions)
-                region = XaRegion(i, sector_count, sector_count)
-                regions.append(region)
-            else:
-                region = regions[region_index]
+            region = None
+            if channel:
+                if region_index < 0:
+                    channel_regions[i] = region_index = len(regions)
+                    region = XaRegion(i, sector_count, sector_count)
+                    regions.append(region)
+                else:
+                    region = regions[region_index]
 
             while channel:
                 map_index, sector_iter = channel[0]
@@ -264,7 +266,11 @@ class XaDatabase(Archive[bytes]):
         for region in self.regions:
             f.write(region.channel.to_bytes(4, 'little'))
             f.write(region.start.to_bytes(4, 'little'))
-            f.write(region.end.to_bytes(4, 'little'))
+            # we use an end of -1 for empty dummy regions
+            end = region.end
+            if end < 0:
+                end = 0xffffffff
+            f.write(end.to_bytes(4, 'little'))
 
     @property
     def is_ready(self) -> bool:
@@ -354,7 +360,7 @@ def export_mxa(exe_path: Path, disc: int, target_path: Path, packs: list[Path], 
                 case [pack, index] | {'pack': pack, 'index': index}:
                     new_regions.append(all_regions[pack_offsets[pack] + index])
                 case None:
-                    new_regions.append(XaRegion(0, 0, 0))
+                    new_regions.append(XaRegion(0, 0, -1))
                 case index:
                     new_regions.append(all_regions[index])
     else:
