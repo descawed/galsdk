@@ -32,7 +32,7 @@ class BackgroundTab(ImageViewerTab):
                 # dummy item so we have the option to expand
                 self.tree.insert(bg_id, tk.END, text='Dummy')
 
-    def on_node_open(self, event: tk.Event):
+    def on_node_open(self, event: tk.Event = None):
         focused = self.tree.focus()
         if focused.startswith('db_'):
             index = int(focused[3:])
@@ -53,4 +53,12 @@ class BackgroundTab(ImageViewerTab):
             db_index, img_index = [int(piece) for piece in iid[4:].split('_')]
             db = self.dbs[db_index][1]
             return db[img_index]
+        elif iid.startswith('db_'):
+            db_index = int(iid[3:])
+            db = self.dbs[db_index][1]
+            if db is None:
+                # force DB to load
+                self.on_node_open()
+                db = self.dbs[db_index][1]
+            return db[0]
         return None
