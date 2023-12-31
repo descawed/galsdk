@@ -390,6 +390,28 @@ def print_layout(image_path: Path):
         print(region)
 
 
+def validate(image_path: Path, verbose: bool):
+    import sys
+
+    success = True
+
+    with Disc(image_path.open('rb')) as disc:
+        i = 0
+        while sector := disc.read_sector():
+            if sector.validate_edc():
+                i += 1
+                continue
+
+            success = False
+            if not verbose:
+                break
+
+            print(f'{i} ({sector.minute:02}:{sector.second:02}:{sector.sector:02}): invalid EDC')
+            i += 1
+
+    sys.exit(0 if success else 1)
+
+
 def cli_main():
     import argparse
 
@@ -422,6 +444,11 @@ def cli_main():
     layout_parser = subparsers.add_parser('layout', help='Print the layout of the CD image')
     layout_parser.add_argument('cd', help='Path to the CD image', type=Path)
     layout_parser.set_defaults(action=lambda a: print_layout(a.cd))
+
+    validate_parser = subparsers.add_parser('validate', help='Validate CD error detection/correction codes')
+    validate_parser.add_argument('-v', '--verbose', help='Print sectors that fail to validate', action='store_true')
+    validate_parser.add_argument('cd', help='Path to the CD image', type=Path)
+    validate_parser.set_defaults(action=lambda a: validate(a.cd, a.verbose))
 
     args = parser.parse_args()
     args.action(args)

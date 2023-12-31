@@ -85,3 +85,12 @@ def test_copy_sector():
     assert destination.second == 5
     assert destination.sector == 6
     assert destination.data == source.data
+
+
+def test_edc():
+    source = Sector(minute=7, second=8, sector=9, mode=1)
+    source.data[10:20] = b'abcdefghij'
+    assert not source.validate_edc()
+    source.update_edc()
+    assert source.edc == 0x9ea391be
+    assert source.validate_edc()
