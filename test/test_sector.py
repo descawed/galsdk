@@ -92,5 +92,5 @@ def test_edc():
     source.data[10:20] = b'abcdefghij'
     assert not source.validate_edc()
     source.update_edc()
-    assert source.edc == 0x94fdbeb7
+    assert source.edc == 0x9ea391be
     assert source.validate_edc()

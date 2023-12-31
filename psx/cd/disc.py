@@ -23,8 +23,10 @@ class CodingInfo(IntEnum):
     EMPHASIS = 0x40
 
 
+# http://www.problemkaputt.de/psxspx-cdrom-sector-encoding.htm
+# https://reveng.sourceforge.io/crc-catalogue/all.htm#crc.cat.crc-32-cd-rom-edc
 class EdcTable:
-    MAGIC = 0xD8018001
+    DIVISOR = 0xD8018001
 
     table: ClassVar[array] = None
 
@@ -36,10 +38,7 @@ class EdcTable:
 
         for i in range(256):
             for j in range(8):
-                had_carry = i & 1 != 0
-                i >>= 1
-                if had_carry:
-                    i ^= self.MAGIC
+                i = (i >> 1) ^ (self.DIVISOR if i & 1 != 0 else 0)
             table.append(i)
 
         EdcTable.table = table
@@ -87,6 +86,7 @@ class Sector:
             sync_header = self._raw[:len(self.SYNC_HEADER)]
             if sync_header != self.SYNC_HEADER:
                 raise ValueError(f'Bad sector header: expected {self.SYNC_HEADER}, found {sync_header}')
+        self.view = memoryview(self._raw)
 
     @staticmethod
     def from_bcd(value: int) -> int:
@@ -131,7 +131,7 @@ class Sector:
                 return 0
             case 1:
                 start = 0
-                end = 0x180
+                end = 0x810
             case 2 if self.form == 1:
                 start = 0x10
                 end = 0x818
@@ -314,6 +314,18 @@ class Sector:
                 raise ValueError(f'Invalid mode {self.mode}; expected 0, 1, or 2')
 
     @property
+    def ecc(self) -> memoryview | None:
+        if self.mode == 1 or (self.mode == 2 and self.form == 1):
+            return self.view[0x81c:]
+        return None
+
+    @ecc.setter
+    def ecc(self, ecc: bytes | bytearray | memoryview):
+        if self.mode != 1 and (self.mode != 2 or self.form != 1):
+            raise AttributeError('Cannot set ECC on a mode 0 or mode 2/form 2 sector')
+        self._raw[0x81c:self.SIZE] = ecc
+
+    @property
     def data_size(self) -> int:
         match self.mode:
             case 0:
@@ -328,14 +340,15 @@ class Sector:
     @property
     def data(self) -> memoryview:
         """A writable view of this sector's data field"""
-        view = memoryview(self._raw)
         match self.mode:
             case 0:
-                return view[0x10:]
+                return self.view[0x10:]
             case 1:
-                return view[0x10:0x810]
+                return self.view[0x10:0x810]
+            case 2 if self.form == 1:
+                return self.view[0x18:0x818]
             case 2:
-                return view[0x18:0x818] if self.form == 1 else view[0x18:0x92c]
+                return self.view[0x18:0x92c]
             case _:
                 raise ValueError(f'Invalid mode {self.mode}; expected 0, 1, or 2')
 
