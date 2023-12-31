@@ -119,6 +119,7 @@ class CdRegion(ABC):
             chunk_size = min(data_size, data_len - i)
             # FIXME: re-calculate EDC and ECC
             sector.data[:chunk_size] = data[i:i+chunk_size]
+            sector.update_edc()
             i += data_size
             if i >= len(data):
                 break
@@ -222,6 +223,7 @@ class CdRegion(ABC):
         else:
             # field to patch is entirely in this sector
             sector_data[data_index:data_index + len(data)] = data
+        sector.update_edc()
 
     def write(self, disc: Disc):
         """Write this region to the provided disc image"""
@@ -239,6 +241,11 @@ class CdRegion(ABC):
             size_to_copy = min(sector.data_size, data_size)
             destination.write(bytes(sector.data[:size_to_copy]))
             data_size -= size_to_copy
+
+    def update_edc(self, force: bool = False):
+        """Update EDC codes for all sectors in this region"""
+        for sector in self.sectors:
+            sector.update_edc(force)
 
 
 class SystemArea(CdRegion):
@@ -420,19 +427,22 @@ class VolumeDescriptor(CdRegion):
 
     def update_paths(self, region: CdRegion):
         if self.is_filesystem and region.name.startswith(f'{self.name}:\\'):
-            data = self.sectors[0].data
-            if region.name == f'{self.name}:\\':
-                # this is the root directory of our volume; update directory record
-                data[158:162] = region.start.to_bytes(4, 'little')
-                data[162:166] = region.start.to_bytes(4, 'big')
-                data[166:170] = region.data_size.to_bytes(4, 'little')
-                data[170:174] = region.data_size.to_bytes(4, 'big')
+            with self.sectors[0] as sector:
+                data = sector.data
+                if region.name == f'{self.name}:\\':
+                    # this is the root directory of our volume; update directory record
+                    data[158:162] = region.start.to_bytes(4, 'little')
+                    data[162:166] = region.start.to_bytes(4, 'big')
+                    data[166:170] = region.data_size.to_bytes(4, 'little')
+                    data[170:174] = region.data_size.to_bytes(4, 'big')
+                    sector.request_error_code_update()
 
-            if region.end - self.start >= self.space_size:
-                # this region is within our volume and now extends past the end; expand our volume
-                self.space_size = region.end - self.start
-                data[80:84] = self.space_size.to_bytes(4, 'little')
-                data[84:88] = self.space_size.to_bytes(4, 'big')
+                if region.end - self.start >= self.space_size:
+                    # this region is within our volume and now extends past the end; expand our volume
+                    self.space_size = region.end - self.start
+                    data[80:84] = self.space_size.to_bytes(4, 'little')
+                    data[84:88] = self.space_size.to_bytes(4, 'big')
+                    sector.request_error_code_update()
 
             # pass on to our path tables and root directory
             for sub_region in self.sub_regions[:-1]:  # exclude next volume descriptor
