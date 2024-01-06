@@ -14,7 +14,6 @@ class MenuTab(ImageViewerTab):
     def __init__(self, project: Project):
         super().__init__('Menu', project)
         self.images = {}
-        self.current_image = None
 
         for name, menu in self.project.get_menus():
             self.tree.insert('', tk.END, text=name, iid=name, open=False)

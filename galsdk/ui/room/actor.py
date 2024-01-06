@@ -4,7 +4,7 @@ from typing import Callable
 
 from galsdk.model import ActorModel
 from galsdk.room import ActorObject
-from galsdk.ui.room.util import validate_int, validate_float, StringVar
+from galsdk.ui.util import validate_int, validate_float, StringVar
 
 
 class ActorEditor(ttk.Frame):

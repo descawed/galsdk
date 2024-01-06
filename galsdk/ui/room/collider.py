@@ -5,7 +5,7 @@ from galsdk.coords import Dimension
 from galsdk.module import ColliderType, CircleCollider, RectangleCollider, TriangleCollider
 from galsdk.room import CircleColliderObject, RectangleColliderObject, TriangleColliderObject, WallColliderObject
 from galsdk.ui.room.replaceable import Replaceable
-from galsdk.ui.room.util import validate_int, StringVar
+from galsdk.ui.util import validate_int, StringVar
 
 
 ColliderObject = CircleColliderObject | RectangleColliderObject | TriangleColliderObject | WallColliderObject

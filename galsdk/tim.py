@@ -268,6 +268,20 @@ class TimDb(Archive[Tim]):
             self.offsets[offset] = len(self.images)
         self.images.append(image)
 
+    def insert(self, index: int, item: Tim | TimDb, offset: int = None):
+        """
+        Insert a new image into the database
+
+        :param index: The index at which to insert the image
+        :param item: The TIM image to insert
+        :param offset: The offset the TIM was located at in the database
+        """
+        if isinstance(item, Tim):
+            item = TimFormat.from_tim(item)
+        if offset is not None:
+            self.offsets[offset] = len(self.images)
+        self.images.insert(index, item)
+
     def append_raw(self, item: bytes, offset: int = None):
         with io.BytesIO(item) as f:
             element = self.sniff(f)
@@ -282,7 +296,7 @@ class TimDb(Archive[Tim]):
 
     @property
     def supports_nesting(self) -> bool:
-        return True
+        return self.format == self.Format.COMPRESSED_DB
 
     @property
     def should_flatten(self) -> bool:

@@ -229,7 +229,9 @@ class Tim:
             case BitsPerPixel.BPP_24:
                 return self._decode_pixel_24(self.image_data)
 
-    def _update_image(self, image: Image.Image, bpp: BitsPerPixel):
+    def _update_image(self, image: Image.Image, bpp: BitsPerPixel,
+                      quantization_method: Image.Quantize = Image.Quantize.MEDIANCUT,
+                      dither: Image.Dither = Image.Dither.FLOYDSTEINBERG):
         width, _ = image.size
         if bpp == BitsPerPixel.BPP_24:
             rgb = image.convert('RGB')
@@ -244,7 +246,7 @@ class Tim:
             data = self._encode_pixel_16(pixels)
         else:
             num_colors = bpp.num_colors
-            quantized = image.quantize(num_colors)
+            quantized = image.quantize(num_colors, quantization_method, dither=dither)
             palette = quantized.getpalette('RGBA')
             self.palettes = [
                 [(palette[i], palette[i+1], palette[i+2], palette[i+3]) for i in range(0, len(palette), 4)]
@@ -262,16 +264,20 @@ class Tim:
         self.set_image(data, bpp, width, self.image_x, self.image_y)
 
     @classmethod
-    def from_image(cls, image: Image.Image, bpp: BitsPerPixel = BitsPerPixel.BPP_24) -> Self:
+    def from_image(cls, image: Image.Image, bpp: BitsPerPixel = BitsPerPixel.BPP_24,
+                   quantization_method: Image.Quantize = Image.Quantize.MEDIANCUT,
+                   dither: Image.Dither = Image.Dither.FLOYDSTEINBERG) -> Self:
         tim = cls()
-        tim._update_image(image, bpp)
+        tim._update_image(image, bpp, quantization_method, dither)
         return tim
 
-    def update_image_in_place(self, image: Image.Image):
+    def update_image_in_place(self, image: Image.Image,
+                              quantization_method: Image.Quantize = Image.Quantize.MEDIANCUT,
+                              dither: Image.Dither = Image.Dither.FLOYDSTEINBERG):
         width, height = image.size
         if width != self.width or height != self.height:
             raise ValueError('Image dimensions do not match TIM')
-        self._update_image(image, self.bpp)
+        self._update_image(image, self.bpp, quantization_method, dither)
 
     def to_image(self, clut_index: int = 0, transparency: Transparency = Transparency.FULL) -> Image.Image:
         """

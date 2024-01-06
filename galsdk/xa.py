@@ -179,6 +179,9 @@ class XaDatabase(Archive[bytes]):
     def append(self, item: bytes | Self):
         raise NotImplementedError
 
+    def insert(self, index: int, item: bytes | Self):
+        raise NotImplementedError
+
     def extend(self, other: XaDatabase):
         num_sectors = self.num_sectors
         for region in other.regions:

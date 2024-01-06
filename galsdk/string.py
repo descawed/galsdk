@@ -50,6 +50,15 @@ class StringDb(FileFormat):
         """
 
     @abstractmethod
+    def insert(self, index: int, string: str):
+        """
+        Insert a string into the database at the given index
+
+        :param index: The index at which to insert the string
+        :param string: The string to insert
+        """
+
+    @abstractmethod
     def append_raw(self, string: bytes):
         """
         Append a raw byte string to the database with no encoding applied
@@ -203,6 +212,9 @@ class LatinStringDb(StringDb):
         """
         self.strings.append(string.encode(self.encoding))
 
+    def insert(self, index: int, string: str):
+        self.strings.insert(index, string.encode(self.encoding))
+
     def append_raw(self, string: bytes):
         """
         Append a raw byte string to the database with no encoding applied
@@ -279,14 +291,7 @@ class JapaneseStringDb(StringDb):
         32774: 'c',
     }
 
-    NAME_CODES = {
-        'r': 32769,
-        'w': 32770,
-        'p': 32771,
-        'l': 32772,
-        'y': 32773,
-        'c': 32774,
-    }
+    NAME_CODES = {name: code for code, name in CODE_NAMES.items()}
 
     strings: list[bytes]
 
@@ -501,6 +506,18 @@ class JapaneseStringDb(StringDb):
         if kanji_index is None:
             kanji_index = self.kanji_index
         self.strings.append(self.encode(string, kanji_index or 0))
+
+    def insert(self, index: int, string: str, kanji_index: int = None):
+        """
+        Insert a string into the database at the given index
+
+        :param index: The index at which to insert the string
+        :param string: The string to insert into the database
+        :param kanji_index: Index of the kanji set to use for encoding this string
+        """
+        if kanji_index is None:
+            kanji_index = self.kanji_index
+        self.strings.insert(index, self.encode(string, kanji_index or 0))
 
     def append_raw(self, string: bytes):
         """

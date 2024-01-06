@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import bisect
+import datetime
 import json
 import shutil
 from dataclasses import dataclass
@@ -65,6 +67,7 @@ class Manifest:
     """A manifest records an ordered list of files that belong to an archive"""
 
     files: list[ManifestFile]
+    deleted_files: list[tuple[float, ManifestFile]]
 
     def __init__(self, path: Path, name: str = None, db_type: str | None = 'cdb', original: Path = None,
                  metadata: dict[str, bool | int | float | str | list | tuple | dict] = None):
@@ -82,6 +85,12 @@ class Manifest:
         self.name_map = {}
         self.type = db_type
         self.metadata = metadata or {}
+        self.deleted_files = []
+        self.new_deletion_index = 0
+
+    @staticmethod
+    def now() -> float:
+        return datetime.datetime.now(datetime.timezone.utc).timestamp()
 
     def _unpack_file(self, mf: ManifestFile, parent: Archive, i: int, sniff: bool | list[type[FileFormat]],
                      flatten: bool, recursive: bool):
@@ -189,6 +198,13 @@ class Manifest:
         self.type = manifest['type']
         self.metadata = manifest['metadata']
         self.original = (self.path / manifest['original']) if manifest['original'] else None
+        deletions = manifest.get('deletions', [])
+        self.deleted_files = []
+        for deletion in deletions:
+            self.deleted_files.append(
+                (deletion['timestamp'], ManifestFile(deletion['name'], self.path / deletion['path']))
+            )
+        self.new_deletion_index = len(self.deleted_files)
 
     def load_file(self, key: int | str, constructor: type[T] | Callable[[Path], T], **kwargs) -> FromManifest[T]:
         """
@@ -203,6 +219,11 @@ class Manifest:
             obj = constructor(manifest_file.path)
         return FromManifest(self, key, manifest_file, obj)
 
+    def load_files(self, constructor: type[T] | Callable[[Path], T], **kwargs) -> Iterable[FromManifest[T]]:
+        for i, mf in enumerate(self.files):
+            if not mf.is_manifest:
+                yield self.load_file(i, constructor, **kwargs)
+
     def save(self):
         """Save the current file data for this manifest"""
         with (self.path / 'manifest.json').open('w') as f:
@@ -214,8 +235,16 @@ class Manifest:
                 ],
                 'type': self.type,
                 'metadata': self.metadata,
+                'deletions': [
+                    {'timestamp': mtime, 'name': mf.name, 'path': str(mf.path.relative_to(self.path))}
+                    for mtime, mf in self.deleted_files
+                ],
                 'original': str(self.original.relative_to(self.path)) if self.original is not None else None,
             }, f)
+
+        for _, mf in self.deleted_files[self.new_deletion_index:]:
+            mf.path.unlink()
+        self.new_deletion_index = len(self.deleted_files)
 
     @classmethod
     def expand_file(cls, mf: ManifestFile) -> ManifestFile:
@@ -236,6 +265,29 @@ class Manifest:
                 return self.expand_file(mf)
         else:
             return self.expand_file(self.files[item])
+
+    def __delitem__(self, key: int | str):
+        """Remove an item from the manifest by index or name"""
+        if isinstance(key, str):
+            pieces = key.split('/', 1)
+            mf = self.name_map[pieces[0]]
+            if mf.is_manifest and len(pieces) > 1:
+                sub_manifest = Manifest.load_from(mf.path)
+                del sub_manifest[pieces[1]]
+                # FIXME: it's kind of unintuitive that this one case takes effect immediately when the others require a
+                #  call to save, but the sub_manifest object doesn't persist beyond this call, so if we don't do it now,
+                #  the change will be forgotten.
+                sub_manifest.save()
+                return
+            else:
+                index = self.files.index(mf)
+                del self.files[index]
+        else:
+            mf = self.files[key]
+            del self.files[key]
+
+        del self.name_map[mf.name]
+        self.deleted_files.append((self.now(), mf))
 
     def __contains__(self, item: int | str) -> bool:
         """Check if a given index or name exists in the manifest"""
@@ -270,6 +322,78 @@ class Manifest:
         if exc_type is None:
             self.save()
 
+    def get_unique_name(self, name: str) -> str:
+        i = 0
+        while name in self.name_map:
+            name = f'{name}_{i}'
+            i += 1
+        return name
+
+    def index(self, name: str) -> int:
+        return self.files.index(self.name_map[name])
+
+    def try_undelete(self, name: str):
+        """If the given name is in the deleted files list, remove it from the list"""
+        for i, (_, mf) in enumerate(self.deleted_files):
+            if mf.name == name:
+                del self.deleted_files[i]
+                if self.new_deletion_index >= i:
+                    self.new_deletion_index -= 1
+                return
+
+    def add(self, path: Path, index: int = None, name: str = None, fmt: str = None) -> ManifestFile:
+        new_path = self.path / path.name
+        i = 0
+        while new_path.exists():
+            new_path = self.path / f'{new_path.stem}_{i}{new_path.suffix}'
+            i += 1
+
+        if name is None:
+            name = new_path.stem
+        if name in self.name_map:
+            raise KeyError(f'There is already an entry named {name}')
+
+        shutil.copyfile(path, new_path)
+        mf = ManifestFile(name, new_path, False, fmt)
+        if index is None:
+            self.files.append(mf)
+        else:
+            self.files.insert(index, mf)
+
+        self.try_undelete(name)
+        return mf
+
+    def add_raw(self, data: bytes, index: int = None, name: str = None, fmt: str = None) -> ManifestFile:
+        if index is None:
+            index = len(self.files)
+
+        if name is None:
+            name = self.get_unique_name(f'{index:03}')
+        elif name in self.name_map:
+            raise KeyError(f'There is already an entry named {name}')
+
+        filename = name
+        if fmt:
+            ext = f'.{fmt}'
+            if not filename.endswith(ext):
+                filename += ext
+
+        new_path = self.path / filename
+        i = 0
+        while new_path.exists():
+            new_path = self.path / f'{new_path.stem}_{i}{new_path.suffix}'
+            i += 1
+
+        new_path.write_bytes(data)
+        mf = ManifestFile(name, new_path, False, fmt)
+        if index >= len(self.files):
+            self.files.append(mf)
+        else:
+            self.files.insert(index, mf)
+
+        self.try_undelete(name)
+        return mf
+
     def iter_flat(self) -> Iterable[ManifestFile]:
         for item in self.files:
             if item.is_manifest:
@@ -301,6 +425,10 @@ class Manifest:
             else:
                 if mf.path.stat().st_mtime > mtime:
                     yield mf
+
+        deletion_index = bisect.bisect_left(self.deleted_files, mtime, key=lambda df: df[0])
+        for _, mf in self.deleted_files[deletion_index:]:
+            yield mf
 
     def is_modified_since(self, mtime: float) -> bool:
         for _ in self.get_files_modified_since(mtime):

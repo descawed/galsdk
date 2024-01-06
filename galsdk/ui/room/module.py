@@ -3,7 +3,7 @@ from tkinter import ttk
 
 from galsdk.manifest import FromManifest
 from galsdk.module import RoomModule
-from galsdk.ui.room.util import validate_int
+from galsdk.ui.util import validate_int
 
 
 class ModuleEditor(ttk.Frame):

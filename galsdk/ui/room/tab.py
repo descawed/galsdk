@@ -20,10 +20,11 @@ from galsdk.module import (ActorInstance, CircleCollider, Collider, ColliderType
                            TriangleCollider)
 from galsdk.project import Project
 from galsdk.game import Stage
+from galsdk.manifest import Manifest
 from galsdk.room import (CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,
                          WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject,
                          EntranceObject)
-from galsdk.tim import TimDb
+from galsdk.tim import TimFormat
 from galsdk.ui.active_animation import ActiveAnimation
 from galsdk.ui.room.actor import ActorEditor
 from galsdk.ui.room.camera import CameraEditor
@@ -437,9 +438,8 @@ class RoomViewport(Viewport):
             for background in backgrounds:
                 if background.index >= 0 and background.index not in self.loaded_tims:
                     path = self.stage_backgrounds[self.current_stage][background.index].path
-                    with path.open('rb') as f:
-                        db = TimDb.read(f, fmt=TimDb.Format.from_extension(path.suffix))
-                    self.loaded_tims[background.index] = db
+                    manifest = Manifest.load_from(path)
+                    self.loaded_tims[background.index] = [fm.obj for fm in manifest.load_files(TimFormat)]
 
         for layout_set in module.actor_layouts:
             self.actor_layouts.extend(layout_set.layouts)

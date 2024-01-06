@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from galsdk.room import EntranceObject
-from galsdk.ui.room.util import validate_int, validate_float, StringVar
+from galsdk.ui.util import validate_int, validate_float, StringVar
 
 
 class EntranceEditor(ttk.Frame):
