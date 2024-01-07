@@ -514,7 +514,10 @@ class Project:
         path = self.project_dir / 'stages' / stage / 'stage.json'
         with path.open('r') as f:
             stage_info = json.load(f)
-        return Manifest.load_from(self.project_dir / Path(stage_info['background']))
+        if 'background' in stage_info:
+            return Manifest.load_from(self.project_dir / Path(stage_info['background']))
+        # old project
+        return Manifest.load_from(self.project_dir / 'stages' / stage / 'backgrounds')
 
     def get_stage_movies(self, stage: Stage) -> Iterable[Movie]:
         for path in sorted((self.project_dir / 'stages' / stage / 'movies').glob('*.STR')):
