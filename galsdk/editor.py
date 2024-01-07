@@ -150,7 +150,7 @@ class Editor(ShowBase):
         if self.saved_geometry:
             x = self.saved_geometry['x']
             y = self.saved_geometry['y']
-            self.tkRoot.geometry(f'550x75+{x}+{y}')
+            self.tkRoot.geometry(f'+{x}+{y}')
 
     def export_xa_mxa(self, *_):
         try:
@@ -262,11 +262,9 @@ class Editor(ShowBase):
         self.notebook.pack(expand=1, fill=tk.BOTH)
 
         if self.saved_geometry and first_open:
-            x = self.saved_geometry['x']
-            y = self.saved_geometry['y']
             width = self.saved_geometry['width']
             height = self.saved_geometry['height']
-            self.tkRoot.geometry(f'{width}x{height}+{x}+{y}')
+            self.tkRoot.geometry(f'{width}x{height}')
 
         self.set_active_tab()
 
