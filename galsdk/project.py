@@ -172,7 +172,8 @@ class Project:
 
         art_dir = project_path / 'art'
         art_dir.mkdir(exist_ok=True)
-        art_dbs = ['CARD.CDB', 'DISPLAY.CDB', 'FONT.CDB', 'ITEMTIM.CDB', 'MAIN_TEX.CDB', 'MENU.CDB', 'TIT.CDB']
+        art_dbs = ['BGTIM_A.CDB', 'BGTIM_B.CDB', 'BGTIM_C.CDB', 'BGTIM_D.CDB', 'CARD.CDB', 'DISPLAY.CDB', 'FONT.CDB',
+                   'ITEMTIM.CDB', 'MAIN_TEX.CDB', 'MENU.CDB', 'TIT.CDB']
 
         for art_db_name in art_dbs:
             art_db_path = game_data / art_db_name
@@ -242,8 +243,6 @@ class Project:
         for i, stage in enumerate(Stage):
             stage_dir = stages_dir / stage
             stage_dir.mkdir(exist_ok=True)
-            bg_dir = stage_dir / 'backgrounds'
-            bg_dir.mkdir(exist_ok=True)
             movie_dir = stage_dir / 'movies'
             if movie_dir.is_dir():
                 shutil.rmtree(movie_dir)
@@ -253,16 +252,13 @@ class Project:
             if movie_src.exists():
                 shutil.copytree(movie_src, movie_dir)
 
-            bg_db_path = game_data / f'BGTIM_{stage}.CDB'
-            with bg_db_path.open('rb') as f:
-                bg_db = Database.read(f)
-            fmt = '.TMM' if version.region == Region.NTSC_J else '.TDB'
-            Manifest.from_archive(bg_dir, f'BGTIM_{stage}', bg_db, fmt, recursive=False, original_path=bg_db_path)
+            manifest_path = art_dir / f'BGTIM_{stage}'
 
             stage_info_path = stage_dir / 'stage.json'
             stage_info = {
                 'index': i,
                 'strings': str(message_manifest[message_indexes[i]].path.relative_to(project_path)),
+                'background': str(manifest_path.relative_to(project_path)),
             }
             with stage_info_path.open('w') as f:
                 json.dump(stage_info, f)
@@ -515,10 +511,16 @@ class Project:
         :param stage: The stage for which to get the background manifest
         :return: The manifest of background files
         """
+        path = self.project_dir / 'stages' / stage / 'stage.json'
+        with path.open('r') as f:
+            stage_info = json.load(f)
+        if 'background' in stage_info:
+            return Manifest.load_from(self.project_dir / Path(stage_info['background']))
+        # old project
         return Manifest.load_from(self.project_dir / 'stages' / stage / 'backgrounds')
 
     def get_stage_movies(self, stage: Stage) -> Iterable[Movie]:
-        for path in (self.project_dir / 'stages' / stage / 'movies').glob('*.STR'):
+        for path in sorted((self.project_dir / 'stages' / stage / 'movies').glob('*.STR')):
             yield Movie(path)
 
     def get_xa_databases(self) -> list[XaDatabase]:
@@ -686,7 +688,7 @@ class Project:
         return Manifest.load_from(self.project_dir / 'art' / 'MENU').get_manifest('item_art')
 
     def get_art_manifests(self) -> Iterable[Manifest]:
-        for path in (self.project_dir / 'art').iterdir():
+        for path in sorted((self.project_dir / 'art').iterdir()):
             yield Manifest.load_from(path)
 
     def get_items(self, key_items: bool | None = None) -> Iterable[Item]:

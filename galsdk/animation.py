@@ -269,6 +269,9 @@ class AnimationDb(Archive[Animation | None]):
     def append(self, item: Animation | None):
         self.animations.append(item)
 
+    def insert(self, index: int, item: Animation | None):
+        self.animations.insert(index, item)
+
     def append_raw(self, item: bytes):
         with io.BytesIO(item) as f:
             self.append(Animation.read(f))

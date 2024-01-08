@@ -199,13 +199,21 @@ class VabDb(Archive[bytes]):
 
         f.write(data)
 
-    def append(self, item: bytes | Self):
+    def append(self, item: bytes):
         if item[:4] == b'pBAV':
             self.vhs.append(item)
         elif item[:4] == b'pQES':
             self.seqs.append(item)
         else:
             self.vbs.append(item)
+
+    def insert(self, index: int, item: bytes):
+        if item[:4] == b'pBAV':
+            self.vhs.insert(index, item)
+        elif item[:4] == b'pQES':
+            self.seqs.insert(index, item)
+        else:
+            self.vbs.insert(index, item)
 
     def append_raw(self, item: bytes):
         return self.append(item)
@@ -226,7 +234,7 @@ class VabDb(Archive[bytes]):
 
     @classmethod
     def import_(cls, path: Path, fmt: str = None) -> Self:
-        files = list(path.glob('*VH')) + list(path.glob('*.VB')) + list(path.glob('*.SEQ'))
+        files = list(path.glob('*.VH')) + list(path.glob('*.VB')) + list(path.glob('*.SEQ'))
         return cls.import_explicit(files, fmt)
 
     @classmethod

@@ -131,22 +131,25 @@ class TimDb(Archive[Tim]):
 
     images: list[TimFormat | TimDb]
 
-    def __init__(self, fmt: Format = Format.DEFAULT):
+    def __init__(self, fmt: Format = Format.DEFAULT, *, allow_flatten: bool = True):
         """Create a new, empty TIM database"""
         super().__init__()
         self.images = []
         self.offsets = {}
         self.format = fmt
+        self.allow_flatten = allow_flatten
 
     @classmethod
-    def read(cls, f: BinaryIO, *, fmt: Format = Format.DEFAULT, **kwargs) -> Self:
+    def read(cls, f: BinaryIO, *, fmt: Format = Format.DEFAULT, allow_flatten: bool = True, **kwargs) -> Self:
         """
         Read a TIM database file
 
         :param f: Binary data stream to read the database file from
         :param fmt: Format of the TIM database
+        :param allow_flatten: Whether this TIM database may be flattened into its parent container if it is a compressed
+          TIM stream containing only a single image.
         """
-        db = cls(fmt)
+        db = cls(fmt, allow_flatten=allow_flatten)
         if fmt == cls.Format.COMPRESSED_STREAM:
             for offset, data in dictcmp.decompress(f.read()):
                 db.append(TimFormat.read_bytes(data), offset)
@@ -268,6 +271,20 @@ class TimDb(Archive[Tim]):
             self.offsets[offset] = len(self.images)
         self.images.append(image)
 
+    def insert(self, index: int, item: Tim | TimDb, offset: int = None):
+        """
+        Insert a new image into the database
+
+        :param index: The index at which to insert the image
+        :param item: The TIM image to insert
+        :param offset: The offset the TIM was located at in the database
+        """
+        if isinstance(item, Tim):
+            item = TimFormat.from_tim(item)
+        if offset is not None:
+            self.offsets[offset] = len(self.images)
+        self.images.insert(index, item)
+
     def append_raw(self, item: bytes, offset: int = None):
         with io.BytesIO(item) as f:
             element = self.sniff(f)
@@ -282,11 +299,11 @@ class TimDb(Archive[Tim]):
 
     @property
     def supports_nesting(self) -> bool:
-        return True
+        return self.format == self.Format.COMPRESSED_DB
 
     @property
     def should_flatten(self) -> bool:
-        return self.format.is_stream and len(self.images) == 1
+        return self.allow_flatten and self.format.is_stream and len(self.images) == 1
 
     @property
     def metadata(self) -> dict[str, str]:

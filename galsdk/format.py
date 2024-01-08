@@ -47,6 +47,11 @@ class FileFormat(ABC):
     def write(self, f: BinaryIO, **kwargs):
         pass
 
+    def to_bytes(self, **kwargs) -> bytes:
+        with io.BytesIO() as buffer:
+            self.write(buffer, **kwargs)
+            return buffer.getvalue()
+
     @classmethod
     @abstractmethod
     def import_(cls, path: Path, fmt: str = None) -> Self:
@@ -117,6 +122,10 @@ class Archive(FileFormat, Generic[T]):
 
     @abstractmethod
     def append_raw(self, item: bytes):
+        pass
+
+    @abstractmethod
+    def insert(self, index: int, item: T | Self):
         pass
 
     @classmethod

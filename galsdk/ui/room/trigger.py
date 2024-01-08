@@ -6,7 +6,7 @@ from galsdk.coords import Dimension
 from galsdk.game import KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType, Stage
 from galsdk.module import CallbackFunction, FunctionArgument, FunctionCall, TriggerType, TriggerFlag
 from galsdk.room import TriggerObject
-from galsdk.ui.room.util import validate_int, StringVar
+from galsdk.ui.util import validate_int, StringVar
 
 
 class TriggerEditor(ttk.Frame):

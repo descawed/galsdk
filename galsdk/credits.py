@@ -96,6 +96,9 @@ class Credits(Archive[Tim]):
     def append(self, item: Tim):
         raise NotImplementedError
 
+    def insert(self, index: int, item: Tim):
+        raise NotImplementedError
+
     def append_raw(self, item: bytes):
         raise NotImplementedError
 

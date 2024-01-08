@@ -160,6 +160,9 @@ class Database(Archive[bytes]):
         """
         self.files.append(data)
 
+    def insert(self, index: int, item: bytes):
+        self.files.insert(index, item)
+
     def append_raw(self, item: bytes):
         return self.append(item)
 

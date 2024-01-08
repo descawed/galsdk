@@ -3,7 +3,7 @@ from tkinter import ttk
 from typing import Callable
 
 from galsdk.room import CameraObject
-from galsdk.ui.room.util import validate_int, validate_float, StringVar
+from galsdk.ui.util import validate_int, validate_float, StringVar
 
 
 class CameraEditor(ttk.Frame):

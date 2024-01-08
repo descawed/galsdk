@@ -1,6 +1,20 @@
 # galsdk
 Editor and utilities for the PSX game Galerians (1999). Requires Python 3.11.
 
+## Setup
+In the future I may provide a packaged release, but for now, I recommend setting up a Python virtual environment.
+
+1. Install [Python 3.11](https://www.python.org/downloads/release/python-3117/) if you don't have it. 3.12 won't
+   currently work because panda3d hasn't been updated for it yet.
+2. Clone down the repo: `git clone https://github.com/descawed/galsdk.git`
+3. cd to the repo directory: `cd /path/to/galsdk`
+4. Create the virtual environment: `python -m venv ./venv`
+5. Enter the virtual environment. Windows: `.\venv\Scripts\activate.bat`. Mac/Nix: `source ./venv/bin/activate`
+6. Install dependencies: `python -m pip install -r requirements.txt`
+7. Run desired commands as described below (e.g. `python -m galsdk.editor`).
+8. When you're done, exit the virtual environment with the command `deactivate`.
+9. Next time you want to use the tools, remember to enter the virtual environment first as in step 5.
+
 ## Editor
 The editor is a GUI application for exploring the game's files. Run it from the repo's root directory with
 `python -m galsdk.editor`. At the moment, it supports editing rooms, strings, art textures, and some animation data.

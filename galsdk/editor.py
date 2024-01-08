@@ -12,7 +12,8 @@ from panda3d.core import getModelPath
 
 from galsdk.project import Project
 from galsdk.game import GameVersion
-from galsdk.ui import (ActorTab, AnimationTab, ArtTab, BackgroundTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab,
+from galsdk.manifest import Manifest
+from galsdk.ui import (ActorTab, AnimationTab, ArtTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab,
                        StringTab, Tab, VoiceTab)
 from galsdk.ui.export import ExportDialog
 
@@ -150,7 +151,7 @@ class Editor(ShowBase):
         if self.saved_geometry:
             x = self.saved_geometry['x']
             y = self.saved_geometry['y']
-            self.tkRoot.geometry(f'550x75+{x}+{y}')
+            self.tkRoot.geometry(f'+{x}+{y}')
 
     def export_xa_mxa(self, *_):
         try:
@@ -191,6 +192,7 @@ class Editor(ShowBase):
         if not project_dir:
             return
 
+        Manifest.revert_all_unsaved_changes()
         try:
             project = Project.open(project_dir)
         except Exception as e:
@@ -225,6 +227,7 @@ class Editor(ShowBase):
     def create_project(self):
         image_path = self.image_path_var.get()
         project_path = self.project_path_var.get()
+        Manifest.revert_all_unsaved_changes()
         try:
             project = Project.create_from_cd(image_path, project_path)
         except Exception as e:
@@ -249,7 +252,7 @@ class Editor(ShowBase):
             self.notebook.forget(tab)
 
         tabs = [RoomTab(self.project, self), StringTab(self.project), ActorTab(self.project, self),
-                AnimationTab(self.project, self), BackgroundTab(self.project), ItemTab(self.project, self),
+                AnimationTab(self.project, self), ItemTab(self.project, self),
                 ModelTab(self.project, self), ArtTab(self.project), MenuTab(self.project), MovieTab(self.project, self),
                 VoiceTab(self.project, self)]
         self.tabs = []
@@ -262,11 +265,9 @@ class Editor(ShowBase):
         self.notebook.pack(expand=1, fill=tk.BOTH)
 
         if self.saved_geometry and first_open:
-            x = self.saved_geometry['x']
-            y = self.saved_geometry['y']
             width = self.saved_geometry['width']
             height = self.saved_geometry['height']
-            self.tkRoot.geometry(f'{width}x{height}+{x}+{y}')
+            self.tkRoot.geometry(f'{width}x{height}')
 
         self.set_active_tab()
 
@@ -365,6 +366,7 @@ class Editor(ShowBase):
             self.saved_geometry = {'width': width, 'height': height, 'x': x, 'y': y}
             self.save_settings()
 
+        Manifest.revert_all_unsaved_changes()
         self.tkRoot.destroy()
 
 
