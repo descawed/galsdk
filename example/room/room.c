@@ -118,7 +118,7 @@ ActorLayout actors = {
 };
 
 Background background = {
-    .index = /* TODO: fill in with background index */,
+    .index = 235,
     .numMasks = 0,
     .masks = NULL,
 };
