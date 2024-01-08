@@ -20,8 +20,7 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
     current_image: Tim | Image | None
 
     def __init__(self, name: str, project: Project, selectmode: Literal['extended', 'browse', 'none'] = 'browse',
-                 show: Literal['tree', 'headings', 'tree headings', ''] = 'tree', supports_import: bool = False,
-                 supports_insert: bool = False):
+                 show: Literal['tree', 'headings', 'tree headings', ''] = 'tree'):
         super().__init__(name, project)
 
         self.context_ids = set()
@@ -37,14 +36,6 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
         self.image_view = ImageView(self)
 
         self.context_menu = tk.Menu(self, tearoff=False)
-        if supports_import:
-            self.context_menu.add_command(label='Import', command=self.on_import)
-        self.context_menu.add_command(label='Export', command=self.on_export)
-        if supports_insert:
-            self.context_menu.add_separator()
-            self.context_menu.add_command(label='Insert before', command=self.on_insert_before)
-            self.context_menu.add_command(label='Insert after', command=self.on_insert_after)
-            self.context_menu.add_command(label='Delete')
 
         self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NSEW)
         scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
@@ -56,6 +47,10 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
         self.tree.bind('<<TreeviewOpen>>', self.on_node_open)
         self.tree.bind('<Button-3>', self.handle_right_click)
 
+    def configure_context_menu(self):
+        self.context_menu.delete(0, tk.END)
+        self.context_menu.add_command(label='Export', command=self.on_export)
+
     def on_selection_change(self, _: tk.Event):
         self.image_view.image = self.get_image()
         self.context_menu.unpost()
@@ -64,37 +59,11 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
         iid = self.tree.identify_row(event.y)
         if iid in self.context_ids and iid != self.context_iid:
             self.context_iid = iid
+            self.configure_context_menu()
             self.context_menu.post(event.x_root, event.y_root)
         else:
             self.context_iid = None
             self.context_menu.unpost()
-
-    def get_context_index(self) -> tuple[str, int]:
-        parent_iid = self.tree.parent(self.context_iid)
-        index = self.tree.index(self.context_iid)
-        return parent_iid, index
-
-    def on_insert(self, parent_iid: str, index: int):
-        if not (image := self.get_image_from_iid(self.context_iid)):
-            return
-
-        extensions = ['*.png', '*.jpg', '*.bmp', '*.tga', '*.webp']
-        if isinstance(image, Tim):
-            extensions.append('*.tim')
-        if filename := tkfile.askopenfilename(filetypes=[('Images', ' '.join(extensions)), ('All Files', '*.*')]):
-            self.do_insert(Path(filename), parent_iid, index)
-            self.image_view.image = self.get_image()
-
-    def on_insert_before(self, *_):
-        parent_iid, index = self.get_context_index()
-        self.on_insert(parent_iid, index)
-
-    def on_insert_after(self, *_):
-        parent_iid, index = self.get_context_index()
-        self.on_insert(parent_iid, index + 1)
-
-    def on_delete(self, *_):
-        self.do_delete(self.context_iid)
 
     def on_node_open(self, event: tk.Event):
         """Event handler when a tree node is opened; by default does nothing"""
@@ -113,26 +82,6 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
                 tim.export(path, path.suffix)
             else:
                 image.save(path)
-
-    def on_import(self, *_):
-        if not (image := self.get_image_from_iid(self.context_iid)):
-            return
-
-        extensions = ['*.png', '*.jpg', '*.bmp', '*.tga', '*.webp']
-        if isinstance(image, Tim):
-            extensions.append('*.tim')
-        if filename := tkfile.askopenfilename(filetypes=[('Images', ' '.join(extensions)), ('All Files', '*.*')]):
-            self.do_import(Path(filename), self.context_iid)
-            self.image_view.image = self.get_image()
-
-    def do_import(self, path: Path, iid: str):
-        pass  # default does nothing for those that don't support it
-
-    def do_insert(self, path: Path, parent_iid: str, index: int):
-        pass  # default does nothing for those that don't support it
-
-    def do_delete(self, iid: str):
-        pass  # default does nothing for those that don't support it
 
     def get_image(self) -> Tim | Image | None:
         """Get the currently selected TIM image"""

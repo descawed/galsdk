@@ -16,12 +16,13 @@ class TimImportDialog(tk.Toplevel):
 
         self.title('TIM Import')
         self.input_image = image
+        self.image_view = None
         quantization_methods = self.quantization_methods
         default_method = 'Median cut' if 'Median cut' in quantization_methods else 'Fast octree'
 
         validator = (self.register(validate_int), '%P')
 
-        self.bpp_var = tk.StringVar(self, '24')
+        self.bpp_var = tk.StringVar(self, '8')
         self.clut_x_var = tk.StringVar(self, '0')
         self.clut_y_var = tk.StringVar(self, '0')
         self.image_x_var = tk.StringVar(self, '0')
@@ -33,55 +34,67 @@ class TimImportDialog(tk.Toplevel):
         self.bpp_var.trace_add('write', self.update_image)
         self.quant_var.trace_add('write', self.update_image)
         self.dither_var.trace_add('write', self.update_image)
+        self.clut_x_var.trace_add('write', self.update_labels)
+        self.clut_y_var.trace_add('write', self.update_labels)
+        self.image_x_var.trace_add('write', self.update_labels)
+        self.image_y_var.trace_add('write', self.update_labels)
 
         self.output_tim = self.to_tim()
 
-        bpp_label = ttk.Label(self, text='BPP:', anchor=tk.W)
-        bpp_select = ttk.Combobox(self, textvariable=self.bpp_var, values=['4', '8', '16', '24'])
+        option_frame = ttk.Frame(self)
+        bpp_label = ttk.Label(option_frame, text='BPP:', anchor=tk.W)
+        bpp_select = ttk.Combobox(option_frame, textvariable=self.bpp_var, values=['4', '8', '16', '24'],
+                                  state='readonly')
 
-        clut_x_label = ttk.Label(self, text='CLUT X:', anchor=tk.W)
-        clut_x_entry = ttk.Entry(self, textvariable=self.clut_x_var, validate='all', validatecommand=validator)
+        clut_x_label = ttk.Label(option_frame, text='CLUT X:', anchor=tk.W)
+        clut_x_entry = ttk.Entry(option_frame, textvariable=self.clut_x_var, validate='all', validatecommand=validator)
 
-        clut_y_label = ttk.Label(self, text='CLUT Y:', anchor=tk.W)
-        clut_y_entry = ttk.Entry(self, textvariable=self.clut_y_var, validate='all', validatecommand=validator)
+        clut_y_label = ttk.Label(option_frame, text='CLUT Y:', anchor=tk.W)
+        clut_y_entry = ttk.Entry(option_frame, textvariable=self.clut_y_var, validate='all', validatecommand=validator)
 
-        image_x_label = ttk.Label(self, text='Image X:', anchor=tk.W)
-        image_x_entry = ttk.Entry(self, textvariable=self.image_x_var, validate='all', validatecommand=validator)
+        image_x_label = ttk.Label(option_frame, text='Image X:', anchor=tk.W)
+        image_x_entry = ttk.Entry(option_frame, textvariable=self.image_x_var, validate='all',
+                                  validatecommand=validator)
 
-        image_y_label = ttk.Label(self, text='Image Y:', anchor=tk.W)
-        image_y_entry = ttk.Entry(self, textvariable=self.image_y_var, validate='all', validatecommand=validator)
+        image_y_label = ttk.Label(option_frame, text='Image Y:', anchor=tk.W)
+        image_y_entry = ttk.Entry(option_frame, textvariable=self.image_y_var, validate='all',
+                                  validatecommand=validator)
 
-        quant_label = ttk.Label(self, text='Quantization:', anchor=tk.W)
-        self.quant_select = ttk.Combobox(self, textvariable=self.quant_var, values=list(quantization_methods))
+        quant_label = ttk.Label(option_frame, text='Quantization:', anchor=tk.W)
+        self.quant_select = ttk.Combobox(option_frame, textvariable=self.quant_var, values=list(quantization_methods),
+                                         state='readonly')
 
-        dither_checkbox = ttk.Checkbutton(self, text='Dithering', variable=self.dither_var)
+        self.dither_checkbox = ttk.Checkbutton(option_frame, text='Dithering', variable=self.dither_var)
 
-        self.image_view = ImageView(self, self.output_tim.to_image())
+        bpp_label.grid(row=0, column=0, pady=5, padx=5)
+        bpp_select.grid(row=0, column=1, pady=5, padx=5)
+        clut_x_label.grid(row=1, column=0, pady=5, padx=5)
+        clut_x_entry.grid(row=1, column=1, pady=5, padx=5)
+        clut_y_label.grid(row=2, column=0, pady=5, padx=5)
+        clut_y_entry.grid(row=2, column=1, pady=5, padx=5)
+        image_x_label.grid(row=3, column=0, pady=5, padx=5)
+        image_x_entry.grid(row=3, column=1, pady=5, padx=5)
+        image_y_label.grid(row=4, column=0, pady=5, padx=5)
+        image_y_entry.grid(row=4, column=1, pady=5, padx=5)
+        quant_label.grid(row=5, column=0, pady=5, padx=5)
+        self.quant_select.grid(row=5, column=1, pady=5, padx=5)
+        self.dither_checkbox.grid(row=6, column=0, columnspan=2, sticky=tk.N, padx=5, pady=5)
+
+        self.image_view = ImageView(self, self.output_tim)
         # FIXME: hack
         self.image_view.transparency_var.trace_add('write', self.update_quantization)
 
         ok_button = ttk.Button(self, text='OK', command=self.on_ok)
         cancel_button = ttk.Button(self, text='Cancel', command=self.on_cancel)
+        self.protocol('WM_DELETE_WINDOW', self.on_cancel)
 
-        bpp_label.grid(row=0, column=0)
-        bpp_select.grid(row=0, column=1)
-        clut_x_label.grid(row=1, column=0)
-        clut_x_entry.grid(row=1, column=1)
-        clut_y_label.grid(row=2, column=0)
-        clut_y_entry.grid(row=2, column=1)
-        image_x_label.grid(row=3, column=0)
-        image_x_entry.grid(row=3, column=1)
-        image_y_label.grid(row=4, column=0)
-        image_y_entry.grid(row=4, column=1)
-        quant_label.grid(row=5, column=0)
-        self.quant_select.grid(row=5, column=1)
-        dither_checkbox.grid(row=6, column=0, columnspan=2)
-        ok_button.grid(row=7, column=0, sticky=tk.SW)
-        cancel_button.grid(row=7, column=2, sticky=tk.SE)
-        self.image_view.grid(row=0, column=2, rowspan=7)
+        option_frame.grid(row=0, column=0, sticky=tk.EW)
+        self.image_view.grid(row=0, column=1, sticky=tk.NSEW, padx=5, pady=5)
+        ok_button.grid(row=1, column=0, sticky=tk.SW, padx=5, pady=5)
+        cancel_button.grid(row=1, column=1, sticky=tk.SE, padx=5, pady=5)
 
-        self.grid_columnconfigure(2, weight=1)
-        self.grid_rowconfigure(7, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
         self.wait_visibility()
         self.grab_set()
@@ -90,13 +103,19 @@ class TimImportDialog(tk.Toplevel):
     @property
     def quantization_methods(self) -> dict[str, Image.Quantize]:
         methods = {}
-        if self.input_image.mode != 'RGBA' or not self.image_view.with_transparency:
+        if self.input_image.mode != 'RGBA' or not self.with_transparency:
             methods['Median cut'] = Image.Quantize.MEDIANCUT
             methods['Maximum coverage'] = Image.Quantize.MAXCOVERAGE
         methods['Fast octree'] = Image.Quantize.FASTOCTREE
         if PIL.features.check_feature('libimagequant'):
             methods['libimagequant'] = Image.Quantize.LIBIMAGEQUANT
         return methods
+
+    @property
+    def with_transparency(self) -> bool:
+        if self.image_view is not None:
+            return self.image_view.with_transparency
+        return self.input_image.has_transparency_data
 
     def on_ok(self, *_):
         self.output_tim = self.to_tim()
@@ -127,7 +146,7 @@ class TimImportDialog(tk.Toplevel):
         dither = Image.Dither.FLOYDSTEINBERG if self.dither_var.get() else Image.Dither.NONE
 
         image = self.input_image
-        if image.mode == 'RGBA' and not self.image_view.with_transparency:
+        if image.mode == 'RGBA' and not self.with_transparency:
             image = image.convert('RGB')
         tim = Tim.from_image(image, bpp, quantization_method, dither)
         tim.clut_x = clut_x
@@ -136,5 +155,18 @@ class TimImportDialog(tk.Toplevel):
         tim.image_y = image_y
         return tim
 
+    def update_labels(self, *_):
+        self.output_tim.clut_x = self.clut_x_var.get()
+        self.output_tim.clut_y = self.clut_y_var.get()
+        self.output_tim.image_x = self.image_x_var.get()
+        self.output_tim.image_y = self.image_y_var.get()
+        self.image_view.update_labels()
+
     def update_image(self, *_):
+        if self.bpp_var.get() in ['4', '8']:
+            self.quant_select.configure(state='readonly')
+            self.dither_checkbox.configure(state=tk.NORMAL)
+        else:
+            self.quant_select.configure(state=tk.DISABLED)
+            self.dither_checkbox.configure(state=tk.DISABLED)
         self.image_view.image = self.output_tim = self.to_tim()

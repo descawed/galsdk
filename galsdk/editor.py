@@ -12,6 +12,7 @@ from panda3d.core import getModelPath
 
 from galsdk.project import Project
 from galsdk.game import GameVersion
+from galsdk.manifest import Manifest
 from galsdk.ui import (ActorTab, AnimationTab, ArtTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab,
                        StringTab, Tab, VoiceTab)
 from galsdk.ui.export import ExportDialog
@@ -191,6 +192,7 @@ class Editor(ShowBase):
         if not project_dir:
             return
 
+        Manifest.revert_all_unsaved_changes()
         try:
             project = Project.open(project_dir)
         except Exception as e:
@@ -225,6 +227,7 @@ class Editor(ShowBase):
     def create_project(self):
         image_path = self.image_path_var.get()
         project_path = self.project_path_var.get()
+        Manifest.revert_all_unsaved_changes()
         try:
             project = Project.create_from_cd(image_path, project_path)
         except Exception as e:
@@ -365,6 +368,7 @@ class Editor(ShowBase):
             self.saved_geometry = {'width': width, 'height': height, 'x': x, 'y': y}
             self.save_settings()
 
+        Manifest.revert_all_unsaved_changes()
         self.tkRoot.destroy()
 
 
