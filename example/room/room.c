@@ -102,7 +102,7 @@ RoomLayout layout = {
 };
 
 ActorLayout actors = {
-    .name = {'S', 'D', 'K', 'E', 'X', 0},
+    .name = {'A', 'S', 'D', 'K', 'X', 0},
     .actors = {
         {
             .id = 0,

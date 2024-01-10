@@ -17,7 +17,8 @@ from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
 from galsdk.game import (Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_ACTOR_INSTANCES, NUM_KEY_ITEMS, NUM_MED_ITEMS,
-                         NUM_MAPS, NUM_MOVIES, MODULE_ENTRY_SIZE, GameVersion, VERSIONS, ADDRESSES)
+                         NUM_MAPS, NUM_MOVIES, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS,
+                         ADDRESSES)
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
 from galsdk.model import ACTORS, ActorModel, ItemModel
@@ -45,6 +46,26 @@ class Item:
 class ActorGraphics:
     model_index: int
     anim_index: int
+
+
+@dataclass
+class MapRoom:
+    room_index: int
+    module_index: int
+    entry_point: int
+
+    def to_bytes(self) -> bytes:
+        return self.module_index.to_bytes(4, 'little') + self.entry_point.to_bytes(4, 'little')
+
+
+@dataclass
+class Map:
+    index: int
+    name: str
+    rooms: list[MapRoom]
+
+    def to_bytes(self) -> bytes:
+        return b''.join(room.to_bytes() for room in self.rooms)
 
 
 class Project:
@@ -529,13 +550,11 @@ class Project:
 
         xa_dbs = []
         if self.version.region == Region.NTSC_J:
-            addresses = ADDRESSES[self.version.id]
-
             exe_path = self.project_dir / 'boot' / self.version.exe_name
             with exe_path.open('rb') as f:
                 exe = Exe.read(f)
 
-            region_sets = XaRegion.get_jp_xa_regions(addresses, self.version.disc, exe)
+            region_sets = XaRegion.get_jp_xa_regions(self.addresses, self.version.disc, exe)
 
             for mf in voice_manifest:
                 index = int(mf.name[-2:])
@@ -630,21 +649,45 @@ class Project:
 
     def get_stage_rooms(self, stage: Stage) -> Iterable[FromManifest[RoomModule]]:
         manifest = Manifest.load_from(self.project_dir / 'modules')
-        for i, manifest_file in enumerate(manifest):
-            if manifest_file.name[0] == stage:
-                yield manifest.load_file(i, RoomModule.load_with_metadata)
+        indexes_seen = set()
+        maps = self.get_maps()
+        for map_index in STAGE_MAPS[stage]:
+            for room in maps[map_index].rooms:
+                if room.module_index in indexes_seen:
+                    continue
+                yield manifest.load_file(room.module_index, RoomModule.load_with_metadata)
+                indexes_seen.add(room.module_index)
 
-    def get_room_indexes_by_map(self) -> list[list[int]]:
-        addresses = ADDRESSES[self.version.id]
+    def get_modules(self) -> Manifest:
+        return Manifest.load_from(self.project_dir / 'modules')
+
+    @functools.cache
+    def get_maps(self) -> list[Map]:
         exe_path = self.project_dir / 'boot' / self.version.exe_name
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
 
-        maps = self._get_maps(addresses['MapModules'], exe)
-        return [[entry['index'] for entry in map_] for map_ in maps]
+        maps = self._get_maps(self.addresses['MapModules'], exe)
+        out = []
+        for i, map_ in enumerate(maps):
+            rooms = [MapRoom(j, room['index'], room['entry_point']) for j, room in enumerate(map_)]
+            out.append(Map(i, MAP_NAMES[i], rooms))
+        return out
+
+    def save_maps(self):
+        # we expect get_maps to always return the same list of maps that's shared throughout the application
+        maps = self.get_maps()
+        exe_path = self.project_dir / 'boot' / self.version.exe_name
+        with exe_path.open('rb') as f:
+            exe = Exe.read(f)
+
+        map_bytes = b''.join(map_.to_bytes() for map_ in maps)
+        address = self.addresses['MapModules']
+        exe[address:address + len(map_bytes)] = map_bytes
+        with exe_path.open('wb') as f:
+            exe.write(f)
 
     def get_movie_list(self) -> list[str]:
-        addresses = ADDRESSES[self.version.id]
         exe_path = self.project_dir / 'boot' / self.version.exe_name
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
@@ -656,7 +699,7 @@ class Project:
         else:
             layout = '<28s4I'
         movie_size = struct.calcsize(layout)
-        address = addresses['Movies']
+        address = self.addresses['Movies']
         movies = []
         for _ in range(num_movies):
             unpacked = struct.unpack(layout, exe[address:address+movie_size])
