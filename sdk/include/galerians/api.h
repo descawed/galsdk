@@ -137,7 +137,7 @@ void PickUpFile(int32_t unknown, int32_t itemId);
  *
  * @param layout Room layout to use.
  */
-inline void SetupRoom(RoomLayout *layout) {
+static inline void SetupRoom(RoomLayout *layout) {
     ColliderArray colliders;
 
     SetRoomLayout(&Game, &colliders, layout);
@@ -150,7 +150,7 @@ inline void SetupRoom(RoomLayout *layout) {
  * @param messageId ID of the message to show. In the Japanese version, this is the byte offset in the message file. In
  *                  other versions, this is the index in the message file.
  */
-inline void ShowMessage(int32_t messageId) {
+static inline void ShowMessage(int32_t messageId) {
     Game.messageId = messageId;
     Game.flags040 |= STATE_SHOW_MESSAGE;
 }

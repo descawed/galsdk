@@ -1,4 +1,7 @@
+#include <stddef.h>
 #include <galerians.h>
+
+uint32_t module_id __attribute__ ((section ("MODULE_ID"))) = 0x8b;
 
 RoomLayout layout = {
     .numColliders = 4,

@@ -4,14 +4,16 @@
 extern "C" {
 #endif
 
-#include <assert.h>
 #include <stdint.h>
 
 // we need some types from the PSX SDK. I'm going to use PSn00bSDK, but we'll have an option for PSYQ as well.
 #ifdef GALERIANS_USE_PSYQ
 #include <LIBGTE.H>
+#define VECTOR_PAD(s)
 #else
 #include <psxgte.h>
+// PSn00bSDK doesn't include the padding field at the end of VECTOR
+#define VECTOR_PAD(s) int32_t vpad_##s
 #endif
 
 // we want to make sure all these types use the exact layout reverse-engineered from the game. #pragma pack is a
@@ -39,7 +41,7 @@ typedef struct _Collider {
     void *shape;        // 04
     int32_t unknown08;  // 08
 } Collider;
-static_assert(sizeof(Collider) == 0x0C);
+_Static_assert(sizeof(Collider) == 0x0C, "sizeof(Collider) not correct");
 
 /**
  * A rectangular collision shape.
@@ -51,7 +53,7 @@ typedef struct _RectangleCollider {
     int32_t zSize;      // 0C
     int32_t unknown10;  // 10
 } RectangleCollider;
-static_assert(sizeof(RectangleCollider) == 0x14);
+_Static_assert(sizeof(RectangleCollider) == 0x14, "sizeof(RectangleCollider) not correct");
 
 /**
  * A triangular collision shape.
@@ -64,7 +66,7 @@ typedef struct _TriangleCollider {
     int32_t x3;     // 10
     int32_t z3;     // 14
 } TriangleCollider;
-static_assert(sizeof(TriangleCollider) == 0x18);
+_Static_assert(sizeof(TriangleCollider) == 0x18, "sizeof(TriangleCollider) not correct");
 
 /**
  * A circular collision shape.
@@ -74,7 +76,7 @@ typedef struct _CircleCollider {
     int32_t z;      // 04
     int32_t radius; // 08
 } CircleCollider;
-static_assert(sizeof(CircleCollider) == 0x0C);
+_Static_assert(sizeof(CircleCollider) == 0x0C, "sizeof(CircleCollider) not correct");
 
 /**
  * A camera view in a room.
@@ -91,7 +93,7 @@ typedef struct _Camera {
     int16_t targetZ;        // 10
     int16_t unknown12;      // 12
 } Camera;
-static_assert(sizeof(Camera) == 0x14);
+_Static_assert(sizeof(Camera) == 0x14, "sizeof(Camera) not correct");
 
 /**
  * A region that triggers a cut to a specific camera angle when the player enters it.
@@ -108,7 +110,7 @@ typedef struct _CameraCut {
     int32_t x4;         // 1C
     int32_t z4;         // 20
 } CameraCut;
-static_assert(sizeof(CameraCut) == 0x24);
+_Static_assert(sizeof(CameraCut) == 0x24, "sizeof(CameraCut) not correct");
 
 /**
  * An area that the player can interact with.
@@ -120,7 +122,7 @@ typedef struct _Interactable {
     int16_t xSize;  // 06
     int16_t zSize;  // 08
 } Interactable;
-static_assert(sizeof(Interactable) == 0x0A);
+_Static_assert(sizeof(Interactable) == 0x0A, "sizeof(Interactable) not correct");
 
 /**
  * Types of events that can cause a trigger to fire.
@@ -188,7 +190,7 @@ typedef struct _Trigger {
     void (*triggerCallback)(GameState *);   // 08
     uint32_t unknown0C;                     // 0C
 } Trigger;
-static_assert(sizeof(Trigger) == 0x10);
+_Static_assert(sizeof(Trigger) == 0x10, "sizeof(Trigger) not correct");
 
 /**
  * Layout of collision objects and cameras in a room.
@@ -206,7 +208,7 @@ typedef struct _RoomLayout {
     uint32_t numInteractables;              // 2970
     Interactable interactables[100];        // 2974
 } RoomLayout;
-static_assert(sizeof(RoomLayout) == 0x2D58);
+_Static_assert(sizeof(RoomLayout) == 0x2D5C, "sizeof(RoomLayout) not correct");
 
 /**
  * An image overlaid on the background at a certain depth.
@@ -219,7 +221,7 @@ typedef struct _BackgroundMask {
     int16_t z;          // 0C
     int16_t unknown0E;  // 0E
 } BackgroundMask;
-static_assert(sizeof(BackgroundMask) == 0x10);
+_Static_assert(sizeof(BackgroundMask) == 0x10, "sizeof(BackgroundMask) not correct");
 
 /**
  * The background image for a camera angle with any associated masks.
@@ -229,7 +231,7 @@ typedef struct _Background {
     uint16_t numMasks;      // 02
     BackgroundMask *masks;  // 04
 } Background;
-static_assert(sizeof(Background) == 8);
+_Static_assert(sizeof(Background) == 8, "sizeof(Background) not correct");
 
 /**
  * One segment of a 3D model.
@@ -244,6 +246,7 @@ typedef struct _ModelSegment {
     uint8_t unknown08[128];     // 08
     MATRIX rotMatrix;           // 88
     VECTOR fullTfmModelOffsets; // A8
+    VECTOR_PAD(fullTfmModelOffsets);
     SVECTOR transVector;        // B8
     SVECTOR rotEndVector;       // C0
     int32_t offsetX;            // C8
@@ -253,7 +256,7 @@ typedef struct _ModelSegment {
     uint8_t unknownDC[16];      // DC
     SVECTOR unknownEC;          // EC
 } ModelSegment;
-static_assert(sizeof(ModelSegment) == 0xF4);
+_Static_assert(sizeof(ModelSegment) == 0xF4, "sizeof(ModelSegment) not correct");
 
 /**
  * Essentially an SVECTOR without the padding at the end.
@@ -263,7 +266,7 @@ typedef struct _AnimationVector {
     int16_t y;  // 02
     int16_t z;  // 04
 } AnimationVector;
-static_assert(sizeof(AnimationVector) == 6);
+_Static_assert(sizeof(AnimationVector) == 6, "sizeof(AnimationVector) not correct");
 
 /**
  * Flags controlling animation behavior for a single animation frame.
@@ -308,7 +311,7 @@ typedef struct _AnimationFrame {
     AnimationVector rotationVectors[16];    // 00
     uint32_t flags;                         // 60
 } AnimationFrame;
-static_assert(sizeof(AnimationFrame) == 0x64);
+_Static_assert(sizeof(AnimationFrame) == 0x64, "sizeof(AnimationFrame) not correct");
 
 /**
  * The different types of actors (characters/enemies/NPCs) in the game.
@@ -364,7 +367,7 @@ typedef struct _ActorInitialHealth {
     int16_t health;     // 00
     int16_t unknown02;  // 02
 } ActorInitialHealth;
-static_assert(sizeof(ActorInitialHealth) == 4);
+_Static_assert(sizeof(ActorInitialHealth) == 4, "sizeof(ActorInitialHealth) not correct");
 
 /**
  * A placed instance of an actor in a room.
@@ -379,7 +382,7 @@ typedef struct _ActorInstance {
     uint16_t angle;     // 0C
     uint16_t unknown0E; // 0E
 } ActorInstance;
-static_assert(sizeof(ActorInstance) == 0x10);
+_Static_assert(sizeof(ActorInstance) == 0x10, "sizeof(ActorInstance) not correct");
 
 /**
  * The layout of actors in a room.
@@ -389,7 +392,7 @@ typedef struct _ActorLayout {
     uint8_t unknown06[30];      // 06
     ActorInstance actors[4];    // 24
 } ActorLayout;
-static_assert(sizeof(ActorLayout) == 0x64);
+_Static_assert(sizeof(ActorLayout) == 0x64, "sizeof(ActorLayout) not correct");
 
 /**
  * Game stages.
@@ -467,6 +470,7 @@ struct _GameState {
     int16_t numTriggers;                        // 024
     int16_t unknown026;                         // 026
     int16_t activeTriggerId;                    // 028
+    uint16_t unknown02A;                        // 02A
     ActorLayout *actorLayout;                   // 02C
     Trigger *triggers;                          // 030
     Interactable *interactables;                // 034
@@ -505,11 +509,11 @@ struct _GameState {
     uint32_t unknownAE0;                        // AE0 / AD8
     uint32_t unknownAE4;                        // AE4 / ADC
     uint32_t flagsAE8;                          // AE8 / AE0
-}
+};
 #ifdef GALERIANS_REGION_JAPAN
-static_assert(sizeof(GameState) == 0xAE4);
+_Static_assert(sizeof(GameState) == 0xAE4, "sizeof(GameState) not correct");
 #else
-static_assert(sizeof(GameState) == 0xAEC);
+_Static_assert(sizeof(GameState) == 0xAEC, "sizeof(GameState) not correct");
 #endif
 
 /**
@@ -520,7 +524,7 @@ typedef struct _ActorRelativePosition {
     int16_t angle;
     int32_t distanceSquared;
 } ActorRelativePosition;
-static_assert(sizeof(ActorRelativePosition) == 8);
+_Static_assert(sizeof(ActorRelativePosition) == 8, "sizeof(ActorRelativePosition) not correct");
 
 /**
  * Description of a melee attack.
@@ -534,7 +538,7 @@ typedef struct _MeleeAttack {
     uint8_t pad09;      // 09
     uint16_t unknown0A; // 0A
 } MeleeAttack;
-static_assert(sizeof(MeleeAttack) == 0x0C);
+_Static_assert(sizeof(MeleeAttack) == 0x0C, "sizeof(MeleeAttack) not correct");
 
 /**
  * Description of a ranged attack.
@@ -544,7 +548,7 @@ typedef struct _RangedAttack {
     uint8_t pad01;  // 01
     int16_t value;  // 02
 } RangedAttack;
-static_assert(sizeof(RangedAttack) == 4);
+_Static_assert(sizeof(RangedAttack) == 4, "sizeof(RangedAttack) not correct");
 
 /**
  * Actor state/behavior flags.
@@ -668,8 +672,8 @@ struct _Actor {
     int32_t unknown1878;                        // 1878
     int32_t (*aiRoutine)(GameState*, Actor*);   // 187C
     uint8_t unknown1880[64];                    // 1880
-}
-static_assert(sizeof(Actor) == 0x18C0);
+};
+_Static_assert(sizeof(Actor) == 0x18C0, "sizeof(Actor) not correct");
 
 /**
  * Description of a database (CDB) file.
@@ -688,7 +692,7 @@ typedef struct _Database {
   uint16_t entryToLoad;             // 70
   uint16_t lastSectorSize;          // 72
 } Database;
-static_assert(sizeof(Database) == 0x74);
+_Static_assert(sizeof(Database) == 0x74, "sizeof(Database) not correct");
 
 /**
  * Array of colliders used in the current room.
@@ -697,7 +701,7 @@ typedef struct _ColliderArray {
     uint32_t numColliders;  // 00
     Collider *colliders;    // 04
 } ColliderArray;
-static_assert(sizeof(ColliderArray) == 8);
+_Static_assert(sizeof(ColliderArray) == 8, "sizeof(ColliderArray) not correct");
 
 /**
  * Flags related to picking up an item.
@@ -719,7 +723,7 @@ typedef struct _PickupAnimation {
     uint16_t angle;     // 0C
     int16_t cameraId;   // 0E
 } PickupAnimation;
-static_assert(sizeof(PickupAnimation) == 0x10);
+_Static_assert(sizeof(PickupAnimation) == 0x10, "sizeof(PickupAnimation) not correct");
 
 #pragma pack(pop)
 

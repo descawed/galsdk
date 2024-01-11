@@ -123,9 +123,17 @@ class MapEditor(tk.Toplevel):
             return
 
         path = Path(filename)
+        size = path.stat().st_size
+        if size > RoomModule.MAX_MODULE_SIZE:
+            confirm = tkmsg.askyesno('Module too large',
+                                     'This module is larger than the size reserved in memory for room modules.'
+                                     ' The game will likely crash or experience instability when loading this module.'
+                                     ' Are you sure you want to continue?', icon=tkmsg.WARNING, parent=self)
+            if not confirm:
+                return
 
         start_address = self.project.addresses['ModuleLoadAddresses'][0]
-        end_address = start_address + path.stat().st_size
+        end_address = start_address + size
 
         entry_point = None
         while entry_point is None or entry_point < start_address or entry_point >= end_address:

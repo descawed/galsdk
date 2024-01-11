@@ -836,6 +836,7 @@ class RoomTab(Tab):
             for room in self.maps[i].rooms:
                 index_stages[room.module_index] = stage
             if self.maps[i] != editor.maps[i]:
+                # FIXME: if an entry point changed, that should trigger a re-parse of the affected module
                 self.maps[i] = editor.maps[i]
                 maps_changed = True
         if maps_changed:
