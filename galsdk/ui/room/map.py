@@ -14,10 +14,11 @@ from galsdk.ui.util import validate_int
 class MapEditor(tk.Toplevel):
     modules_added: dict[int, tuple[Path, RoomModule]]
 
-    def __init__(self, maps: list[Map], module_manifest: Manifest, project: Project, parent: tk.BaseWidget,
+    def __init__(self, maps: list[Map], module_manifest: Manifest, project: Project, parent: tk.Tk,
                  *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.title('Map Editor')
+        self.transient(parent)
         self.confirmed = False
 
         self.maps = maps
@@ -117,6 +118,27 @@ class MapEditor(tk.Toplevel):
         self.confirmed = False
         self.destroy()
 
+    def ask_entry_point(self, start_address: int, end_address: int) -> int | None:
+        entry_point = None
+        while entry_point is None or entry_point < start_address or entry_point >= end_address:
+            address = tksimple.askstring('Entry Point', 'Address:', parent=self)
+            if address is None:
+                return None  # user cancelled
+
+            try:
+                entry_point = int(address, 16)
+            except ValueError:
+                tkmsg.showerror('Invalid address', f'{address} is not a valid hexadecimal number', parent=self)
+                continue
+
+            if entry_point < start_address or entry_point >= end_address:
+                tkmsg.showerror('Invalid address',
+                                f"{address} is not in the module's address space "
+                                f'({start_address:08X}-{end_address:08X})',
+                                parent=self)
+
+        return entry_point
+
     def browse_module(self, *_):
         filename = tkfile.askopenfilename(filetypes=[('All Files', '*.*')], parent=self)
         if not filename:
@@ -132,33 +154,28 @@ class MapEditor(tk.Toplevel):
             if not confirm:
                 return
 
-        start_address = self.project.addresses['ModuleLoadAddresses'][0]
-        end_address = start_address + size
-
-        entry_point = None
-        while entry_point is None or entry_point < start_address or entry_point >= end_address:
-            address = tksimple.askstring('Entry Point', 'Address:', parent=self)
-            if address is None:
-                return  # user cancelled
-
+        if path.with_suffix('.json').exists():
+            # this module already has metadata
             try:
-                entry_point = int(address, 16)
-            except ValueError:
-                tkmsg.showerror('Invalid address', f'{address} is not a valid hexadecimal number', parent=self)
-                continue
-
-            if entry_point < start_address or entry_point >= end_address:
-                tkmsg.showerror('Invalid address',
-                                f"{address} is not in the module's address space "
-                                f'({start_address:08X}-{end_address:08X})',
-                                parent=self)
-
-        with path.open('rb') as f:
-            try:
-                module = RoomModule.read(f, language=self.project.version.language, entry_point=entry_point)
+                module = RoomModule.load_with_metadata(path, self.project.version.language)
             except Exception as e:
                 tkmsg.showerror('Module load failed', str(e), parent=self)
                 return
+        else:
+            # this module does not have metadata. at a minimum, we need the entry point.
+            start_address = self.project.addresses['ModuleLoadAddresses'][0]
+            end_address = start_address + size
+
+            entry_point = self.ask_entry_point(start_address, end_address)
+            if entry_point is None:
+                return
+
+            with path.open('rb') as f:
+                try:
+                    module = RoomModule.read(f, language=self.project.version.language, entry_point=entry_point)
+                except Exception as e:
+                    tkmsg.showerror('Module load failed', str(e), parent=self)
+                    return
 
         # we won't actually insert into the manifest until the user presses OK
         new_index = len(self.module_manifest)
@@ -169,7 +186,7 @@ class MapEditor(tk.Toplevel):
         self.module_select.configure(values=self.module_options)
         name = self.module_manifest.get_unique_name(module.name)
         self.module_var.set(f'{new_index}: {name}')
-        self.entry_var.set(f'{entry_point:08X}')
+        self.entry_var.set(f'{module.entry_point:08X}')
 
     @property
     def module_options(self) -> list[str]:

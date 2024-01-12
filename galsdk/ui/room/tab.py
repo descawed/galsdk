@@ -733,6 +733,7 @@ class RoomTab(Tab):
         self.actor_instance_health = self.project.get_actor_instance_health()
         self.module_manifest = self.project.get_modules()
         self.maps_changed = False
+        self.manifest_changed = False
         self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True, 'actors': True,
                            'entrances': True}
 
@@ -827,13 +828,13 @@ class RoomTab(Tab):
         # replace the maps with edited versions
         index_stages = {}
         maps_changed = False
-        for i in range(len(maps)):
+        for i in range(len(editor.maps)):
             for stage, map_indexes in STAGE_MAPS.items():
                 if i in map_indexes:
                     break
             else:
                 raise ValueError(f'Stage for map index {i} not found')
-            for room in self.maps[i].rooms:
+            for room in editor.maps[i].rooms:
                 index_stages[room.module_index] = stage
             if self.maps[i] != editor.maps[i]:
                 # FIXME: if an entry point changed, that should trigger a re-parse of the affected module
@@ -845,6 +846,7 @@ class RoomTab(Tab):
         for index in editor.modules_added:
             module = self.module_manifest.load_file(index, RoomModule.load_with_metadata)
             self.add_room_module(index_stages[index], module, True)
+            self.manifest_changed = True
         # regenerate room name map
         self.room_names_by_map = [
             [self.rooms_by_index[room.module_index].file.name for room in map_.rooms] for map_ in self.maps
@@ -1236,7 +1238,7 @@ class RoomTab(Tab):
 
     @property
     def has_unsaved_changes(self) -> bool:
-        if self.maps_changed:
+        if self.maps_changed or self.manifest_changed:
             return True
         self.update_room()
         return len(self.changed_room_ids) > 0
@@ -1259,6 +1261,9 @@ class RoomTab(Tab):
         if self.maps_changed:
             self.project.save_maps()
             self.maps_changed = False
+        if self.manifest_changed:
+            self.module_manifest.save()
+            self.manifest_changed = False
         self.changed_room_ids.clear()
         self.clear_change_markers()
 

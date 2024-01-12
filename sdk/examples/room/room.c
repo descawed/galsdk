@@ -52,13 +52,13 @@ RoomLayout layout = {
         {
             .orientation = 0,
             .verticalFov = 600,
-            .scale = 4096,
-            .x = 7246,
-            .y = 4554,
-            .z = 7246,
-            .targetX = 5284,
-            .targetY = 0,
-            .targetZ = 5202,
+            .scale = 10,
+            .x = 8197,
+            .y = 2968,
+            .z = 8258,
+            .targetX = 5368,
+            .targetY = 43,
+            .targetZ = 5470,
         },
     },
     .cuts = {
@@ -120,13 +120,45 @@ ActorLayout actors = {
     },
 };
 
+// the first "mask" is the background image itself, whose fields are all zeroes
+BackgroundMask masks[1];
+
 Background background = {
     .index = 235,
-    .numMasks = 0,
-    .masks = NULL,
+    .numMasks = 1,
+    .masks = masks,
+};
+
+static size_t fileItemIndex = 0;
+static int32_t fileItems[] = {
+    ITEM_MEDICAL_STAFF_NOTES,
+    ITEM_G_PROJECT_REPORT,
+    ITEM_PHOTO_OF_PARENTS,
+    ITEM_RIONS_TEST_DATA,
+    ITEM_DR_LEMS_NOTES,
+    ITEM_NEW_REPLICATIVE_COMPUTER_THEORY,
+    ITEM_DR_PASCALLES_DIARY,
+    ITEM_LETTER_FROM_ELSA,
+    ITEM_NEWSPAPER,
+    ITEM_LETTER_FROM_LILIA
 };
 
 void cubeTrigger(GameState *game) {
+    if (fileItemIndex >= 10) {
+        ShowMessage(172); // It's empty.$w
+    } else {
+        PickupAnimation pickupAnimation = {
+            .soundSet = NULL,
+            .soundId = 0,
+            .voiceIndex = 0,
+            .x = 900,
+            .z = 900,
+            .angle = 0,
+            .cameraId = 0
+        };
+        PickUpKeyItem(game, fileItems[fileItemIndex], 28 + fileItemIndex, ITEM_PICKUP_RESTORE_CAMERA, &pickupAnimation); // NoMessage
+        ++fileItemIndex;
+    }
 }
 
 void cylinderTrigger(GameState *game) {
@@ -160,4 +192,10 @@ void room(GameState *game) {
     game->backgrounds = &background;
     game->triggers = triggers;
     SetupActors(game->actorLayout);
+
+    game->flagsAE8 &= ~ROOM_STATE_ROOM_INITIALIZING;
+    do {
+        Yield();
+        // not sure exactly what flag 0x80 entails
+    } while ((game->flagsAE8 & (ROOM_STATE_ROOM_LOADING | 0x80)) == 0);
 }

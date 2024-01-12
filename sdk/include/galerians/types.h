@@ -449,6 +449,13 @@ typedef struct _MapRoom {
  */
 #define STATE_SHOW_MESSAGE  4
 
+#define ROOM_STATE_MAP_CHANGING         0x02
+#define ROOM_STATE_ROOM_CHANGING        0x04
+#define ROOM_STATE_STAGE_CHANGING       0x08
+#define ROOM_STATE_QUIT_GAME            0x10
+#define ROOM_STATE_ROOM_LOADING         0x20
+#define ROOM_STATE_ROOM_INITIALIZING    0x40
+
 /**
  * Current state of the game.
  */

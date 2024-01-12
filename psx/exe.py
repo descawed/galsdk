@@ -38,7 +38,11 @@ class Exe:
     def _get_address_slice(self, item: slice | int) -> tuple[int, int, int]:
         if isinstance(item, slice):
             start = item.start
+            if start is None:
+                start = self.load_address
             stop = item.stop
+            if stop is None:
+                stop = self.load_address + len(self.data)
             step = item.step
         elif isinstance(item, int):
             start = item

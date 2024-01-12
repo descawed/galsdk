@@ -728,15 +728,24 @@ class RoomModule(FileFormat):
         return entrance_set
 
     @classmethod
-    def parse_actor_layout(cls, data: bytes, address: int) -> ActorLayoutSet:
+    def parse_actor_layout(cls, data: bytes, address: int, known_good: bool = False) -> ActorLayoutSet:
         actor_layout_set = ActorLayoutSet(address)
 
         while True:
             layout_data = data[address:address + cls.ACTOR_LAYOUT_SIZE]
             raw_name = layout_data[:6].rstrip(b'\0')
-            if not cls.NAME_REGEX.match(raw_name):
+            # if we know it's good, don't be so strict with the naming, but we still do expect it to start with a stage
+            # letter
+            if (
+                    not raw_name
+                    or (not known_good and not cls.NAME_REGEX.match(raw_name))
+                    or (known_good and raw_name[0] not in b'ABCD')
+            ):
                 break
-            name = raw_name.decode()
+            try:
+                name = raw_name.decode()
+            except UnicodeDecodeError:
+                break
             unknown = layout_data[6:0x24]
             instances = []
             for i in range(cls.MAX_ACTORS):
@@ -1157,7 +1166,7 @@ class RoomModule(FileFormat):
             offset = al_address - load_address
             if any(offset in used_range for used_range in used_ranges):
                 continue  # we got this one already
-            layouts = cls.parse_actor_layout(data, offset)
+            layouts = cls.parse_actor_layout(data, offset, True)
             used_ranges.append(range(offset, offset + len(layouts.layouts) * cls.ACTOR_LAYOUT_SIZE))
             actor_layouts.append(layouts)
 

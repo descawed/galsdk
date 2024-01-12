@@ -651,11 +651,12 @@ class Project:
         manifest = Manifest.load_from(self.project_dir / 'modules')
         indexes_seen = set()
         maps = self.get_maps()
+        loader = functools.partial(RoomModule.load_with_metadata, language=self.version.language)
         for map_index in STAGE_MAPS[stage]:
             for room in maps[map_index].rooms:
                 if room.module_index in indexes_seen:
                     continue
-                yield manifest.load_file(room.module_index, RoomModule.load_with_metadata)
+                yield manifest.load_file(room.module_index, loader)
                 indexes_seen.add(room.module_index)
 
     def get_modules(self) -> Manifest:
@@ -681,9 +682,12 @@ class Project:
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
 
-        map_bytes = b''.join(map_.to_bytes() for map_ in maps)
-        address = self.addresses['MapModules']
-        exe[address:address + len(map_bytes)] = map_bytes
+        module_set_addr = self.addresses['MapModules']
+        module_set_addrs = struct.unpack(f'<{NUM_MAPS}I',
+                                         exe[module_set_addr:module_set_addr + 4 * NUM_MAPS])
+        for (map_, address) in zip(maps, module_set_addrs, strict=True):
+            map_bytes = map_.to_bytes()
+            exe[address:address + len(map_bytes)] = map_bytes
         with exe_path.open('wb') as f:
             exe.write(f)
 

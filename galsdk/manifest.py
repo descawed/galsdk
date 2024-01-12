@@ -232,9 +232,13 @@ class Manifest:
             self.original = self.path / 'original.bin'
             self.save()
 
-        # we use r+b because we want the original file to be overwritten in place, leaving any extra bytes at the end of
-        # the file or the ends of headers. that will minimize the diff with the original file.
-        with self.original.open('r+b') as f:
+        if self.original.exists():
+            # we use r+b because we want the original file to be overwritten in place, leaving any extra bytes at the
+            # end of the file or the ends of headers. that will minimize the diff with the original file.
+            f = self.original.open('r+b')
+        else:
+            f = self.original.open('wb')
+        with f:
             archive.write(f)
             # TODO: should we truncate here? might be necessary for stream formats
         return self.original.read_bytes()

@@ -1223,8 +1223,6 @@ MEMORY
 
 SECTIONS
 {
-    . = 0x801EDC28;
-
     MODULE_ID :
     {
         *(MODULE_ID)
@@ -1232,26 +1230,6 @@ SECTIONS
 
     .text :
     {
-        *(.text)
-    } > ROOM
-
-    .data :
-    {
-        *(.data)
-    } > ROOM
-
-    .rodata :
-    {
-        *(.rodata)
-    } > ROOM
-
-    .bss :
-    {
-        *(.bss)
-    } > ROOM
-
-    /DISCARD/ :
-    {
         *(*)
-    }
+    } > ROOM
 }

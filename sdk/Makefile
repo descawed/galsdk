@@ -1,7 +1,7 @@
 CC = mipsel-linux-gnu-gcc
-CFLAGS = -Iinclude -IPSn00bSDK/libpsn00b/include -march=mips1 -mfp32 -mno-abicalls -fno-pic -nostdlib -Wall -Wpedantic
+CFLAGS = -Iinclude -IPSn00bSDK/libpsn00b/include -march=mips1 -mfp32 -mno-abicalls -Wa,-mno-pdr -fno-pic -nostdlib -Wall -Wextra -Wpedantic
 LD = mipsel-linux-gnu-ld
-LDFLAGS = --oformat binary -T ldscripts/na.ld -nostdlib
+LDFLAGS = --oformat binary -T ldscripts/na.ld -s -static -nostdlib -z defs --unresolved-symbols=report-all
 
 all: examples/room/ASDKX.RMD
 
