@@ -337,6 +337,7 @@ class Project:
         if module_metadata is not None:
             shutil.copytree(module_metadata, module_dir, dirs_exist_ok=True)
 
+        metadata_paths = {}
         with module_manifest:
             for modules in maps:
                 for module_entry in modules:
@@ -358,11 +359,14 @@ class Project:
                         except KeyError:
                             module_manifest.rename(index, f'{module.name}_{index}', ext=module.suggested_extension)
 
-                        new_metadata_path = module_manifest[index].path.with_suffix('.json')
-                        with new_metadata_path.open('w') as f:
+                        with metadata_path.open('w') as f:
                             module.save_metadata(f)
-                        # remove the old metadata path
-                        metadata_path.unlink(True)
+                        metadata_paths[index] = metadata_path
+
+        # now that the manifest and renames have been saved, rename all the metadata files as well
+        for index, old_metadata_path in metadata_paths.items():
+            new_metadata_path = module_manifest[index].path.with_suffix('.json')
+            old_metadata_path.rename(new_metadata_path)
 
         x_scales = []
         option_menu = []
