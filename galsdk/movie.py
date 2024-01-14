@@ -22,6 +22,8 @@ class Movie(Media):
 
         :param path: Path to the STR video
         """
+        # FIXME: only on Windows, mp4 format causes the panda player to restart partway through the video. I looked into
+        #  this a while back and it seemed to only happen with formats that contain B and P frames.
         super().__init__(path, 'mp4')
 
     @property

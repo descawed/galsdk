@@ -147,6 +147,7 @@ class Viewport(ttk.Frame):
             props.setSize(width, height)
             if self.current_cursor is not None:
                 props.setCursorFilename(self.current_cursor.filename)
+            # FIXME: this segfaults on Mac
             self._window = self.base.open_window(props)
 
             self.camera = self.base.makeCamera(self._window)
