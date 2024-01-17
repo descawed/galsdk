@@ -1,10 +1,10 @@
 {
   "loadAddress": 2149500456,
-  "actorLayouts": [2149512892],
-  "roomLayout": 2149501280,
-  "backgrounds": [2149512992],
-  "triggers": 2149513040,
+  "actorLayouts": [2149513324],
+  "roomLayout": 2149501712,
+  "backgrounds": [2149513424],
+  "triggers": 2149513432,
   "entrances": [],
   "numEntrances": 0,
-  "entryPoint": 2149501004
+  "entryPoint": 2149501440
 }

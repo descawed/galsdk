@@ -714,7 +714,7 @@ _Static_assert(sizeof(ColliderArray) == 8, "sizeof(ColliderArray) not correct");
  * Flags related to picking up an item.
  */
 #define ITEM_PICKUP_RESTORE_CAMERA  0x01
-#define ITEM_PICKUP_ANIM_CROUCH     0x02
+#define ITEM_PICKUP_ANIM_STAND      0x02  // default animation is crouch
 #define ITEM_PICKUP_ANIM_STEP       0x04
 #define ITEM_PICKUP_NO_MODEL        0x80
 

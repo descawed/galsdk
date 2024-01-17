@@ -131,6 +131,13 @@ void AddItemToInventory(GameState *game, int32_t itemId);
  * @param itemId ID of the item to pick up.
  */
 void PickUpFile(int32_t unknown, int32_t itemId);
+/**
+ * Show a scan image (i.e. one of the images from ITEMTIM.CDB).
+ *
+ * @param game Pointer to the game state object.
+ * @param timIndex Index of the TIM in ITEMTIM.CDB.
+ */
+void ShowItemTim(GameState *game, int32_t timIndex);
 
 /**
  * Convenience function for setting room layout and collision.

@@ -101,8 +101,11 @@ class StringTab(Tab):
         self.notify_change()
 
         parent = self.tree.parent(str(self.context_index))
-        self.tree.insert(parent, db_index, str(ui_index), text=f'* {string_id}: ')
+        iid = str(ui_index)
+        self.tree.insert(parent, db_index, iid, text=f'* {string_id}: ')
         self.update_ids(parent, info.source_db.obj)
+        self.tree.selection_set(iid)
+        self.text_box.focus_set()
 
     def update_ids(self, parent_iid: str, db: StringDb):
         for (iid, (db_id, _)) in zip(self.tree.get_children(parent_iid), db.iter_ids(), strict=True):
@@ -206,6 +209,14 @@ class StringTab(Tab):
             self.text_box.insert('1.0', string.text)
             self.show()
 
+    def clear_change_markers(self, parent_iid: str = ''):
+        label = self.tree.item(parent_iid, 'text')
+        if label.startswith('* '):
+            self.tree.item(parent_iid, text=label[2:])
+
+        for child in self.tree.get_children(parent_iid):
+            self.clear_change_markers(child)
+
     @property
     def has_unsaved_changes(self) -> bool:
         return len(self.changed_dbs) > 0
@@ -215,3 +226,4 @@ class StringTab(Tab):
             db = self.dbs[db_name]
             db.save()
         self.changed_dbs.clear()
+        self.clear_change_markers()
