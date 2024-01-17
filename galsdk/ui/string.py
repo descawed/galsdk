@@ -40,6 +40,13 @@ class StringTab(Tab):
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
 
+        self.context_menu = tk.Menu(self, tearoff=False)
+        self.context_menu.add_command(label='Insert before', command=self.insert_before)
+        self.context_menu.add_command(label='Insert after', command=self.insert_after)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label='Delete', command=self.delete)
+        self.context_index = None
+
         for i, string_db in enumerate(project.get_unmapped_strings()):
             iid = f'unmapped_{i}'
             self.dbs[f'{string_db.manifest.name}/{string_db.file.name}'] = string_db
@@ -68,7 +75,7 @@ class StringTab(Tab):
                 self.tree.insert(stage, tk.END, text=preview, iid=str(string_id))
 
         self.image_label = ttk.Label(self, compound='image', anchor=tk.CENTER)
-        self.text_box = tk.Text(self)
+        self.text_box = tk.Text(self, state=tk.DISABLED)
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(2, weight=1)
@@ -79,8 +86,64 @@ class StringTab(Tab):
         self.text_box.grid(row=1, column=2, sticky=tk.S + tk.EW)
 
         self.tree.bind('<<TreeviewSelect>>', self.select_string)
+        self.tree.bind('<Button-3>', self.handle_right_click)
         self.text_box.bind('<KeyRelease>', self.string_changed)
         self.image_label.bind('<Configure>', self.show)
+
+    def insert(self, offset: int):
+        info = self.strings[self.context_index]
+        relative_index = info.source_db.obj.get_index_from_id(info.db_id)
+        ui_index = len(self.strings)
+        db_index = relative_index + offset
+        string_id = info.source_db.obj.insert(db_index, '')
+        self.strings.append(GameString(b'', '', info.stage_index, info.source_db, string_id))
+        self.changed_dbs.add(f'{info.source_db.manifest.name}/{info.source_db.file.name}')
+        self.notify_change()
+
+        parent = self.tree.parent(str(self.context_index))
+        self.tree.insert(parent, db_index, str(ui_index), text=f'* {string_id}: ')
+        self.update_ids(parent, info.source_db.obj)
+
+    def update_ids(self, parent_iid: str, db: StringDb):
+        for (iid, (db_id, _)) in zip(self.tree.get_children(parent_iid), db.iter_ids(), strict=True):
+            label = self.tree.item(iid, 'text')
+            id_part, preview_part = label.split(':', 1)
+            marker = '* ' if id_part.startswith('* ') else ''
+            self.tree.item(iid, text=f'{marker}{db_id}:{preview_part}')
+            self.strings[int(iid)].db_id = db_id
+
+    def insert_before(self, *_):
+        self.insert(0)
+
+    def insert_after(self, *_):
+        self.insert(1)
+
+    def delete(self, *_):
+        iid = str(self.context_index)
+        parent = self.tree.parent(iid)
+        info = self.strings[self.context_index]
+        del self.strings[self.context_index]
+        self.tree.delete(iid)
+        db_index = info.source_db.obj.get_index_from_id(info.db_id)
+        del info.source_db.obj[db_index]
+        if self.current_index == self.context_index:
+            self.current_index = None
+            self.text_box.delete('1.0', tk.END)
+            self.text_box.configure(state=tk.DISABLED)
+        self.update_ids(parent, info.source_db.obj)
+        self.changed_dbs.add(f'{info.source_db.manifest.name}/{info.source_db.file.name}')
+        self.notify_change()
+
+    def handle_right_click(self, event: tk.Event):
+        self.context_menu.unpost()
+        self.context_index = None
+
+        iid = self.tree.identify_row(event.y)
+        if self.tree.get_children(iid):
+            return
+
+        self.context_index = int(iid)
+        self.context_menu.post(event.x_root, event.y_root)
 
     def show(self, *_):
         if self.current_index is None:
@@ -103,6 +166,9 @@ class StringTab(Tab):
         self.image_label.image = tk_image
 
     def string_changed(self, _=None):
+        if self.current_index is None:
+            return
+
         text = self.text_box.get('1.0', tk.END).strip('\n')
         string = self.strings[self.current_index]
         if text != string.text:
@@ -117,19 +183,22 @@ class StringTab(Tab):
             preview = f'* {string.db_id}: {string.text}'
             if len(preview) > self.MAX_PREVIEW_LEN:
                 preview = preview[:self.MAX_PREVIEW_LEN - 3] + '...'
-            self.tree.item(str(self.current_index), text=preview)
+            iid = str(self.current_index)
+            self.tree.item(iid, text=preview)
             db_index = db.get_index_from_id(string.db_id)
             db[db_index] = string.raw
             self.changed_dbs.add(f'{string.source_db.manifest.name}/{string.source_db.file.name}')
             self.notify_change()
+            self.update_ids(self.tree.parent(iid), db)
 
     def select_string(self, _):
         try:
             index = int(self.tree.selection()[0])
-        except ValueError:
-            # not a string
+        except (ValueError, IndexError):
+            # not a string or nothing selected
             return
 
+        self.text_box.configure(state=tk.NORMAL)
         if index != self.current_index:
             self.current_index = index
             string = self.strings[self.current_index]

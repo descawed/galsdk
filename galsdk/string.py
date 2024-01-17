@@ -22,6 +22,10 @@ class StringDb(FileFormat):
         """Get a string from the database"""
 
     @abstractmethod
+    def __delitem__(self, item: int):
+        """Delete a string from the database"""
+
+    @abstractmethod
     def __setitem__(self, key: int, value: str | bytes):
         """Change a string in the database"""
 
@@ -50,12 +54,13 @@ class StringDb(FileFormat):
         """
 
     @abstractmethod
-    def insert(self, index: int, string: str):
+    def insert(self, index: int, string: str) -> int:
         """
         Insert a string into the database at the given index
 
         :param index: The index at which to insert the string
         :param string: The string to insert
+        :return: The ID of the newly-inserted string
         """
 
     @abstractmethod
@@ -73,6 +78,10 @@ class StringDb(FileFormat):
     @abstractmethod
     def get_index_from_id(self, string_id: int) -> int:
         """Get a string's index in the database with the ID used by the game engine"""
+
+    @abstractmethod
+    def get_id_from_index(self, index: int) -> int:
+        """Get a string's ID used by the game engine with its index in the database"""
 
     @abstractmethod
     def iter_ids(self) -> Iterable[tuple[int, str]]:
@@ -176,6 +185,10 @@ class LatinStringDb(StringDb):
         """Get a string from the database"""
         return self.strings[item].decode(self.encoding, 'replace')
 
+    def __delitem__(self, key: int):
+        """Delete a string from the database"""
+        del self.strings[key]
+
     def __setitem__(self, key: int, value: str | bytes):
         """Change a string in the database"""
         self.strings[key] = value if isinstance(value, bytes) else value.encode(self.encoding)
@@ -212,8 +225,9 @@ class LatinStringDb(StringDb):
         """
         self.strings.append(string.encode(self.encoding))
 
-    def insert(self, index: int, string: str):
+    def insert(self, index: int, string: str) -> int:
         self.strings.insert(index, string.encode(self.encoding))
+        return index
 
     def append_raw(self, string: bytes):
         """
@@ -228,6 +242,9 @@ class LatinStringDb(StringDb):
 
     def get_index_from_id(self, string_id: int) -> int:
         return string_id
+
+    def get_id_from_index(self, index: int) -> int:
+        return index
 
     def iter_ids(self) -> Iterable[tuple[int, str]]:
         return enumerate(self)
@@ -446,6 +463,10 @@ class JapaneseStringDb(StringDb):
         """Get a string from the database"""
         return self.decode(self.strings[item], self.kanji_index or 0)
 
+    def __delitem__(self, key: int):
+        """Delete a string from the database"""
+        del self.strings[key]
+
     def __setitem__(self, key: int, value: list[int] | bytes | str):
         """Change a string in the database"""
         self.strings[key] = value if isinstance(value, bytes) else self._pack(value)
@@ -467,6 +488,13 @@ class JapaneseStringDb(StringDb):
             if current_id > string_id:
                 raise ValueError(f'{string_id} was not found')
         raise ValueError(f'{string_id} was not found')
+
+    def get_id_from_index(self, index: int) -> int:
+        """Get a string's offset in the file from its index in the database"""
+        offset = 0
+        for s in self.strings[:index]:
+            offset += len(s)
+        return offset
 
     def get_by_id(self, string_id: int) -> str:
         """Get a string from the database by its offset in the file"""
@@ -507,17 +535,19 @@ class JapaneseStringDb(StringDb):
             kanji_index = self.kanji_index
         self.strings.append(self.encode(string, kanji_index or 0))
 
-    def insert(self, index: int, string: str, kanji_index: int = None):
+    def insert(self, index: int, string: str, kanji_index: int = None) -> int:
         """
         Insert a string into the database at the given index
 
         :param index: The index at which to insert the string
         :param string: The string to insert into the database
         :param kanji_index: Index of the kanji set to use for encoding this string
+        :return: The ID of the newly-inserted string
         """
         if kanji_index is None:
             kanji_index = self.kanji_index
         self.strings.insert(index, self.encode(string, kanji_index or 0))
+        return self.get_id_from_index(index)
 
     def append_raw(self, string: bytes):
         """

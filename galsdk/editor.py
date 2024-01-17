@@ -1,9 +1,9 @@
 import json
-import pathlib
 import tkinter as tk
 import tkinter.filedialog as tkfile
 import tkinter.messagebox as tkmsg
 from functools import partial
+from pathlib import Path
 from tkinter import ttk
 from typing import Optional
 
@@ -31,7 +31,7 @@ class Editor(ShowBase):
         self.project = None
         self.project_open_complete = False
 
-        cwd = pathlib.Path.cwd()
+        cwd = Path.cwd()
         getModelPath().appendDirectory(cwd / 'assets')
 
         settings_path = cwd / 'editor.json'
@@ -174,6 +174,9 @@ class Editor(ShowBase):
         self.tkRoot.title(title)
 
     def ask_new_project(self, *_):
+        if not self.confirm_quit_without_save():
+            return
+
         image_path = tkfile.askopenfilename(filetypes=[('CD images', '*.bin *.img'), ('All files', '*.*')])
         if not image_path:
             return
@@ -188,6 +191,9 @@ class Editor(ShowBase):
         self.show_new_project(image_path, version)
 
     def ask_open_project(self, *_):
+        if not self.confirm_quit_without_save():
+            return
+
         project_dir = tkfile.askdirectory()
         if not project_dir:
             return
@@ -328,17 +334,22 @@ class Editor(ShowBase):
         dialog.geometry(f'{dialog_width}x1000+{dialog_x}+{y}')
         dialog.grab_set()
 
+    def open_recent_project(self, path: Path):
+        if not self.confirm_quit_without_save():
+            return
+
+        self.open_project(Project.open(str(path)))
+
     def populate_recent(self):
         self.recent_menu.delete(0, 'end')
         for path in reversed(self.recent_projects):
-            path = pathlib.Path(path)
+            path = Path(path)
             # we use functools.partial to make sure the call is bound to the value of path as of this iteration, instead
             # of its value at the end of the function
-            self.recent_menu.add_command(label=path.name,
-                                         command=partial(lambda p, *_: self.open_project(Project.open(p)), str(path)))
+            self.recent_menu.add_command(label=path.name, command=partial(self.open_recent_project, path))
 
     def save_settings(self):
-        with (pathlib.Path.cwd() / 'editor.json').open('w') as f:
+        with (Path.cwd() / 'editor.json').open('w') as f:
             json.dump({
                 'recent': self.recent_projects,
                 'geometry': self.saved_geometry,
@@ -349,13 +360,15 @@ class Editor(ShowBase):
         for i, tab in enumerate(self.tabs):
             tab.set_active(i == tab_index)
 
+    def confirm_quit_without_save(self) -> bool:
+        if any(tab.has_unsaved_changes for tab in self.tabs):
+            return tkmsg.askyesno('Unsaved changes', 'You have unsaved changes. Do you want to quit without saving?')
+        return True
+
     def exit(self):
         """Exit the editor application"""
-        if any(tab.has_unsaved_changes for tab in self.tabs):
-            confirm = tkmsg.askyesno('Unsaved changes',
-                                     'You have unsaved changes. Do you want to quit without saving?')
-            if not confirm:
-                return
+        if not self.confirm_quit_without_save():
+            return
 
         if self.project and self.project_open_complete:
             # if a project is open, save the current window position and size
