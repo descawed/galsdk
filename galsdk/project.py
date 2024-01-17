@@ -205,9 +205,35 @@ class Project:
                 art_db = Database.read(f)
             project_art_dir = art_dir / art_db_path.stem
             project_art_dir.mkdir(exist_ok=True)
-            Manifest.from_archive(project_art_dir, art_db_path.stem, art_db,
-                                  sniff=[LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Credits],
-                                  original_path=art_db_path)
+            art_manifest = Manifest.from_archive(project_art_dir, art_db_path.stem, art_db,
+                                                 sniff=[LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Credits],
+                                                 original_path=art_db_path)
+
+            if version.region == Region.NTSC_J and art_db_path.name.startswith('BGTIM_'):
+                # we want every entry in the BGTIM archives to be a manifest, but in the Japanese version, the entries
+                # are TIM streams, and we treat TIM streams with one element as just individual TIMs, which aren't
+                # archives. so, we have to go back and put all the affected TIMs in a container.
+                new_manifests = {}
+                for i, mf in enumerate(art_manifest):
+                    if mf.is_manifest:
+                        continue
+
+                    new_path = mf.path.with_suffix('.TMM')
+                    new_path.mkdir(exist_ok=True)
+                    original_path = new_path / 'original.bin'
+                    shutil.copy(mf.path, original_path)
+                    # FIXME: passing the metadata like this is a hack because it's supposed to come from the TimDb
+                    #  instance that was unpacked
+                    sub_manifest = Manifest(new_path, f'{art_manifest.name}_{mf.name}', 'tmm',
+                                            original_path, {'fmt': '.TMM'})
+                    sub_manifest.add(mf.path, 0, mf.name, '.TIM')
+                    sub_manifest.save()
+                    new_manifests[i] = (mf.name, sub_manifest)
+
+                with art_manifest:
+                    for i, (name, sub_manifest) in new_manifests.items():
+                        del art_manifest[i]
+                        art_manifest.add_manifest(sub_manifest, i, name, '.TMM')
 
         display_manifest = Manifest.load_from(art_dir / 'DISPLAY')
 
