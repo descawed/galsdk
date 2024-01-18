@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import struct
 from abc import abstractmethod
 from pathlib import Path
@@ -46,11 +48,12 @@ class StringDb(FileFormat):
         """Iterate over the strings as both raw and decoded strings"""
 
     @abstractmethod
-    def append(self, string: str):
+    def append(self, string: str) -> int:
         """
         Append a string to the database
 
         :param string: The string to append to the database
+        :return: The ID of the newly-appended string
         """
 
     @abstractmethod
@@ -64,12 +67,21 @@ class StringDb(FileFormat):
         """
 
     @abstractmethod
-    def append_raw(self, string: bytes):
+    def append_raw(self, string: bytes) -> int:
         """
         Append a raw byte string to the database with no encoding applied
 
         :param string: The byte string to append to the database
+        :return: The ID of the newly-appended string
         """
+
+    @abstractmethod
+    def clear(self):
+        """Delete all strings in the database"""
+
+    @abstractmethod
+    def import_in_place(self, path: Path):
+        """Replace the contents of this database with those imported from the given path"""
 
     @abstractmethod
     def get_by_id(self, string_id: int) -> str:
@@ -120,9 +132,8 @@ class LatinStringDb(StringDb):
     def suggested_extension(self) -> str:
         return '.SDB'
 
-    @classmethod
-    def import_(cls, path: Path, fmt: str = None) -> Self:
-        db = cls()
+    @staticmethod
+    def _import_static(db: LatinStringDb, path: Path):
         with open(path, 'rb') as f:
             s = b''
             while c := f.read(1):
@@ -133,6 +144,15 @@ class LatinStringDb(StringDb):
                     s += c
             if s:
                 db.append_raw(s)
+
+    def import_in_place(self, path: Path):
+        self.clear()
+        self._import_static(self, path)
+
+    @classmethod
+    def import_(cls, path: Path, fmt: str = None) -> Self:
+        db = cls()
+        cls._import_static(db, path)
         return db
 
     def export(self, path: Path, fmt: str = None) -> Path:
@@ -202,6 +222,9 @@ class LatinStringDb(StringDb):
         """Number of strings in the database"""
         return len(self.strings)
 
+    def clear(self):
+        self.strings = []
+
     def decode(self, data: bytes, stage_index: int) -> str:
         return data.decode(self.encoding, 'replace')
 
@@ -217,25 +240,31 @@ class LatinStringDb(StringDb):
         for string in self.strings:
             yield string, string.decode(self.encoding, 'replace')
 
-    def append(self, string: str):
+    def append(self, string: str) -> int:
         """
         Append a string to the database
 
         :param string: The string to append to the database
+        :return: The index of the appended string
         """
+        new_index = len(self.strings)
         self.strings.append(string.encode(self.encoding))
+        return new_index
 
     def insert(self, index: int, string: str) -> int:
         self.strings.insert(index, string.encode(self.encoding))
         return index
 
-    def append_raw(self, string: bytes):
+    def append_raw(self, string: bytes) -> int:
         """
         Append a raw byte string to the database with no encoding applied
 
         :param string: The byte string to append to the database
+        :return: The index of the appended string
         """
+        new_index = len(self.strings)
         self.strings.append(string)
+        return new_index
 
     def get_by_id(self, string_id: int) -> str:
         return self[string_id]
@@ -337,17 +366,25 @@ class JapaneseStringDb(StringDb):
         except Exception:
             return None
 
+    @staticmethod
+    def _import_static(db: JapaneseStringDb, path: Path, kanji_index: int | None):
+        strings = path.read_text(encoding='utf-8').split('\n')
+        if strings[-1] == '':
+            del strings[-1]
+        for string in strings:
+            db.append(string, kanji_index)
+
+    def import_in_place(self, path: Path):
+        self.clear()
+        self._import_static(self, path, self.kanji_index)
+
     @classmethod
     def import_(cls, path: Path, fmt: str = None) -> Self:
         if fmt is None:
             fmt = '0'
         kanji_index = int(fmt)
         db = cls()
-        strings = path.read_text(encoding='utf-8').split('\n')
-        if strings[-1] == '':
-            del strings[-1]
-        for string in strings:
-            db.append(string, kanji_index)
+        cls._import_static(db, path, kanji_index)
         return db
 
     def export(self, path: Path, fmt: str = None) -> Path:
@@ -400,18 +437,34 @@ class JapaneseStringDb(StringDb):
         i = 0
         while i < len(string):
             c = string[i]
-            if c == '<':
-                end = string.index('>', i)
-                str_code = string[i+1:end].lower()
+            if c == '$':
+                i += 1
+                str_code = string[i]
+                if str_code in ['c', 'p', 'k', 'u']:
+                    i += 1
+                    if string[i] != '(':
+                        raise ValueError(f'Expected ( after ${str_code}')
+                    i += 1
+                    end = string.index(')', i)
+                    value = int(string[i:end])
+                    i = end
+                else:
+                    value = None
+
                 if str_code in cls.NAME_CODES:
                     code = cls.NAME_CODES[str_code]
-                elif str_code.startswith('k:'):
-                    kanji_index = int(str_code.split(':', 1)[1])
-                    code = kanji_index | 0x800
+                    if value is not None:
+                        out.append(code)
+                        code = value
+                elif str_code == 'k':
+                    code = value | 0x800
+                elif str_code == '$':
+                    code = cls.BASIC.index('$')
+                elif str_code == 'u':
+                    code = value
                 else:
-                    code = int(str_code)
+                    raise ValueError(f'Unknown control code {str_code}')
                 out.append(code)
-                i = end
             elif c in cls.BASIC:
                 out.append(cls.BASIC.index(c))
             else:
@@ -427,13 +480,13 @@ class JapaneseStringDb(StringDb):
         expect_argument = False
         for code in data:
             if expect_argument:
-                c = '\0'
+                c = f'({code})'
                 expect_argument = False
             elif code & 0xc000:
                 if code in cls.CODE_NAMES:
-                    c = '<' + cls.CODE_NAMES[code] + '>'
+                    c = '$' + cls.CODE_NAMES[code]
                 else:
-                    c = '\0'
+                    c = f'$u({code})'
                 expect_argument = (code & 0xff) in [3, 6]
             else:
                 if code & 0x800:
@@ -441,22 +494,21 @@ class JapaneseStringDb(StringDb):
                         c = cls.KANJI[stage_index][code & 0xff]
                     except IndexError:
                         if allow_unknown:
-                            c = f'<k:{code & 0xff}>'
+                            c = f'$k({code & 0xff})'
                         else:
                             raise
                 else:
                     try:
                         c = cls.BASIC[code]
+                        if c == '$':
+                            c = '$$'  # escape
                     except IndexError:
                         if allow_unknown:
-                            c = '\0'
+                            c = f'$u({code})'
                         else:
                             raise
 
-            if c == '\0':
-                out += f'<{code}>'
-            else:
-                out += c
+            out += c
         return out
 
     def __getitem__(self, item: int) -> str:
@@ -479,6 +531,9 @@ class JapaneseStringDb(StringDb):
     def __len__(self) -> int:
         """Number of strings in the database"""
         return len(self.strings)
+
+    def clear(self):
+        self.strings = []
 
     def get_index_from_id(self, string_id: int) -> int:
         """Get a string's index in the database by its offset in the file"""
@@ -524,16 +579,19 @@ class JapaneseStringDb(StringDb):
             kanji_index = self.kanji_index
         return self.decode(self.strings[index], kanji_index or 0)
 
-    def append(self, string: str, kanji_index: int = None):
+    def append(self, string: str, kanji_index: int = None) -> int:
         """
         Append a string to the database
 
         :param string: The string to append to the database
         :param kanji_index: Index of the kanji set to use for encoding this string
+        :return: The ID of the newly-appended string
         """
         if kanji_index is None:
             kanji_index = self.kanji_index
+        new_index = len(self.strings)
         self.strings.append(self.encode(string, kanji_index or 0))
+        return self.get_id_from_index(new_index)
 
     def insert(self, index: int, string: str, kanji_index: int = None) -> int:
         """
@@ -549,13 +607,16 @@ class JapaneseStringDb(StringDb):
         self.strings.insert(index, self.encode(string, kanji_index or 0))
         return self.get_id_from_index(index)
 
-    def append_raw(self, string: bytes):
+    def append_raw(self, string: bytes) -> int:
         """
         Append a raw byte string to the database with no encoding applied
 
         :param string: The byte string to append to the database
+        :return: The ID of the newly-appended string
         """
+        new_index = len(self.strings)
         self.strings.append(string)
+        return self.get_id_from_index(new_index)
 
 
 def pack(input_path: str, output_path: str, kanji_index: int | None):

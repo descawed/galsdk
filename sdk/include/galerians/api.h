@@ -138,6 +138,84 @@ void PickUpFile(int32_t unknown, int32_t itemId);
  * @param timIndex Index of the TIM in ITEMTIM.CDB.
  */
 void ShowItemTim(GameState *game, int32_t timIndex);
+/**
+ * Play an STR movie.
+ *
+ * @param game Pointer to the game state object.
+ * @param movieIndex Index of the movie in the internal movie list.
+ * @param useDelay If non-zero, wait for 9 frames before starting the video. Otherwise, the wait will be 1 or more frames
+ *                 depending on an unknown value configured elsewhere.
+ * @param postAction Select an action to be performed after the video completes. 0 = something involving (re-?)loading
+ *                   the models of all actors in the room; not entirely clear. 1 = restore the previous camera angle?
+ *                   2 = no action.
+ */
+void PlayMovie(GameState *game, int32_t movieIndex, int16_t useDelay, int16_t postAction);
+
+// Module types
+#define MODULE_TYPE_ROOM    0
+#define MODULE_TYPE_AI      1 // as the one exception, the main menu is also a type 1 module
+#ifdef GALERIANS_REGION_JAPAN
+#define MODULE_TYPE_HEALTH  2
+#define MODULE_TYPE_CREDITS 3
+#define MODULE_TYPE_SAVE    4
+#else
+#define MODULE_TYPE_CREDITS 2
+#define MODULE_TYPE_SAVE    3
+#endif
+
+#ifdef GALERIANS_REGION_JAPAN
+/**
+ * Load a module.
+ *
+ * @param type Type of the module to be loaded.
+ * @param index Index in MODULE.BIN of the module to be loaded.
+ * @param loadAddress Address in memory at which to load the module. Typically, this should be ModuleLoadAddresses[type].
+ */
+void LoadModule(int16_t type, int16_t index, void *loadAddress);
+#else
+/**
+ * Load a module.
+ *
+ * @param type Type of the module to be loaded.
+ * @param index Index in MODULE.BIN of the module to be loaded.
+ */
+void LoadModule(int16_t type, int16_t index);
+#endif
+/**
+ * Load an AI (type 1) module.
+ *
+ * @param index Index in MODULE.BIN of the AI module to be loaded.
+ */
+void LoadAiModule(int16_t index);
+/**
+ * Set an actor's AI routine.
+ *
+ * @param actor Actor whose AI routine to set.
+ * @param aiRoutine AI routine.
+ */
+void SetActorAiRoutine(Actor *actor, AiRoutine aiRoutine);
+/**
+ * Did the player select "Yes" on the last yes/no prompt?
+ *
+ * @return Whether the player selected "Yes".
+ */
+int16_t PlayerSelectedYes();
+
+/**
+ * Convenience function for loading a module at the standard address in any region.
+ *
+ * @param type Type of the module to be loaded.
+ * @param index Index in MODULE.BIN of the module to be loaded.
+ */
+static inline void LoadModuleStd(int16_t type, int16_t index) {
+    LoadModule(
+        type,
+        index
+        #ifdef GALERIANS_REGION_JAPAN
+        , ModuleLoadAddresses[type]
+        #endif
+    );
+}
 
 /**
  * Convenience function for setting room layout and collision.
@@ -160,6 +238,29 @@ static inline void SetupRoom(RoomLayout *layout) {
 static inline void ShowMessage(int32_t messageId) {
     Game.messageId = messageId;
     Game.flags040 |= STATE_SHOW_MESSAGE;
+}
+
+/**
+ * Show a message and wait for it to complete.
+ *
+ * Note that completion requires the player to press a button to dismiss the message if the message contains the $w code.
+ * @param messageId ID of the message to show. In the Japanese version, this is the byte offset in the message file. In
+ *                  other versions, this is the index in the message file.
+ * @return Whether the player selected "Yes". This return value is only meaningful for messages that contain the $y code.
+ */
+static inline int16_t WaitForMessage(int32_t messageId) {
+    ShowMessage(messageId);
+
+    // wait for message to be displayed
+    while ((Game.flags03C & STATE_DISPLAYING_MESSAGE) == 0)
+        Yield();
+
+    // wait for message to complete
+    while (Game.flags03C & STATE_DISPLAYING_MESSAGE)
+        Yield();
+
+    // return whether the player selected yes or no
+    return PlayerSelectedYes();
 }
 
 #ifdef __cplusplus

@@ -1,5 +1,8 @@
+import itertools
 import tkinter as tk
+import tkinter.filedialog as tkfile
 from dataclasses import dataclass
+from pathlib import Path
 from tkinter import ttk
 
 from PIL import ImageTk
@@ -27,6 +30,7 @@ class StringTab(Tab):
     MAX_PREVIEW_LEN = 20
 
     current_index: int | None
+    strings: list[GameString | None]
 
     def __init__(self, project: Project):
         super().__init__('String', project)
@@ -34,6 +38,7 @@ class StringTab(Tab):
         self.current_index = None
         self.font = project.get_font()
         self.dbs = {}
+        self.db_iid_map = {}
         self.changed_dbs = set()
 
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
@@ -47,9 +52,15 @@ class StringTab(Tab):
         self.context_menu.add_command(label='Delete', command=self.delete)
         self.context_index = None
 
+        self.db_context_menu = tk.Menu(self, tearoff=False)
+        self.db_context_menu.add_command(label='Import', command=self.on_import)
+        self.db_context_menu.add_command(label='Export', command=self.on_export)
+        self.db_context_iid = None
+
         for i, string_db in enumerate(project.get_unmapped_strings()):
             iid = f'unmapped_{i}'
             self.dbs[f'{string_db.manifest.name}/{string_db.file.name}'] = string_db
+            self.db_iid_map[iid] = string_db
             self.tree.insert('', tk.END, text=string_db.file.name, iid=iid, open=False)
             for j, (raw, string) in string_db.obj.iter_both_ids():
                 string_id = len(self.strings)
@@ -66,6 +77,7 @@ class StringTab(Tab):
             stage_index = int(stage)
             string_db = project.get_stage_strings(stage)
             self.dbs[f'{string_db.manifest.name}/{string_db.file.name}'] = string_db
+            self.db_iid_map[stage] = string_db
             for j, (raw, string) in string_db.obj.iter_both_ids():
                 string_id = len(self.strings)
                 self.strings.append(GameString(raw, string, stage_index, string_db, j))
@@ -125,7 +137,7 @@ class StringTab(Tab):
         iid = str(self.context_index)
         parent = self.tree.parent(iid)
         info = self.strings[self.context_index]
-        del self.strings[self.context_index]
+        self.strings[self.context_index] = None
         self.tree.delete(iid)
         db_index = info.source_db.obj.get_index_from_id(info.db_id)
         del info.source_db.obj[db_index]
@@ -137,16 +149,66 @@ class StringTab(Tab):
         self.changed_dbs.add(f'{info.source_db.manifest.name}/{info.source_db.file.name}')
         self.notify_change()
 
+    def on_export(self, *_):
+        filename = tkfile.asksaveasfilename(defaultextension='.txt', filetypes=[('Text', '*.txt'), ('All Files', '*.*')])
+        if filename is None:
+            return
+
+        self.db_iid_map[self.db_context_iid].obj.export(Path(filename))
+
+    def on_import(self, *_):
+        filename = tkfile.askopenfilename(defaultextension='.txt', filetypes=[('Text', '*.txt'), ('All Files', '*.*')])
+        if filename is None:
+            return
+
+        info = self.db_iid_map[self.db_context_iid]
+        db = info.obj
+        old_strings = list(db)
+        db.import_in_place(Path(filename))
+        for child in self.tree.get_children(self.db_context_iid):
+            self.strings[int(child)] = None
+        self.tree.set_children(self.db_context_iid)
+        any_changed = False
+        for new_info, old_string in itertools.zip_longest(db.iter_both_ids(), old_strings):
+            if new_info is None:
+                if old_string is not None:
+                    any_changed = True  # we got shorter
+                break
+
+            new_id, (raw_string, new_string) = new_info
+            ui_index = len(self.strings)
+            if new_string != old_string:
+                any_changed = True
+                marker = '* '
+            else:
+                marker = ''
+            preview = f'{new_id}: {new_string}'
+            if len(preview) > self.MAX_PREVIEW_LEN:
+                preview = preview[:self.MAX_PREVIEW_LEN-3] + '...'
+            self.tree.insert(self.db_context_iid, tk.END, str(ui_index), text=f'{marker}{preview}')
+            try:
+                stage_index = int(Stage(self.db_context_iid))
+            except ValueError:
+                stage_index = 0
+            self.strings.append(GameString(raw_string, new_string, stage_index, info, new_id))
+
+        if any_changed:
+            self.changed_dbs.add(f'{info.manifest.name}/{info.file.name}')
+            self.notify_change()
+
     def handle_right_click(self, event: tk.Event):
         self.context_menu.unpost()
         self.context_index = None
+        self.db_context_menu.unpost()
+        self.db_context_iid = None
 
         iid = self.tree.identify_row(event.y)
         if self.tree.get_children(iid):
-            return
-
-        self.context_index = int(iid)
-        self.context_menu.post(event.x_root, event.y_root)
+            self.db_context_iid = iid
+            self.db_context_menu.post(event.x_root, event.y_root)
+        else:
+            self.context_index = int(iid)
+            self.context_menu.post(event.x_root, event.y_root)
 
     def show(self, *_):
         if self.current_index is None:

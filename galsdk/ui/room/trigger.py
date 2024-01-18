@@ -81,7 +81,7 @@ class TriggerEditor(ttk.Frame):
 
         item_id = self.trigger.trigger.item_id if self.trigger.trigger else 0
         self.item_var, self.item_label, self.item_select = self.make_option_select(item_id, 'Item', KEY_ITEM_NAMES)
-        self.item_select.configure(state=state)
+        self.item_select.configure(state='readonly' if state == tk.NORMAL else state)
 
         if self.trigger.trigger:
             flags = self.trigger.trigger.flags

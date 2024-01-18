@@ -116,6 +116,11 @@ class ArtTab(ImageViewerTab):
         index = self.tree.index(self.context_iid)
         return parent_iid, index
 
+    def show_tim_import_dialog(self, path: Path, reference: Tim = None) -> Tim | None:
+        image = Image.open(path)
+        dialog = TimImportDialog(self.winfo_toplevel(), image, reference_tim=reference)
+        return dialog.output_tim
+
     def ask_insert_tim(self) -> tuple[Path, TimFormat] | None:
         extensions = ['*.png', '*.jpg', '*.bmp', '*.tga', '*.webp', '*.tim']
         if filename := tkfile.askopenfilename(filetypes=[('Images', ' '.join(extensions)), ('All Files', '*.*')]):
@@ -129,9 +134,7 @@ class ArtTab(ImageViewerTab):
                     return None
             else:
                 try:
-                    image = Image.open(path)
-                    dialog = TimImportDialog(self.winfo_toplevel(), image)
-                    new_tim = dialog.output_tim
+                    new_tim = self.show_tim_import_dialog(path)
                     if new_tim is None:
                         return None
                 except (ValueError, NotImplementedError, UnidentifiedImageError) as e:
@@ -274,14 +277,16 @@ class ArtTab(ImageViewerTab):
                                          'want to continue?', parent=self)
                 if not confirm:
                     return
-            self.images[iid] = (mf, new_tim, manifest)
         else:
             try:
-                tim.update_image_in_place(Image.open(path))
+                new_tim = self.show_tim_import_dialog(path, tim)
+                if new_tim is None:
+                    return  # user cancelled
             except (ValueError, NotImplementedError, UnidentifiedImageError) as e:
                 tkmsg.showerror('Import failed', str(e), parent=self)
                 return
 
+        self.images[iid] = (mf, new_tim, manifest)
         self.images_changed.add(iid)
         self.tree.item(iid, text=f'* {mf.ext_name}')
         self.notify_change()

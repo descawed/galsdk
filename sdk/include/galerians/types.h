@@ -130,9 +130,9 @@ _Static_assert(sizeof(Interactable) == 0x0A, "sizeof(Interactable) not correct")
 #define TRIGGER_ALWAYS              0
 #define TRIGGER_NOT_ATTACKING       1
 #define TRIGGER_ON_ACTIVATE         2
-#define TRIGGER_ON_SCAN_HARDCODED   3
+#define TRIGGER_ON_SCAN_HARDCODED   3 // in practice, this is what the game uses for scans, although it's functionally identical to TRIGGER_ON_SCAN
 #define TRIGGER_ON_SCAN             4
-#define TRIGGER_ON_SCAN_WITH_ITEM   5
+#define TRIGGER_ON_SCAN_WITH_ITEM   5 // will never trigger unless the provided item ID is 6 (Liquid Explosive)
 #define TRIGGER_ON_USE_ITEM         6
 
 /**
@@ -447,7 +447,11 @@ typedef struct _MapRoom {
 /**
  * Various game state flags.
  */
+// flagsAE8
 #define STATE_SHOW_MESSAGE  4
+// flags03C
+#define STATE_INTERACTING           2
+#define STATE_DISPLAYING_MESSAGE    4
 
 #define ROOM_STATE_MAP_CHANGING         0x02
 #define ROOM_STATE_ROOM_CHANGING        0x04
@@ -560,11 +564,12 @@ _Static_assert(sizeof(RangedAttack) == 4, "sizeof(RangedAttack) not correct");
 /**
  * Actor state/behavior flags.
  */
-#define ACTOR_FLAG_REVERSE_ANIMATION    0x001
-#define ACTOR_FLAG_SKIP_TRANSLATE       0x004
-#define ACTOR_FLAG_EQUIP_NEXT_ATTACK    0x010
-#define ACTOR_FLAG_CAN_ATTACK           0x020
-#define ACTOR_FLAG_CHARGING             0x400
+#define ACTOR_FLAG_REVERSE_ANIMATION    0x0001
+#define ACTOR_FLAG_SKIP_TRANSLATE       0x0004
+#define ACTOR_FLAG_EQUIP_NEXT_ATTACK    0x0010
+#define ACTOR_FLAG_CAN_ATTACK           0x0020
+#define ACTOR_FLAG_CHARGING             0x0400
+#define ACTOR_FLAG_INVISIBLE            0x8000
 
 /**
  * Actor AI states.
@@ -583,6 +588,11 @@ _Static_assert(sizeof(RangedAttack) == 4, "sizeof(RangedAttack) not correct");
 #define AI_DEAD             0x18
 #define AI_GRABBED          0x22
 #define AI_THROWN           0x23
+
+/**
+ * Actor AI routine.
+ */
+typedef int32_t (*AiRoutine)(GameState*, Actor*);
 
 /**
  * An instance of an actor in the current room.
@@ -677,7 +687,7 @@ struct _Actor {
     uint32_t flags1870;                         // 1870
     int32_t minAttackDistanceSquared;           // 1874
     int32_t unknown1878;                        // 1878
-    int32_t (*aiRoutine)(GameState*, Actor*);   // 187C
+    AiRoutine aiRoutine;                        // 187C
     uint8_t unknown1880[64];                    // 1880
 };
 _Static_assert(sizeof(Actor) == 0x18C0, "sizeof(Actor) not correct");

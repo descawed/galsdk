@@ -10,9 +10,18 @@ from psx.tim import BitsPerPixel, Tim
 
 
 class TimImportDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Tk, image: Image.Image):
+    def __init__(self, parent: tk.Tk, image: Image.Image, default_bpp: BitsPerPixel = BitsPerPixel.BPP_8,
+                 default_clut_x: int = 0, default_clut_y: int = 0, default_image_x: int = 0, default_image_y: int = 0,
+                 reference_tim: Tim = None):
         super().__init__(parent)
         self.transient(parent)
+
+        if reference_tim is not None:
+            default_bpp = reference_tim.bpp
+            default_clut_x = reference_tim.clut_x
+            default_clut_y = reference_tim.clut_y
+            default_image_x = reference_tim.image_x
+            default_image_y = reference_tim.image_y
 
         self.title('TIM Import')
         self.input_image = image
@@ -22,11 +31,11 @@ class TimImportDialog(tk.Toplevel):
 
         validator = (self.register(validate_int), '%P')
 
-        self.bpp_var = tk.StringVar(self, '8')
-        self.clut_x_var = tk.StringVar(self, '0')
-        self.clut_y_var = tk.StringVar(self, '0')
-        self.image_x_var = tk.StringVar(self, '0')
-        self.image_y_var = tk.StringVar(self, '0')
+        self.bpp_var = tk.StringVar(self, str(default_bpp.bpp))
+        self.clut_x_var = tk.StringVar(self, str(default_clut_x))
+        self.clut_y_var = tk.StringVar(self, str(default_clut_y))
+        self.image_x_var = tk.StringVar(self, str(default_image_x))
+        self.image_y_var = tk.StringVar(self, str(default_image_y))
         self.quant_var = tk.StringVar(self, default_method)
         self.dither_var = tk.BooleanVar(self, True)
 

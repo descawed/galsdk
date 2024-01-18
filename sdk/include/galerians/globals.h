@@ -12,6 +12,12 @@ extern Actor Actors[4];
 extern uint16_t FrameCount;
 extern uint32_t CircleWallThreshold;
 
+#ifdef GALERIANS_REGION_JAPAN
+extern void *ModuleLoadAddresses[5];
+#else
+extern void *ModuleLoadAddresses[4];
+#endif
+
 extern Database BgTimADb;
 extern Database BgTimBDb;
 extern Database BgTimCDb;

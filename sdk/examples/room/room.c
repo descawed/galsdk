@@ -53,12 +53,12 @@ RoomLayout layout = {
             .orientation = 0,
             .verticalFov = 600,
             .scale = 10,
-            .x = 4098,
-            .y = 2968,
-            .z = 4129,
-            .targetX = 2684,
-            .targetY = 21,
-            .targetZ = 2735,
+            .x = 4294,
+            .y = 1653,
+            .z = 4196,
+            .targetX = 2727,
+            .targetY = 65,
+            .targetZ = 2727,
         },
     },
     .cuts = {
@@ -91,8 +91,8 @@ RoomLayout layout = {
             .id = 1,
             .xPos = 0,
             .zPos = 3189,
-            .xSize = 869,
-            .zSize = 869,
+            .xSize = 434,
+            .zSize = 434,
         },
         {
             .id = 2,
@@ -108,13 +108,19 @@ ActorLayout actors = {
     .name = {'A', 'S', 'D', 'K', 'X', 0},
     .actors = {
         {
-            .id = 0,
+            .id = 1,
             .type = ACTOR_RION,
             .x = 1811,
             .y = 0,
             .z = 1811,
         },
-        { .type = ACTOR_NONE },
+        {
+            .id = 32,
+            .type = ACTOR_MECH_UNUSED,
+            .x = 1811,
+            .y = 0,
+            .z = 1811,
+        },
         { .type = ACTOR_NONE },
         { .type = ACTOR_NONE },
     },
@@ -203,9 +209,9 @@ void cubeTrigger(GameState *game) {
         .soundSet = NULL,
         .soundId = 0,
         .voiceIndex = 0,
-        .x = 450,
-        .z = 450,
-        .angle = 1024,
+        .x = 300,
+        .z = 520,
+        .angle = 2048,
         .cameraId = 0
     };
     PickUpKeyItem(game, itemId, msgId, ITEM_PICKUP_RESTORE_CAMERA | ITEM_PICKUP_ANIM_STAND, &pickupAnimation);
@@ -225,7 +231,27 @@ void cylinderTrigger(GameState *game) {
     ShowItemTim(game, timIndex);
 }
 
-void sphereTrigger(GameState *game) {
+void sphereTrigger(GameState *game __attribute__((unused))) {
+    if ((Actors[1].flags & ACTOR_FLAG_INVISIBLE) == 0) {
+        if (WaitForMessage(219)) {
+            /*
+             * WARNING: we're referencing the Game global here instead of using the arg we already have to work around
+             * a game bug. when the game calls into a task function, it sets the stack pointer to the first word BEFORE
+             * the beginning of the stack instead of the first word on the stack. this is supposed to be part of the
+             * argument register save area, so gcc may try to save the value of our argument there. in practice, this
+             * usually doesn't cause any problems, UNLESS we Yield (like WaitForMessage does). when we resume from the
+             * Yield, the saved argument on the stack will have been clobbered, and any subsequent references to it will
+             * be invalid.
+             */
+            PlayMovie(&Game, 0, 0, 1);
+        }
+        return;
+    }
+
+    if (WaitForMessage(218)) {
+        SetActorAiRoutine(&Actors[1], (AiRoutine)0x801F7F04);
+        Actors[1].flags &= ~ACTOR_FLAG_INVISIBLE;
+    }
 }
 
 Trigger triggers[3] = {
@@ -253,6 +279,11 @@ void room(GameState *game) {
     game->backgrounds = &background;
     game->triggers = triggers;
     SetupActors(game->actorLayout);
+
+    LoadAiModule(115);
+    // mech is initially disabled
+    SetActorAiRoutine(&Actors[1], NULL);
+    Actors[1].flags |= ACTOR_FLAG_INVISIBLE;
 
     game->flagsAE8 &= ~ROOM_STATE_ROOM_INITIALIZING;
     do {
