@@ -14,6 +14,11 @@ In the future I may provide a packaged release, but for now, I recommend setting
 8. When you're done, exit the virtual environment with the command `deactivate`.
 9. Next time you want to use the tools, remember to enter the virtual environment first as in step 5.
 
+## SDK
+The SDK is a set of C headers and linker scripts for building your own modules. Modules are loadable binaries that
+implement the game's rooms, AI, and certain menus. See the README in the sdk directory for details. The tutorial for
+building the sample room also provides some examples of how to use the editor.
+
 ## Editor
 The editor is a GUI application for exploring the game's files. Run it from the repo's root directory with
 `python -m galsdk.editor`. At the moment, it supports editing rooms, strings, art textures, and some animation data.

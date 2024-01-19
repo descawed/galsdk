@@ -257,6 +257,8 @@ class StringTab(Tab):
             self.update_ids(self.tree.parent(iid), db)
 
     def select_string(self, _):
+        self.context_menu.unpost()
+        self.db_context_menu.unpost()
         try:
             index = int(self.tree.selection()[0])
         except (ValueError, IndexError):

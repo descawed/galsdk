@@ -10,7 +10,7 @@ extern "C" {
 extern GameState Game;
 extern Actor Actors[4];
 extern uint16_t FrameCount;
-extern uint32_t CircleWallThreshold;
+extern uint32_t CircleWallThreshold; // circle colliders larger than this will be treated as walls. only used by room D0003.
 
 #ifdef GALERIANS_REGION_JAPAN
 extern void *ModuleLoadAddresses[5];
