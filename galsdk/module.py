@@ -413,7 +413,7 @@ class RoomModule(FileFormat):
     MAX_ENTRANCES = 15
     MAX_INTERACTABLES = 50
     MAX_ITEM_ID = 38
-    MAX_MODULE_SIZE = 46904  # FIXME: this is only be for the NA version
+    MAX_MODULE_SIZE = 46904  # FIXME: this is only for the NA version
     MAX_ROOMS_PER_MAP = 21
     MIN_ADDRESS = 0x80000000
     NAME_REGEX = re.compile(rb'[ABCD]\d{2}[0-9A-Z]{2}')

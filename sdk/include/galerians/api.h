@@ -85,7 +85,7 @@ void SetStageStateFlag(GameState *game, int16_t flag, int16_t stage);
  */
 void ClearStageStateFlag(GameState *game, int16_t flag, int16_t stage);
 /**
- * Yield to the next game logic routine.
+ * Yield to the next game task.
  *
  * This function will return on the next frame.
  */
@@ -153,7 +153,8 @@ void PlayMovie(GameState *game, int32_t movieIndex, int16_t useDelay, int16_t po
 
 // Module types
 #define MODULE_TYPE_ROOM    0
-#define MODULE_TYPE_AI      1 // as the one exception, the main menu is also a type 1 module
+#define MODULE_TYPE_AI      1
+// as the one exception, the main menu is also a type 1 module
 #ifdef GALERIANS_REGION_JAPAN
 #define MODULE_TYPE_HEALTH  2
 #define MODULE_TYPE_CREDITS 3

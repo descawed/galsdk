@@ -130,9 +130,17 @@ _Static_assert(sizeof(Interactable) == 0x0A, "sizeof(Interactable) not correct")
 #define TRIGGER_ALWAYS              0
 #define TRIGGER_NOT_ATTACKING       1
 #define TRIGGER_ON_ACTIVATE         2
-#define TRIGGER_ON_SCAN_HARDCODED   3 // in practice, this is what the game uses for scans, although it's functionally identical to TRIGGER_ON_SCAN
+// the game has three types of scan triggers, which seems to be related to a cut feature where you would have been able
+// to combine scanning with an item. when the game checks if a trigger should be executed, it passes two pieces of
+// information - the type of action happening (walking into the trigger, using, or scanning) and an optional item ID.
+// when you scan, the item ID is hard-coded to 6 (Liquid Explosive). TRIGGER_ON_SCAN_HARDCODED is also hard-coded to
+// require an item ID of 6, so in practice, it just triggers on any scan. TRIGGER_ON_SCAN doesn't check the item ID,
+// so it also triggers on any scan. TRIGGER_ON_SCAN_WITH_ITEM lets you specify a specific item to check for. since the
+// input item is always 6, it will just never trigger if the item to check for is anything other than 6. in practice,
+// the game always uses TRIGGER_ON_SCAN_HARDCODED.
+#define TRIGGER_ON_SCAN_HARDCODED   3
 #define TRIGGER_ON_SCAN             4
-#define TRIGGER_ON_SCAN_WITH_ITEM   5 // will never trigger unless the provided item ID is 6 (Liquid Explosive)
+#define TRIGGER_ON_SCAN_WITH_ITEM   5
 #define TRIGGER_ON_USE_ITEM         6
 
 /**
@@ -724,7 +732,8 @@ _Static_assert(sizeof(ColliderArray) == 8, "sizeof(ColliderArray) not correct");
  * Flags related to picking up an item.
  */
 #define ITEM_PICKUP_RESTORE_CAMERA  0x01
-#define ITEM_PICKUP_ANIM_STAND      0x02  // default animation is crouch
+// default animation is crouch
+#define ITEM_PICKUP_ANIM_STAND      0x02
 #define ITEM_PICKUP_ANIM_STEP       0x04
 #define ITEM_PICKUP_NO_MODEL        0x80
 
