@@ -94,6 +94,12 @@ MAP_NAMES = [
     'Hotel 3F',
     'Mushroom Tower',
 ]
+STAGE_MAPS = {
+    Stage.A: [0, 1, 2],
+    Stage.B: [3, 4],
+    Stage.C: [5, 6, 7],
+    Stage.D: [8],
+}
 NUM_KEY_ITEMS = len(KEY_ITEM_NAMES)
 NUM_MED_ITEMS = len(MED_ITEM_NAMES)
 NUM_MAPS = len(MAP_NAMES)

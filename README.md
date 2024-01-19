@@ -1,19 +1,23 @@
 # galsdk
-Editor and utilities for the PSX game Galerians (1999). Requires Python 3.11.
+Editor and utilities for the PSX game Galerians (1999). Requires Python 3.11 or 3.12.
 
 ## Setup
 In the future I may provide a packaged release, but for now, I recommend setting up a Python virtual environment.
 
-1. Install [Python 3.11](https://www.python.org/downloads/release/python-3117/) if you don't have it. 3.12 won't
-   currently work because panda3d hasn't been updated for it yet.
+1. Install [Python 3.12](https://www.python.org/downloads/) if you don't have it. 3.11 will also work.
 2. Clone down the repo: `git clone https://github.com/descawed/galsdk.git`
-3. cd to the repo directory: `cd /path/to/galsdk`
-4. Create the virtual environment: `python -m venv ./venv`
-5. Enter the virtual environment. Windows: `.\venv\Scripts\activate.bat`. Mac/Nix: `source ./venv/bin/activate`
-6. Install dependencies: `python -m pip install -r requirements.txt`
+3. cd to the repo directory: `cd /path/to/galsdk`.
+4. Create the virtual environment: `python -m venv ./venv`.
+5. Enter the virtual environment. Windows: `.\venv\Scripts\activate.bat`. Mac/Nix: `source ./venv/bin/activate`.
+6. Install dependencies: `python -m pip install -r requirements.txt`.
 7. Run desired commands as described below (e.g. `python -m galsdk.editor`).
 8. When you're done, exit the virtual environment with the command `deactivate`.
 9. Next time you want to use the tools, remember to enter the virtual environment first as in step 5.
+
+## SDK
+The SDK is a set of C headers and linker scripts for building your own modules. Modules are loadable binaries that
+implement the game's rooms, AI, and certain menus. See the README in the sdk directory for details. The tutorial for
+building the sample room also provides some examples of how to use the editor.
 
 ## Editor
 The editor is a GUI application for exploring the game's files. Run it from the repo's root directory with
@@ -42,7 +46,9 @@ them up based on the file modification timestamps.
     category name within the room to show an option to toggle display of that type of object on or off. Clicking on an
     object will highlight it in the 3D view. You can also select objects by clicking on them in the 3D view. Clicking on
     a camera will show the view from that camera, with the camera's target point displayed as an X. Finally, you can
-    click and drag selected objects to move or resize them (although it's a bit janky at the moment).
+    click and drag selected objects to move or resize them (although it's a bit janky at the moment). Beyond the room
+    viewer, you can also click the "Edit maps" button at the bottom of the window to view and edit how rooms are
+    assigned to maps. This also allows you to import custom room modules you've created.
   - **Actors** - This shows the actors (characters) present in the room. Rooms may have multiple actor layouts for
     different scenarios, although most only have one. The game has a hard-coded limit of four actors per room, the first
     of which is always the player. Therefore, each layout has a fixed list of four actor slots, although slots may be
@@ -96,25 +102,21 @@ them up based on the file modification timestamps.
     - $w - Wait for the user to press the activate button before continuing.
     - $y - Display a yes/no prompt.
     - $p(n) - Wait until the game fires event number n before continuing.
-    - $l - Probably either left-align or "carriage return" (return to beginning of line). Seems buggy. Never used.
+    - $l - Probably left-align. Seems buggy. Never used.
     - $$ - A literal dollar sign.
-  - The Japanese version of the game is more complicated. The game uses two font images - a basic image consisting of
+  - The Japanese version of the game is more complicated. The message format is binary, but the editor will display
+    control codes in the $ format above for consistency. The game uses two font images - a basic image consisting of
     common characters (digits, punctuation, latin characters, and kana) and a second image consisting of kanji
     characters which differs from stage to stage. The strings don't use a common encoding (e.g. Shift-JIS or UTF-8) but
     are just a series of indexes into the two font images. This has a couple implications. The first is that I only have
     a transcription of the kanji used by Stage A, so when viewing strings for the other stages, kanji characters will
-    display as k: followed by the kanji index in angle brackets (e.g. \<k:26>). If anyone feels like transcribing the
-    kanji for the other three stages, I would appreciate it! The second implication is that, on any given stage, you can
-    only use kanji that are present in that stage's kanji image. With that out of the way, we can discuss control codes.
-    Control codes and their arguments are shown in angle brackets just like unknown characters. They are as follows:
-    - \<r> - New line. Erases the currently displayed text before showing the next line.
-    - \<w> - Wait for the user to press the activate button before continuing.
-    - \<p>\<n> - Wait until the game fires event number n before continuing.
-    - \<l> - Erases the currently displayed text and left-aligns the next message. This appears to be a working
-      equivalent of the English version's $l code.
-    - \<y> - Display a yes/no prompt.
-    - \<c>\<n> - Change text color. n is the index of the CLUT to use in the font TIM file. Valid indexes are 0
-      (white), 1 (red), and 4 (yellow).
+    display as a $k code followed by the kanji index (e.g. $k(26)). If anyone feels like transcribing the kanji for the
+    other three stages, I would appreciate it! The second implication is that, on any given stage, you can only use
+    kanji that are present in that stage's kanji image.
+    
+    With that out of the way, we can discuss control codes. The same set of control codes from the other versions are
+    supported, and the $l code seems to work properly in this version. In addition to the $k code used for unknown
+    kanji, the editor also supports a $u code which can be used for unknown values in the message data, e.g. $u(1234).
     
     The last caveat is that the Japanese version of the game references strings by their offset in the file rather than
     by index like the Western versions do. This means that if you change the length of a string, you'll break every

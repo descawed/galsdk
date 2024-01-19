@@ -15,15 +15,17 @@ from PIL import Image
 
 from galsdk import graphics
 from galsdk.animation import AnimationDb
+from galsdk.manifest import FromManifest
 from galsdk.model import ActorModel
 from galsdk.module import (ActorInstance, CircleCollider, Collider, ColliderType, RectangleCollider, RoomModule,
                            TriangleCollider)
-from galsdk.project import Project
-from galsdk.game import Stage
+from galsdk.project import Map, Project
+from galsdk.game import Stage, STAGE_MAPS
+from galsdk.manifest import Manifest
 from galsdk.room import (CircleColliderObject, RectangleColliderObject, RoomObject, TriangleColliderObject,
                          WallColliderObject, TriggerObject, CameraCutObject, CameraObject, BillboardObject, ActorObject,
                          EntranceObject)
-from galsdk.tim import TimDb
+from galsdk.tim import TimFormat
 from galsdk.ui.active_animation import ActiveAnimation
 from galsdk.ui.room.actor import ActorEditor
 from galsdk.ui.room.camera import CameraEditor
@@ -31,6 +33,7 @@ from galsdk.ui.room.collider import ColliderEditor, ColliderObject
 from galsdk.ui.room.cut import CameraCutEditor
 from galsdk.ui.room.entrance import EntranceEditor
 from galsdk.ui.room.replaceable import Replaceable
+from galsdk.ui.room.map import MapEditor
 from galsdk.ui.room.module import ModuleEditor
 from galsdk.ui.room.trigger import TriggerEditor
 from galsdk.ui.tab import Tab
@@ -437,9 +440,8 @@ class RoomViewport(Viewport):
             for background in backgrounds:
                 if background.index >= 0 and background.index not in self.loaded_tims:
                     path = self.stage_backgrounds[self.current_stage][background.index].path
-                    with path.open('rb') as f:
-                        db = TimDb.read(f, fmt=TimDb.Format.from_extension(path.suffix))
-                    self.loaded_tims[background.index] = db
+                    manifest = Manifest.load_from(path)
+                    self.loaded_tims[background.index] = [fm.obj for fm in manifest.load_files(TimFormat)]
 
         for layout_set in module.actor_layouts:
             self.actor_layouts.extend(layout_set.layouts)
@@ -716,6 +718,8 @@ class RoomViewport(Viewport):
 class RoomTab(Tab):
     """Tab for inspecting and editing rooms in the game"""
 
+    maps: list[Map]
+
     def __init__(self, project: Project, base: ShowBase):
         super().__init__('Room', project)
         self.base = base
@@ -727,6 +731,9 @@ class RoomTab(Tab):
         self.rooms_by_index = {}
         self.movies = self.project.get_movie_list()
         self.actor_instance_health = self.project.get_actor_instance_health()
+        self.module_manifest = self.project.get_modules()
+        self.maps_changed = False
+        self.manifest_changed = False
         self.visibility = {'colliders': True, 'cuts': True, 'triggers': True, 'cameras': True, 'actors': True,
                            'entrances': True}
 
@@ -745,30 +752,17 @@ class RoomTab(Tab):
             self.strings[str(stage)] = self.project.get_stage_strings(stage).obj
 
             for room in self.project.get_stage_rooms(stage):
-                room_id = len(self.rooms)
-                self.rooms.append(room)
-                self.rooms_by_index[room.key] = room
-                iid = f'room_{room_id}'
-                self.tree.insert(stage, tk.END, text=f'#{room.obj.module_id:02X}: {room.file.name}', iid=iid)
+                self.add_room_module(stage, room)
 
-                actor_iid = f'actors_{room_id}'
-                self.tree.insert(iid, tk.END, text='Actors', iid=actor_iid, open=True)
-                collider_iid = f'colliders_{room_id}'
-                self.tree.insert(iid, tk.END, text='Colliders', iid=collider_iid)
-                entrance_iid = f'entrances_{room_id}'
-                self.tree.insert(iid, tk.END, text='Entrances', iid=entrance_iid)
-                camera_iid = f'cameras_{room_id}'
-                self.tree.insert(iid, tk.END, text='Cameras', iid=camera_iid)
-                cut_iid = f'cuts_{room_id}'
-                self.tree.insert(iid, tk.END, text='Cuts', iid=cut_iid)
-                trigger_iid = f'triggers_{room_id}'
-                self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
-
-        self.maps = self.project.get_room_indexes_by_map()
-        self.room_names_by_map = [[self.rooms_by_index[index].file.name for index in map_] for map_ in self.maps]
+        self.maps = self.project.get_maps()
+        self.room_names_by_map = [
+            [self.rooms_by_index[room.module_index].file.name for room in map_.rooms] for map_ in self.maps
+        ]
 
         self.viewport = RoomViewport(self.base, 1024, 768, self.project, self)
         self.viewport.on_select(self.on_viewport_select)
+
+        edit_maps_button = ttk.Button(self, text='Edit maps', command=self.edit_maps)
 
         viewport_options = ttk.Frame(self)
         self.view_var = tk.StringVar(self, 'None')
@@ -787,6 +781,7 @@ class RoomTab(Tab):
         self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
         self.viewport.grid(row=0, column=3, sticky=tk.NS + tk.E)
+        edit_maps_button.grid(row=1, column=2, sticky=tk.S)
         viewport_options.grid(row=1, column=3, sticky=tk.EW + tk.S)
 
         view_label.pack(padx=10, side=tk.LEFT)
@@ -801,6 +796,64 @@ class RoomTab(Tab):
         self.tree.bind('<<TreeviewSelect>>', self.select_item)
         self.tree.bind('<Button-3>', self.handle_right_click)
         self.bind('<Configure>', self.resize_3d)
+
+    def add_room_module(self, stage: Stage, room: FromManifest[RoomModule], changed: bool = False):
+        room_id = len(self.rooms)
+        self.rooms.append(room)
+        self.rooms_by_index[room.key] = room
+        iid = f'room_{room_id}'
+        change_marker = '* ' if changed else ''
+        self.tree.insert(stage, tk.END, text=f'{change_marker}#{room.obj.module_id:02X}: {room.file.name}', iid=iid)
+
+        actor_iid = f'actors_{room_id}'
+        self.tree.insert(iid, tk.END, text='Actors', iid=actor_iid, open=True)
+        collider_iid = f'colliders_{room_id}'
+        self.tree.insert(iid, tk.END, text='Colliders', iid=collider_iid)
+        entrance_iid = f'entrances_{room_id}'
+        self.tree.insert(iid, tk.END, text='Entrances', iid=entrance_iid)
+        camera_iid = f'cameras_{room_id}'
+        self.tree.insert(iid, tk.END, text='Cameras', iid=camera_iid)
+        cut_iid = f'cuts_{room_id}'
+        self.tree.insert(iid, tk.END, text='Cuts', iid=cut_iid)
+        trigger_iid = f'triggers_{room_id}'
+        self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
+
+    def edit_maps(self, *_):
+        # make a copy of the maps which the map editor can edit before changes are confirmed
+        maps = copy.deepcopy(self.maps)
+        # this blocks until the editor window is closed
+        editor = MapEditor(maps, self.module_manifest, self.project, self.winfo_toplevel())
+        if not editor.confirmed:
+            return
+        # replace the maps with edited versions
+        index_stages = {}
+        maps_changed = False
+        for i in range(len(editor.maps)):
+            for stage, map_indexes in STAGE_MAPS.items():
+                if i in map_indexes:
+                    break
+            else:
+                raise ValueError(f'Stage for map index {i} not found')
+            for room in editor.maps[i].rooms:
+                index_stages[room.module_index] = stage
+            if self.maps[i] != editor.maps[i]:
+                # FIXME: if an entry point changed, that should trigger a re-parse of the affected module
+                self.maps[i] = editor.maps[i]
+                maps_changed = True
+        if maps_changed:
+            self.maps_changed = True
+        # add new modules
+        for index in editor.modules_added:
+            module = self.module_manifest.load_file(index, RoomModule.load_with_metadata)
+            self.add_room_module(index_stages[index], module, True)
+            self.manifest_changed = True
+        # regenerate room name map
+        self.room_names_by_map = [
+            [self.rooms_by_index[room.module_index].file.name for room in map_.rooms] for map_ in self.maps
+        ]
+
+        if maps_changed or editor.modules_added:
+            self.notify_change()
 
     def on_viewport_select(self, identifier: str):
         self.tree.selection_set(identifier)
@@ -1074,6 +1127,7 @@ class RoomTab(Tab):
                 self.tree.insert(iid, tk.END, text=f'#{i}', iid=f'{group}_{i}_{room_id}')
 
     def select_item(self, _=None):
+        self.group_menu.unpost()
         selection = self.tree.selection()
         if not selection:
             return
@@ -1184,6 +1238,8 @@ class RoomTab(Tab):
 
     @property
     def has_unsaved_changes(self) -> bool:
+        if self.maps_changed or self.manifest_changed:
+            return True
         self.update_room()
         return len(self.changed_room_ids) > 0
 
@@ -1202,6 +1258,12 @@ class RoomTab(Tab):
             # function info is saved in the metadata
             with room.file.path.with_suffix('.json').open('w') as f:
                 room.obj.save_metadata(f)
+        if self.maps_changed:
+            self.project.save_maps()
+            self.maps_changed = False
+        if self.manifest_changed:
+            self.module_manifest.save()
+            self.manifest_changed = False
         self.changed_room_ids.clear()
         self.clear_change_markers()
 

@@ -7,7 +7,7 @@ from galsdk.room.object import RoomObject
 
 
 class BillboardObject(RoomObject):
-    SIZE = 50
+    SIZE = 100
 
     def __init__(self, name: str, image: Image, pickable: bool = False):
         super().__init__(name, Point(), 0)

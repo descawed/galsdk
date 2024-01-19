@@ -1,0 +1,3 @@
+[submodule "sdk/PSn00bSDK"]
+	path = sdk/PSn00bSDK
+	url = https://github.com/Lameguy64/PSn00bSDK.git

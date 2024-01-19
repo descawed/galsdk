@@ -3,7 +3,7 @@ from tkinter import ttk
 
 from galsdk.coords import Dimension
 from galsdk.room import CameraCutObject
-from galsdk.ui.room.util import validate_int, StringVar
+from galsdk.ui.util import validate_int, StringVar
 
 
 class CameraCutEditor(ttk.Frame):

@@ -17,7 +17,8 @@ from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
 from galsdk.game import (Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_ACTOR_INSTANCES, NUM_KEY_ITEMS, NUM_MED_ITEMS,
-                         NUM_MAPS, NUM_MOVIES, MODULE_ENTRY_SIZE, GameVersion, VERSIONS, ADDRESSES)
+                         NUM_MAPS, NUM_MOVIES, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS,
+                         ADDRESSES)
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
 from galsdk.model import ACTORS, ActorModel, ItemModel
@@ -45,6 +46,26 @@ class Item:
 class ActorGraphics:
     model_index: int
     anim_index: int
+
+
+@dataclass
+class MapRoom:
+    room_index: int
+    module_index: int
+    entry_point: int
+
+    def to_bytes(self) -> bytes:
+        return self.module_index.to_bytes(4, 'little') + self.entry_point.to_bytes(4, 'little')
+
+
+@dataclass
+class Map:
+    index: int
+    name: str
+    rooms: list[MapRoom]
+
+    def to_bytes(self) -> bytes:
+        return b''.join(room.to_bytes() for room in self.rooms)
 
 
 class Project:
@@ -172,7 +193,8 @@ class Project:
 
         art_dir = project_path / 'art'
         art_dir.mkdir(exist_ok=True)
-        art_dbs = ['CARD.CDB', 'DISPLAY.CDB', 'FONT.CDB', 'ITEMTIM.CDB', 'MAIN_TEX.CDB', 'MENU.CDB', 'TIT.CDB']
+        art_dbs = ['BGTIM_A.CDB', 'BGTIM_B.CDB', 'BGTIM_C.CDB', 'BGTIM_D.CDB', 'CARD.CDB', 'DISPLAY.CDB', 'FONT.CDB',
+                   'ITEMTIM.CDB', 'MAIN_TEX.CDB', 'MENU.CDB', 'TIT.CDB']
 
         for art_db_name in art_dbs:
             art_db_path = game_data / art_db_name
@@ -183,9 +205,35 @@ class Project:
                 art_db = Database.read(f)
             project_art_dir = art_dir / art_db_path.stem
             project_art_dir.mkdir(exist_ok=True)
-            Manifest.from_archive(project_art_dir, art_db_path.stem, art_db,
-                                  sniff=[LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Credits],
-                                  original_path=art_db_path)
+            art_manifest = Manifest.from_archive(project_art_dir, art_db_path.stem, art_db,
+                                                 sniff=[LatinStringDb, XaDatabase, Menu, TimDb, TimFormat, Credits],
+                                                 original_path=art_db_path)
+
+            if version.region == Region.NTSC_J and art_db_path.name.startswith('BGTIM_'):
+                # we want every entry in the BGTIM archives to be a manifest, but in the Japanese version, the entries
+                # are TIM streams, and we treat TIM streams with one element as just individual TIMs, which aren't
+                # archives. so, we have to go back and put all the affected TIMs in a container.
+                new_manifests = {}
+                for i, mf in enumerate(art_manifest):
+                    if mf.is_manifest:
+                        continue
+
+                    new_path = mf.path.with_suffix('.TMM')
+                    new_path.mkdir(exist_ok=True)
+                    original_path = new_path / 'original.bin'
+                    shutil.copy(mf.path, original_path)
+                    # FIXME: passing the metadata like this is a hack because it's supposed to come from the TimDb
+                    #  instance that was unpacked
+                    sub_manifest = Manifest(new_path, f'{art_manifest.name}_{mf.name}', 'tmm',
+                                            original_path, {'fmt': '.TMM'})
+                    sub_manifest.add(mf.path, 0, mf.name, '.TIM')
+                    sub_manifest.save()
+                    new_manifests[i] = (mf.name, sub_manifest)
+
+                with art_manifest:
+                    for i, (name, sub_manifest) in new_manifests.items():
+                        del art_manifest[i]
+                        art_manifest.add_manifest(sub_manifest, i, name, '.TMM')
 
         display_manifest = Manifest.load_from(art_dir / 'DISPLAY')
 
@@ -242,8 +290,6 @@ class Project:
         for i, stage in enumerate(Stage):
             stage_dir = stages_dir / stage
             stage_dir.mkdir(exist_ok=True)
-            bg_dir = stage_dir / 'backgrounds'
-            bg_dir.mkdir(exist_ok=True)
             movie_dir = stage_dir / 'movies'
             if movie_dir.is_dir():
                 shutil.rmtree(movie_dir)
@@ -253,16 +299,13 @@ class Project:
             if movie_src.exists():
                 shutil.copytree(movie_src, movie_dir)
 
-            bg_db_path = game_data / f'BGTIM_{stage}.CDB'
-            with bg_db_path.open('rb') as f:
-                bg_db = Database.read(f)
-            fmt = '.TMM' if version.region == Region.NTSC_J else '.TDB'
-            Manifest.from_archive(bg_dir, f'BGTIM_{stage}', bg_db, fmt, recursive=False, original_path=bg_db_path)
+            manifest_path = art_dir / f'BGTIM_{stage}'
 
             stage_info_path = stage_dir / 'stage.json'
             stage_info = {
                 'index': i,
                 'strings': str(message_manifest[message_indexes[i]].path.relative_to(project_path)),
+                'background': str(manifest_path.relative_to(project_path)),
             }
             with stage_info_path.open('w') as f:
                 json.dump(stage_info, f)
@@ -320,6 +363,7 @@ class Project:
         if module_metadata is not None:
             shutil.copytree(module_metadata, module_dir, dirs_exist_ok=True)
 
+        metadata_paths = {}
         with module_manifest:
             for modules in maps:
                 for module_entry in modules:
@@ -341,11 +385,14 @@ class Project:
                         except KeyError:
                             module_manifest.rename(index, f'{module.name}_{index}', ext=module.suggested_extension)
 
-                        new_metadata_path = module_manifest[index].path.with_suffix('.json')
-                        with new_metadata_path.open('w') as f:
+                        with metadata_path.open('w') as f:
                             module.save_metadata(f)
-                        # remove the old metadata path
-                        metadata_path.unlink(True)
+                        metadata_paths[index] = metadata_path
+
+        # now that the manifest and renames have been saved, rename all the metadata files as well
+        for index, old_metadata_path in metadata_paths.items():
+            new_metadata_path = module_manifest[index].path.with_suffix('.json')
+            old_metadata_path.rename(new_metadata_path)
 
         x_scales = []
         option_menu = []
@@ -515,10 +562,16 @@ class Project:
         :param stage: The stage for which to get the background manifest
         :return: The manifest of background files
         """
+        path = self.project_dir / 'stages' / stage / 'stage.json'
+        with path.open('r') as f:
+            stage_info = json.load(f)
+        if 'background' in stage_info:
+            return Manifest.load_from(self.project_dir / Path(stage_info['background']))
+        # old project
         return Manifest.load_from(self.project_dir / 'stages' / stage / 'backgrounds')
 
     def get_stage_movies(self, stage: Stage) -> Iterable[Movie]:
-        for path in (self.project_dir / 'stages' / stage / 'movies').glob('*.STR'):
+        for path in sorted((self.project_dir / 'stages' / stage / 'movies').glob('*.STR')):
             yield Movie(path)
 
     def get_xa_databases(self) -> list[XaDatabase]:
@@ -527,13 +580,11 @@ class Project:
 
         xa_dbs = []
         if self.version.region == Region.NTSC_J:
-            addresses = ADDRESSES[self.version.id]
-
             exe_path = self.project_dir / 'boot' / self.version.exe_name
             with exe_path.open('rb') as f:
                 exe = Exe.read(f)
 
-            region_sets = XaRegion.get_jp_xa_regions(addresses, self.version.disc, exe)
+            region_sets = XaRegion.get_jp_xa_regions(self.addresses, self.version.disc, exe)
 
             for mf in voice_manifest:
                 index = int(mf.name[-2:])
@@ -628,21 +679,49 @@ class Project:
 
     def get_stage_rooms(self, stage: Stage) -> Iterable[FromManifest[RoomModule]]:
         manifest = Manifest.load_from(self.project_dir / 'modules')
-        for i, manifest_file in enumerate(manifest):
-            if manifest_file.name[0] == stage:
-                yield manifest.load_file(i, RoomModule.load_with_metadata)
+        indexes_seen = set()
+        maps = self.get_maps()
+        loader = functools.partial(RoomModule.load_with_metadata, language=self.version.language)
+        for map_index in STAGE_MAPS[stage]:
+            for room in maps[map_index].rooms:
+                if room.module_index in indexes_seen:
+                    continue
+                yield manifest.load_file(room.module_index, loader)
+                indexes_seen.add(room.module_index)
 
-    def get_room_indexes_by_map(self) -> list[list[int]]:
-        addresses = ADDRESSES[self.version.id]
+    def get_modules(self) -> Manifest:
+        return Manifest.load_from(self.project_dir / 'modules')
+
+    @functools.cache
+    def get_maps(self) -> list[Map]:
         exe_path = self.project_dir / 'boot' / self.version.exe_name
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
 
-        maps = self._get_maps(addresses['MapModules'], exe)
-        return [[entry['index'] for entry in map_] for map_ in maps]
+        maps = self._get_maps(self.addresses['MapModules'], exe)
+        out = []
+        for i, map_ in enumerate(maps):
+            rooms = [MapRoom(j, room['index'], room['entry_point']) for j, room in enumerate(map_)]
+            out.append(Map(i, MAP_NAMES[i], rooms))
+        return out
+
+    def save_maps(self):
+        # we expect get_maps to always return the same list of maps that's shared throughout the application
+        maps = self.get_maps()
+        exe_path = self.project_dir / 'boot' / self.version.exe_name
+        with exe_path.open('rb') as f:
+            exe = Exe.read(f)
+
+        module_set_addr = self.addresses['MapModules']
+        module_set_addrs = struct.unpack(f'<{NUM_MAPS}I',
+                                         exe[module_set_addr:module_set_addr + 4 * NUM_MAPS])
+        for (map_, address) in zip(maps, module_set_addrs, strict=True):
+            map_bytes = map_.to_bytes()
+            exe[address:address + len(map_bytes)] = map_bytes
+        with exe_path.open('wb') as f:
+            exe.write(f)
 
     def get_movie_list(self) -> list[str]:
-        addresses = ADDRESSES[self.version.id]
         exe_path = self.project_dir / 'boot' / self.version.exe_name
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
@@ -654,7 +733,7 @@ class Project:
         else:
             layout = '<28s4I'
         movie_size = struct.calcsize(layout)
-        address = addresses['Movies']
+        address = self.addresses['Movies']
         movies = []
         for _ in range(num_movies):
             unpacked = struct.unpack(layout, exe[address:address+movie_size])
@@ -686,7 +765,7 @@ class Project:
         return Manifest.load_from(self.project_dir / 'art' / 'MENU').get_manifest('item_art')
 
     def get_art_manifests(self) -> Iterable[Manifest]:
-        for path in (self.project_dir / 'art').iterdir():
+        for path in sorted((self.project_dir / 'art').iterdir()):
             yield Manifest.load_from(path)
 
     def get_items(self, key_items: bool | None = None) -> Iterable[Item]:

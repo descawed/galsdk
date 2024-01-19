@@ -3,11 +3,12 @@ from tkinter import ttk
 
 from galsdk.manifest import FromManifest
 from galsdk.module import RoomModule
-from galsdk.ui.room.util import validate_int
+from galsdk.project import Map
+from galsdk.ui.util import validate_int
 
 
 class ModuleEditor(ttk.Frame):
-    def __init__(self, module: FromManifest[RoomModule], maps: list[list[int]], *args, **kwargs):
+    def __init__(self, module: FromManifest[RoomModule], maps: list[Map], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.module = module
 
@@ -22,12 +23,16 @@ class ModuleEditor(ttk.Frame):
         id_input = ttk.Entry(self, textvariable=self.id_var, validate='all', validatecommand=validator)
 
         map_labels = []
-        for i, rooms in enumerate(maps):
-            for j, index in enumerate(rooms):
-                if index == module.key:
+        entry_labels = []
+        for map_ in maps:
+            for room in map_.rooms:
+                if room.module_index == module.key:
                     map_label = ttk.Label(self, text='Map/Room:', anchor=tk.W)
-                    map_value = ttk.Label(self, text=f'{i}/{j}')
+                    map_value = ttk.Label(self, text=f'{map_.index}/{room.room_index}')
+                    entry_label = ttk.Label(self, text='Entry Point:', anchor=tk.W)
+                    entry_value = ttk.Label(self, text=f'{room.entry_point:08X}')
                     map_labels.append((map_label, map_value))
+                    entry_labels.append((entry_label, entry_value))
 
         # TODO: show entry point actions
 
@@ -36,9 +41,12 @@ class ModuleEditor(ttk.Frame):
         id_label.grid(row=1, column=0)
         id_input.grid(row=1, column=1)
         row = 2
-        for map_label, map_value in map_labels:
+        for (map_label, map_value), (entry_label, entry_value) in zip(map_labels, entry_labels, strict=True):
             map_label.grid(row=row, column=0)
             map_value.grid(row=row, column=1)
+            row += 1
+            entry_label.grid(row=row, column=0)
+            entry_value.grid(row=row, column=1)
             row += 1
 
         id_input.focus_force()

@@ -1,23 +1,23 @@
 import tkinter as tk
 from pathlib import Path
+from typing import Sequence
 
 from galsdk.ui.image import ImageViewerTab
 from galsdk.project import Project
 from galsdk.game import Stage
-from galsdk.tim import TimDb
+from galsdk.manifest import Manifest
+from galsdk.tim import TimDb, TimFormat
 from psx.tim import Tim
 
 
 class BackgroundTab(ImageViewerTab):
     """Editor tab for viewing room background images"""
 
-    dbs: list[tuple[Path, TimDb | None]]
-    current_image: Tim | None
+    dbs: list[tuple[Path, TimDb | Sequence[Tim] | None]]
 
     def __init__(self, project: Project):
         super().__init__('Background', project)
         self.dbs = []
-        self.current_image = None
 
         for stage in Stage:
             stage: Stage
@@ -38,8 +38,8 @@ class BackgroundTab(ImageViewerTab):
             index = int(focused[3:])
             db_path = self.dbs[index]
             if db_path[1] is None:
-                with db_path[0].open('rb') as f:
-                    db = TimDb.read(f, fmt=TimDb.Format.from_extension(db_path[0].suffix))
+                manifest = Manifest.load_from(db_path[0])
+                db = [fm.obj for fm in manifest.load_files(TimFormat)]
                 self.dbs[index] = (db_path[0], db)
                 db_id = f'db_{index}'
                 self.tree.set_children(db_id)  # remove the dummy entry

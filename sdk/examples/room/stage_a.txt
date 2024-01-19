@@ -1,0 +1,220 @@
+Some error.$w
+Yameta.$w
+K_Yameta.$w
+Reenter?$y
+T01B debug only.$w
+Save current game?$y
+You see a $c(4)Recovery Capsule$c(0). Get it?$y
+You got a $c(4)Recovery Capsule$c(0)$w
+You took a $c(4)Recovery Capsule$c(0)$w
+You see some $c(4)Nalcon$c(0). Get it?$y
+You got some $c(4)Nalcon$c(0)$w
+You injected $c(4)Nalcon$c(0)$w
+You see some $c(4)Red$c(0). Get it?$y
+You got some $c(4)Red$c(0)$w
+You injected $c(4)Red$c(0)$w
+You see some $c(4)D-Felon$c(0). Get it?$y
+You got some $c(4)D-Felon$c(0).$w
+You injected $c(4)D-Felon$c(0)$w
+You see some $c(4)Delmetor$c(0). Get it?$y
+You got some $c(4)Delmetor$c(0)$w
+You took $c(4)Delmetor$c(0)$w
+You see some $c(4)Skip$c(0). Get it?$y
+You got some $c(4)Skip$c(0)$w
+You took $c(4)Skip$c(0)$w
+You see some $c(4)Appolinar$c(0). Get it?$y
+You got some $c(4)Appolinar$c(0)$w
+You took $c(4)Appolinar$c(0)$w
+You can't take it$w$rYour medicine pouch is full$w
+NoMessage M016$w
+NoMessage M017$w
+NoMessage T70P$w
+NoMessage M035$w
+NoMessage DT03$w
+NoMessage DT011$w
+NoMessage DT008$w
+NoMessage DL010$w
+NoMessage DL007$w
+NoMessage DL006$w
+NoMessage DL009$w
+NoMessage T009$w
+NoMessage T014$w
+NoMessage T019$w
+NoMessage T017$w
+NoMessage T200$w
+You got a $c(4)Beeject.$c(0)$w
+You got some $c(4)medical staff notes.$c(0)$w
+You got some $c(4)pictures of your parents.$c(0)$w
+You got $c(4)Rion's test data.$c(0)$w
+You got $c(4)Clinic Chief Lem's notes.$c(0)$w
+You got some $c(4)liquid explosive.$c(0)$w
+You used some $c(4)liquid explosive.$c(0)$w
+You got a $c(4)security card.$c(0)$w
+You need a $c(4)security card$c(0)$w$rto use it.$w
+You used $c(4)the security card.$c(0)$w
+You inserted $c(4)the security card.$c(0)$w
+The security card should work now.$w
+You got $c(4)the Freezer Room key.$c(0)$w
+You used $c(4)the Freezer Room key.$c(0)$w
+You got $c(4)the PPEC Storage key.$c(0)$w
+You used $c(4)the PPEC Storage key.$c(0)$w
+You got a $c(4)fuse.$c(0)$w
+You used $c(4)the fuse.$c(0)$w
+You got a $c(4)two-headed snake.$c(0)$w
+You placed $c(4)the two-headed snake.$c(0)$w
+You removed $c(4)the two-headed snake.$c(0)$w
+You got a $c(4)two-headed monkey.$c(0)$w
+You placed $c(4)the two-headed monkey.$c(0)$w
+You removed $c(4)the two-headed monkey.$c(0)$w
+You got a $c(4)two-headed wolf.$c(0)$w
+You placed $c(4)the two-headed wolf.$c(0)$w
+You removed $c(4)the two-headed wolf.$c(0)$w
+You got a $c(4)two-headed eagle.$c(0)$w
+You placed $c(4)the two-headed eagle.$c(0)$w
+You removed $c(4)the two-headed eagle.$c(0)$w
+It's blown a $c(4)fuse.$c(0)$w$rMaybe you can find a replacement.$w
+It's locked.$w$rYou can't open it.$w
+It's locked.$w$rThere must be a way to open it...$w
+It's locked.$w$rThe door says "Research Lab."$w
+It's locked from the other side.$w$rYou can't open it.$w
+You unlocked the Armory.$w
+You unlocked the Clinic Chief's Room.$w
+The door unlocked.$w
+You unlocked it.$w
+What's this for?$w
+Dr. Lem, 2520.$w
+0:20, 10.27.2522$w
+...It won't budge.$w$rMaybe I could blast it open...$w
+You see a $c(4)security card$c(0) slot.$w$rMaybe it can write the new code...$w
+Maybe I should use my power again...$w
+You turned it on.$w
+You got $c(4)the G Project Report.$c(0)$w
+Enter the new code.$w
+You already encoded it.$w
+You got $c(4)the Control Room key.$c(0)$w
+You used $c(4)the Control Room key.$c(0)$w
+It's locked.$w$rThe door says "Control Room".$w
+You got $c(4)the Test Lab key.$c(0)$w
+You used $c(4)the Test Lab key.$c(0)$w
+It's locked.$w$rThe door says "Test Lab".$w
+You got $c(4)the Research Lab key.$c(0)$w
+You used $c(4)the Research Lab key.$c(0)$w
+...It won't budge.$w
+This is what they examined me with?$w
+What did they do to me here...?$w
+I wonder how long I was here...$w
+Who am I?$w
+And why am I here...?$w$rHow did I get out of that bed?$w$rWas it by my own power...?$w
+It's a storage cabinet for PPECs.$w$rYou need a key to open it.$w
+None of the other items seem useful.$w
+I wonder what I am looking for...$w
+You see rows of computers.$w
+I wonder what these machines do...$w
+You see the room next door.$w
+What were they doing to me here?$w
+Is this my data?$w
+Is that a statue of a goddess?$w$r...Where on earth am I?$w
+You see nothing but junk.$w
+Lots of empty medical supply boxes.$w
+This chair...$w$rI sense something from it...$w
+9607932...$w$rWhat could that mean?$w
+It's locked.$w$rYou sense cold air beyond the door.$w
+I wonder what this machine does.$w
+It's locked and there's no unlock$w$rbutton. I wonder how it opens?$w
+There's a button.$w
+The door unlocked.$w$rYou can go to the next room.$w
+There's a mirror...$w
+I can't remember anything.$w
+You see a loose $c(4)fuse.$c(0)$w
+Wrong code.$w$rCould not reformat card.$w
+Card reformatted.$w
+$c(4)The new security code$c(0) was written.$w
+You turned off the autolock.$w
+The door is locked.$w$rIt says "Special PPEC Office".$w
+You used $c(4)the Special PPEC Office key.$c(0)$w
+Cold air started blasting in.$w$rHow can it be stopped?$w
+Who am I?$w
+You got $c(4)the Special PPEC Office key.$c(0)$w
+You can see a goddess statue.$w
+It won't turn on.$w
+You see a picture of an eagle.$w
+It looks like an incubator...$w
+The new Master of Creation.$w
+No response.$w
+You see a orange box...$w
+This elevator might lead outside...$w$rI wonder how it works...$w
+You've already unlocked it.$w
+What does this machine do?$w
+Looks like it won't work anymore...$w
+I wonder what this lab equipment does.$w
+You see a bunch of strange equipment.$w
+Clinic Chief Lem's image is gone.$w
+It looks like some sort of factory...$w
+Power is off.$w$rIt appears to be out of use.$w
+There are many chairs here.$w
+You see many computers.$w
+What sort of equipment is this?$w
+That monster came from here...$w
+So they're wearing these suits...$w
+Snake...$p(0)$rEagle...$p(1)
+Wolf...$p(0)$rMonkey...$p(1)
+You can see the city lights...$w
+What is this...$w$rIt looks like a fetus, but...$w
+...It's alive!$w
+A black sphere is floating there.$w
+It seems to control the incubators.$w
+You see drawings of two-headed animals.$w
+I wonder why I am here...$w
+I wonder what this does?$w
+You see a large screen.$w$rThere's a switch on the right.$w
+You found a $c(4)newspaper.$c(0)$w
+You see an image of a corridor.$w
+It doesn't work...$w
+It's empty.$w
+It's locked.$w$rIt won't open from this side.$w
+There's a restraining bed here too...$w
+There's nothing onscreen$w
+I wonder what they were making...$w
+The security code has been changed.$w$rYou can't unlock it.$w
+It's locked.$w
+No response from this switch.$w
+So I was experimented on here too...$w
+You see various PPECs and medicines.$w
+I wonder what this equipment is for.$w
+There's a bunch of research material.$w
+Michelangelo City...$w$rWhere should I go now?$w
+It's a computer terminal.$w
+You see security personnel lockers.$w
+The alarm is lit red.$w
+There is a box on the shelf.$w
+You see some research data disks.$w
+The box is empty.$w
+There's nothing else useful here.$w
+The light is red.$w
+It appears to control the incubators.$w
+There's an ash tray here.$w
+It looks like an auto-service machine.$w
+Nothing useful here.$w
+It looks like a power supply panel.$w
+There's nothing on the pedestal.$w
+14 F... Can I go to a lower floor?$w
+You see some notes...$w
+You've already placed the stones.$w
+The lamp turned blue.$w
+All the lamps turned red again.$w
+All the lamps are now blue.$w
+The lamp did not respond.$w
+The door was destroyed during a battle. $w
+You've already removed the fuse.$w
+You got a book entitled$w$r$c(4)"New Replicative Computer Theory".$c(0)$w
+You got $c(4)Dr. Pascalle's diary.$c(0)$w
+You got a $c(4)letter from your mom.$c(0)$w
+You got a $c(4)letter from Lilia.$c(0)$w
+You got $c(4)unused item #0$c(0).$w
+You got $c(4)unused item #7$c(0).$w
+You got $c(4)unused item #10$c(0).$w
+You got $c(4)unused item #18$c(0).$w
+Keep using this object to see the unused 3D models for files.$w$rIt will also give you the four unused items in the game.$w
+This object cycles through all the scan images ("item TIMs").$w
+Would you like to fight the unused variant of the mech enemy?$y
+The mech has already been activated. Watch a movie instead?$y

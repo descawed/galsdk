@@ -7,7 +7,7 @@ from direct.showbase.ShowBase import ShowBase, Task
 from galsdk.animation import Animation, AnimationDb, AnimationFlag
 from galsdk.project import Project
 from galsdk.ui.model_viewer import ModelViewer
-from galsdk.ui.room.util import validate_int, validate_float
+from galsdk.ui.util import validate_int, validate_float
 from galsdk.ui.tab import Tab
 
 
