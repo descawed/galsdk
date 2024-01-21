@@ -335,18 +335,24 @@ def patch_cd(image_path: Path, cd_path: str, input_path: Path, raw: bool):
         cd.write(f)
 
 
-def extract_file(cd: PsxCd, output_path: Path, cd_path: str, raw: bool, extend: bool):
+def extract_file(cd: PsxCd, output_path: Path, cd_path: str, raw: bool, extend: bool, keep_hierarchy: bool,
+                 depth: int = 0):
+    base_name = cd_path.rsplit('\\', 1)[-1]
     if cd.is_dir(cd_path):
+        if keep_hierarchy and base_name and depth > 0:
+            output_path = output_path / base_name
+            output_path.mkdir(exist_ok=True)
         for entry in cd.list_dir(cd_path):
-            extract_file(cd, output_path, entry.path, raw, extend)
+            extract_file(cd, output_path, entry.path, raw, extend, keep_hierarchy, depth + 1)
     else:
-        base_name = cd_path.rsplit('\\', 1)[-1].split(';', 1)[0]
+        base_name = base_name.split(';', 1)[0]
         new_path = output_path / base_name
         with new_path.open('wb') as f:
             cd.extract(cd_path, f, raw, extend)
 
 
-def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw: bool, extend: bool):
+def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw: bool, extend: bool,
+                  keep_hierarchy: bool):
     with image_path.open('rb') as f:
         cd = PsxCd(f)
 
@@ -358,7 +364,7 @@ def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw:
 
     if output_path.is_dir():
         for cd_path in cd_paths:
-            extract_file(cd, output_path, cd_path, raw, extend)
+            extract_file(cd, output_path, cd_path, raw, extend, keep_hierarchy)
     else:
         with output_path.open('wb') as f:
             cd.extract(cd_paths[0], f, raw, extend)
@@ -429,11 +435,14 @@ def cli_main():
     extract_parser.add_argument('-r', '--raw', help='Extract the file(s) as raw CD sectors', action='store_true')
     extract_parser.add_argument('-x', '--extend', help='Include any sectors marked free after the end of each file',
                                 action='store_true')
+    extract_parser.add_argument('-k', '--keep-hierarchy', help='When extracting a directory, replicate the'
+                                'directory hierarchy within it', action='store_true')
     extract_parser.add_argument('cd', help='Path to the CD image', type=Path)
     extract_parser.add_argument('output', help='Path to extract file(s) to. If more than one file is being '
                                 'extracted, this must be a directory.', type=Path)
     extract_parser.add_argument('paths', help='Path(s) on the CD to be extracted', nargs='+')
-    extract_parser.set_defaults(action=lambda a: extract_files(a.cd, a.output, a.paths, a.raw, a.extend))
+    extract_parser.set_defaults(action=lambda a: extract_files(a.cd, a.output, a.paths, a.raw, a.extend,
+                                                               a.keep_hierarchy))
 
     dir_parser = subparsers.add_parser('dir', help='List directory structure of the CD image')
     dir_parser.add_argument('-r', '--recursive', help='List directories recursively', action='store_true')
