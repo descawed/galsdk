@@ -424,20 +424,35 @@ def pack(files: Iterable[str], db_path: str, fmt: str):
         db.write(f)
 
 
-def unpack(db_path: str, target: str, fmt: str, indexes: Container[int] = None):
-    with open(db_path, 'rb') as f:
+def unpack_db(db: TimDb, target: Path, convert_format: str = None, indexes: Container[int] = None):
+    for i, tim in enumerate(db):
+        tim: TimFormat | TimDb
+        if indexes and i not in indexes:
+            continue
+        if convert_format is None:
+            output_path = target / f'{i}{tim.suggested_extension}'
+            with output_path.open('wb') as f:
+                tim.write(f)
+        elif isinstance(tim, TimDb):
+            sub_dir = target / f'{i}'
+            sub_dir.mkdir(exist_ok=True)
+            unpack_db(tim, sub_dir, convert_format)
+        else:
+            output_path = target / f'{i}.{convert_format}'
+            tim.to_image().save(output_path)
+
+
+def unpack(db_path: Path, target: Path, fmt: str, convert_format: str = None, indexes: Container[int] = None):
+    if convert_format[0] == '.':
+        convert_format = convert_format[1:]
+    with db_path.open('rb') as f:
         if fmt == 'sniff':
-            db = TimDb.sniff(f)
+            db = TimDb.sniff(f, allow_single_element_stream=True)
             if db is None:
                 raise ValueError(f'{db_path} does not appear to be a TIM database')
         else:
             db = TimDb.read(f, fmt=TimDb.Format.from_extension(fmt))
-    for i, tim in enumerate(db):
-        if indexes and i not in indexes:
-            continue
-        output_path = os.path.join(target, f'{i}{tim.suggested_extension}')
-        with open(output_path, 'wb') as f:
-            tim.write(f)
+    unpack_db(db, target, convert_format, indexes)
 
 
 if __name__ == '__main__':
@@ -456,15 +471,17 @@ if __name__ == '__main__':
     pack_parser.set_defaults(action=lambda a: pack(a.files, a.db, a.format))
 
     unpack_parser = subparsers.add_parser('unpack', help='Unpack files from a TIM DB into a directory')
-    unpack_parser.add_argument('-f', '--format', help='The format of the TIM DB to be created. The unpack command '
+    unpack_parser.add_argument('-f', '--format', help='The format of the TIM DB to be unpacked. The unpack command '
                                'also supports a format value of "sniff" (the default) to attempt to auto-detect the '
                                'format.',
                                default='sniff', choices=[*formats, 'sniff'])
+    unpack_parser.add_argument('-c', '--convert', help='Convert TIMs to the given format. Nested databases '
+                               'will be unpacked and converted recursively.')
     unpack_parser.add_argument('db', help='Path to TIM DB to be unpacked')
     unpack_parser.add_argument('target', help='Path to directory where files will be unpacked')
     unpack_parser.add_argument('indexes', nargs='*', type=int, help='One or more indexes to extract from the database. '
                                'If not provided, all files in the database will be extracted')
-    unpack_parser.set_defaults(action=lambda a: unpack(a.db, a.target, a.format, set(a.indexes)))
+    unpack_parser.set_defaults(action=lambda a: unpack(Path(a.db), Path(a.target), a.format, a.convert, set(a.indexes)))
 
     args = parser.parse_args()
     args.action(args)
