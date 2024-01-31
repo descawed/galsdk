@@ -40,18 +40,20 @@ class PsxCd:
     to successfully work with other PSX games.
     """
 
-    def __init__(self, source: BinaryIO):
+    def __init__(self, source: BinaryIO, *, ignore_invalid: bool = False):
         """
         Load a PSX CD image for patching or extracting
 
         No reference to the source is retained; the entire image is loaded into memory.
 
         :param source: A byte stream from which to read the CD image
+        :param ignore_invalid: Whether to ignore invalid sectors at the end of the file
         """
         disc = Disc(source)
         self.system_area = SystemArea()
         self.regions = self.system_area.read(disc)
         self.regions.sort(key=lambda r: (r.start, r.end))
+        filesystem_end = max(r.end for r in self.regions)
         # while loop instead of for because len(self.regions) is changing in this loop
         i = 0
         while i+1 < len(self.regions):
@@ -66,7 +68,7 @@ class PsxCd:
         num_sectors = disc.num_sectors
         if num_sectors - self.regions[-1].end > 1:
             new_region = Free(self.regions[-1].end+1, num_sectors-1)
-            new_region.read(disc)
+            new_region.read(disc, stop_at_invalid=ignore_invalid)
             self.regions.append(new_region)
 
         self.primary_volume = self.system_area.get_primary_volume()
@@ -324,9 +326,9 @@ class PsxCd:
         return new_num_sectors - region.size
 
 
-def patch_cd(image_path: Path, cd_path: str, input_path: Path, raw: bool):
+def patch_cd(image_path: Path, cd_path: str, input_path: Path, raw: bool, ignore_invalid: bool):
     with image_path.open('rb') as f:
-        cd = PsxCd(f)
+        cd = PsxCd(f, ignore_invalid=ignore_invalid)
     with input_path.open('rb') as f:
         data = f.read()
     patch = Patch(cd_path, data, raw)
@@ -352,9 +354,9 @@ def extract_file(cd: PsxCd, output_path: Path, cd_path: str, raw: bool, extend: 
 
 
 def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw: bool, extend: bool,
-                  keep_hierarchy: bool):
+                  keep_hierarchy: bool, ignore_invalid: bool):
     with image_path.open('rb') as f:
-        cd = PsxCd(f)
+        cd = PsxCd(f, ignore_invalid=ignore_invalid)
 
     if (len(cd_paths) > 1 or cd.is_dir(cd_paths[0])) and not output_path.is_dir():
         if not output_path.exists():
@@ -381,16 +383,16 @@ def print_dir(cd: PsxCd, dir_path: str | None, recursive: bool, depth: int = 0):
             print_dir(cd, entry.path, recursive, depth + 1)
 
 
-def dir_cmd(image_path: Path, cd_path: str | None, recursive: bool):
+def dir_cmd(image_path: Path, cd_path: str | None, recursive: bool, ignore_invalid: bool):
     with image_path.open('rb') as f:
-        cd = PsxCd(f)
+        cd = PsxCd(f, ignore_invalid=ignore_invalid)
 
     print_dir(cd, cd_path, recursive)
 
 
-def print_layout(image_path: Path):
+def print_layout(image_path: Path, ignore_invalid: bool):
     with image_path.open('rb') as f:
-        cd = PsxCd(f)
+        cd = PsxCd(f, ignore_invalid=ignore_invalid)
 
     for region in cd.regions:
         print(region)
@@ -422,6 +424,9 @@ def cli_main():
     import argparse
 
     parser = argparse.ArgumentParser(description='Patch or extract files in CD images')
+    parser.add_argument('-i', '--ignore-invalid', help='Ignore invalid sectors at the end of the image',
+                        action='store_true')
+
     subparsers = parser.add_subparsers()
 
     patch_parser = subparsers.add_parser('patch', help='Patch a file in the CD image')
@@ -429,7 +434,7 @@ def cli_main():
     patch_parser.add_argument('cd', help='Path to the CD image to be patched', type=Path)
     patch_parser.add_argument('path', help='Path on the CD to be patched')
     patch_parser.add_argument('input', help='Path to the file that will be patched into the CD', type=Path)
-    patch_parser.set_defaults(action=lambda a: patch_cd(a.cd, a.path, a.input, a.raw))
+    patch_parser.set_defaults(action=lambda a: patch_cd(a.cd, a.path, a.input, a.raw, a.ignore_invalid))
 
     extract_parser = subparsers.add_parser('extract', help='Extract files from the CD image')
     extract_parser.add_argument('-r', '--raw', help='Extract the file(s) as raw CD sectors', action='store_true')
@@ -442,17 +447,17 @@ def cli_main():
                                 'extracted, this must be a directory.', type=Path)
     extract_parser.add_argument('paths', help='Path(s) on the CD to be extracted', nargs='+')
     extract_parser.set_defaults(action=lambda a: extract_files(a.cd, a.output, a.paths, a.raw, a.extend,
-                                                               a.keep_hierarchy))
+                                                               a.keep_hierarchy, a.ignore_invalid))
 
     dir_parser = subparsers.add_parser('dir', help='List directory structure of the CD image')
     dir_parser.add_argument('-r', '--recursive', help='List directories recursively', action='store_true')
     dir_parser.add_argument('cd', help='Path to the CD image', type=Path)
     dir_parser.add_argument('dir', help='Path to the directory to list. Defaults to root directory.', nargs='?')
-    dir_parser.set_defaults(action=lambda a: dir_cmd(a.cd, a.dir, a.recursive))
+    dir_parser.set_defaults(action=lambda a: dir_cmd(a.cd, a.dir, a.recursive, a.ignore_invalid))
 
     layout_parser = subparsers.add_parser('layout', help='Print the layout of the CD image')
     layout_parser.add_argument('cd', help='Path to the CD image', type=Path)
-    layout_parser.set_defaults(action=lambda a: print_layout(a.cd))
+    layout_parser.set_defaults(action=lambda a: print_layout(a.cd, a.ignore_invalid))
 
     validate_parser = subparsers.add_parser('validate', help='Validate CD error detection/correction codes')
     validate_parser.add_argument('-v', '--verbose', help='Print sectors that fail to validate', action='store_true')

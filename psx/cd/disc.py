@@ -402,11 +402,12 @@ class Disc:
         self.offset += len(result)
         return Sector(result) if result else None
 
-    def read_sectors(self, num_sectors: int = None) -> list[Sector]:
+    def read_sectors(self, num_sectors: int = None, stop_at_invalid: bool = False) -> list[Sector]:
         """
         Read multiple sectors from the disc
 
         :param num_sectors: Number of sectors to read. If None, read to EOF.
+        :param stop_at_invalid: Stop at the first invalid sector instead of raising an error.
         :return: The list of sectors that were read. This may be less than the number requested if EOF was reached.
         """
         if num_sectors is None:
@@ -415,7 +416,15 @@ class Disc:
             result = self.data.read(Sector.SIZE*num_sectors)
         size = len(result)
         self.offset += size
-        return [Sector(result[i:i+Sector.SIZE]) for i in range(0, size, Sector.SIZE)]
+        sectors = []
+        for i in range(0, size, Sector.SIZE):
+            try:
+                sectors.append(Sector(result[i:i+Sector.SIZE]))
+            except ValueError:
+                if stop_at_invalid:
+                    break
+                raise
+        return sectors
 
     def write_sector(self, sector: Sector):
         """Write a given sector to the disc"""

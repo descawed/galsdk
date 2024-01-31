@@ -289,9 +289,9 @@ class Free(CdRegion):
             self.sectors = sectors
             self.end = self.start + len(sectors) - 1
 
-    def read(self, disc: Disc) -> list[CdRegion]:
+    def read(self, disc: Disc, *, stop_at_invalid: bool = False) -> list[CdRegion]:
         disc.seek(self.start)
-        self.sectors = disc.read_sectors(self.size)
+        self.sectors = disc.read_sectors(self.size, stop_at_invalid)
         return [self]
 
 
