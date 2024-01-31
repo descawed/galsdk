@@ -1,9 +1,10 @@
+import os
 import re
 
 from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
-from typing import BinaryIO, ByteString, Iterable, Optional
+from typing import BinaryIO, ByteString, Iterable
 
 from psx.cd.region import CdRegion, SystemArea, Directory, Free
 from psx.cd.disc import Disc, Sector
@@ -75,6 +76,13 @@ class PsxCd:
         if not self.primary_volume:
             raise LookupError('CD has no primary volume')
         self.name_map = {r.name.lower(): i for i, r in enumerate(self.regions) if r.name}
+
+    def __getitem__(self, path: str | None) -> CdRegion:
+        cleaned_path = self._clean_path(path)
+        index = self.name_map.get(cleaned_path)
+        if index is None:
+            raise FileNotFoundError(f'{path} does not exist')
+        return self.regions[index]
 
     def _remove_region(self, index: int):
         region = self.regions[index]
@@ -243,7 +251,7 @@ class PsxCd:
         for region in regions_changed:
             self.system_area.update_paths(region)
 
-    def _clean_path(self, path: Optional[str]) -> str:
+    def _clean_path(self, path: str | None) -> str:
         if path is None:
             path = f'{self.primary_volume.name}:\\'
         path = PRIMARY_ALIAS.sub(f'{self.primary_volume.name}:\\\\', path)
@@ -253,12 +261,10 @@ class PsxCd:
         return path.lower()
 
     def is_dir(self, path: str) -> bool:
-        cleaned_path = self._clean_path(path)
-        index = self.name_map.get(cleaned_path)
-        if index is None:
+        try:
+            return isinstance(self[path], Directory)
+        except FileNotFoundError:
             return False
-        directory = self.regions[index]
-        return isinstance(directory, Directory)
 
     def list_dir(self, path: str = None) -> Iterable[DirectoryEntry]:
         """
@@ -267,11 +273,7 @@ class PsxCd:
         :param path: The path to the directory whose contents to list. If None, the root directory.
         :return: A list of directory entries
         """
-        cleaned_path = self._clean_path(path)
-        index = self.name_map.get(cleaned_path)
-        if index is None:
-            raise NotADirectoryError(f'{path} does not exist')
-        directory = self.regions[index]
+        directory = self[path]
         if not isinstance(directory, Directory):
             raise NotADirectoryError(f'{path} is not a directory')
         for entry in directory.contents:
@@ -338,23 +340,34 @@ def patch_cd(image_path: Path, cd_path: str, input_path: Path, raw: bool, ignore
 
 
 def extract_file(cd: PsxCd, output_path: Path, cd_path: str, raw: bool, extend: bool, keep_hierarchy: bool,
-                 depth: int = 0):
+                 keep_dates: bool, depth: int = 0):
     base_name = cd_path.rsplit('\\', 1)[-1]
     if cd.is_dir(cd_path):
+        set_dir_date = False
         if keep_hierarchy and base_name and depth > 0:
             output_path = output_path / base_name
             output_path.mkdir(exist_ok=True)
+            set_dir_date = keep_dates
+
         for entry in cd.list_dir(cd_path):
-            extract_file(cd, output_path, entry.path, raw, extend, keep_hierarchy, depth + 1)
+            extract_file(cd, output_path, entry.path, raw, extend, keep_hierarchy, keep_dates, depth + 1)
+
+        # need to set the date after extracting the files because that changes the date
+        if set_dir_date and (modified_date := cd[cd_path].last_modified):
+            timestamp = modified_date.timestamp()
+            os.utime(output_path, (timestamp, timestamp))
     else:
         base_name = base_name.split(';', 1)[0]
         new_path = output_path / base_name
         with new_path.open('wb') as f:
             cd.extract(cd_path, f, raw, extend)
+        if keep_dates and (modified_date := cd[cd_path].last_modified):
+            timestamp = modified_date.timestamp()
+            os.utime(new_path, (timestamp, timestamp))
 
 
 def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw: bool, extend: bool,
-                  keep_hierarchy: bool, ignore_invalid: bool):
+                  keep_hierarchy: bool, ignore_invalid: bool, keep_dates: bool):
     with image_path.open('rb') as f:
         cd = PsxCd(f, ignore_invalid=ignore_invalid)
 
@@ -366,10 +379,14 @@ def extract_files(image_path: Path, output_path: Path, cd_paths: list[str], raw:
 
     if output_path.is_dir():
         for cd_path in cd_paths:
-            extract_file(cd, output_path, cd_path, raw, extend, keep_hierarchy)
+            extract_file(cd, output_path, cd_path, raw, extend, keep_hierarchy, keep_dates)
     else:
+        cd_path = cd_paths[0]
         with output_path.open('wb') as f:
-            cd.extract(cd_paths[0], f, raw, extend)
+            cd.extract(cd_path, f, raw, extend)
+        if keep_dates and (modified_date := cd[cd_path].last_modified):
+            timestamp = modified_date.timestamp()
+            os.utime(output_path, (timestamp, timestamp))
 
 
 def print_dir(cd: PsxCd, dir_path: str | None, recursive: bool, depth: int = 0):
@@ -442,12 +459,14 @@ def cli_main():
                                 action='store_true')
     extract_parser.add_argument('-k', '--keep-hierarchy', help='When extracting a directory, replicate the'
                                 'directory hierarchy within it', action='store_true')
+    extract_parser.add_argument('-d', '--keep-dates', help='Keep the modification timestamp on extracted files',
+                                action='store_true')
     extract_parser.add_argument('cd', help='Path to the CD image', type=Path)
     extract_parser.add_argument('output', help='Path to extract file(s) to. If more than one file is being '
                                 'extracted, this must be a directory.', type=Path)
     extract_parser.add_argument('paths', help='Path(s) on the CD to be extracted', nargs='+')
     extract_parser.set_defaults(action=lambda a: extract_files(a.cd, a.output, a.paths, a.raw, a.extend,
-                                                               a.keep_hierarchy, a.ignore_invalid))
+                                                               a.keep_hierarchy, a.ignore_invalid, a.keep_dates))
 
     dir_parser = subparsers.add_parser('dir', help='List directory structure of the CD image')
     dir_parser.add_argument('-r', '--recursive', help='List directories recursively', action='store_true')

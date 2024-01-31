@@ -1,5 +1,8 @@
 from __future__ import annotations
+
+import struct
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta, timezone
 from enum import IntEnum
 from typing import BinaryIO, ByteString, Iterable, Literal, Optional
 
@@ -12,7 +15,8 @@ class CdRegion(ABC):
     sectors: list[Sector]
     sub_regions: list[CdRegion]
 
-    def __init__(self, start: int, end: int = None, name: str = None, byte_len: int = None):
+    def __init__(self, start: int, end: int = None, name: str = None, byte_len: int = None,
+                 last_modified: datetime = None):
         self.start = start
         self.end = end if end is not None else start
         self.sectors = []
@@ -20,6 +24,7 @@ class CdRegion(ABC):
         self.data_ptr = 0
         self.name = name
         self.byte_len = byte_len
+        self.last_modified = last_modified
 
     def shrink_front(self, num_sectors: int, shift_data: bool = False) -> list[Sector]:
         """
@@ -357,12 +362,53 @@ class VolumeDescriptor(CdRegion):
     root_dir: Optional[Directory]
     path_tables: list[PathTable]
 
-    def __init__(self, start: int, end: int = None, name: str = None):
-        super().__init__(start, end, name)
+    def __init__(self, start: int, end: int = None, name: str = None, last_modified: datetime = None):
+        super().__init__(start, end, name, last_modified=last_modified)
         self.type = None
         self.root_dir = None
         self.space_size = 0
         self.path_tables = []
+
+    @staticmethod
+    def read_date(data: bytes | bytearray | memoryview) -> datetime | None:
+        try:
+            year = int(data[:4])
+            month = int(data[4:6])
+            day = int(data[6:8])
+            hour = int(data[8:10])
+            minute = int(data[10:12])
+            second = int(data[12:14])
+            hundredths = int(data[14:16])
+            offset = int.from_bytes(data[16:17], signed=True)
+
+            # even though it's a 4-digit field, it seems that the year is sometimes stored as 2 digits
+            if 0 <= year <= 59:
+                year += 2000
+            elif 60 <= year <= 99:
+                year += 1900
+
+            microseconds = hundredths * 10000
+            tz = timezone(timedelta(minutes=offset * 15))
+            return datetime(year, month, day, hour, minute, second, microseconds, tz)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def write_date(date: datetime | None) -> bytes:
+        if date is None:
+            year = month = day = hour = minute = second = hundredths = offset = 0
+        else:
+            year = date.year
+            month = date.month
+            day = date.day
+            hour = date.hour
+            minute = date.minute
+            second = date.second
+            hundredths = date.microsecond // 10000
+            offset = date.tzinfo.utcoffset(None).seconds // (60 * 15)
+
+        return (f'{year:04}{month:02}{day:02}{hour:02}{minute:02}{second:02}{hundredths:02}'.encode()
+                + offset.to_bytes(1, signed=True))
 
     def read(self, disc: Disc) -> list[CdRegion]:
         regions = [self]
@@ -405,6 +451,9 @@ class VolumeDescriptor(CdRegion):
 
                 extent_loc = int.from_bytes(data[158:162], 'little')
                 data_len = int.from_bytes(data[166:170], 'little')
+                if self.last_modified is None:
+                    # try modified date first, and if that's not present, try created date
+                    self.last_modified = self.read_date(data[830:847]) or self.read_date(data[813:830])
                 self.root_dir = Directory(extent_loc, name=f'{self.name}:\\', byte_len=data_len)
                 regions.extend(self.root_dir.read(disc))
 
@@ -431,6 +480,7 @@ class VolumeDescriptor(CdRegion):
                 data = sector.data
                 if region.name == f'{self.name}:\\':
                     # this is the root directory of our volume; update directory record
+                    # TODO: update modified date
                     data[158:162] = region.start.to_bytes(4, 'little')
                     data[162:166] = region.start.to_bytes(4, 'big')
                     data[166:170] = region.data_size.to_bytes(4, 'little')
@@ -466,9 +516,47 @@ class Directory(CdRegion):
 
     name_map: dict[str, tuple[int, int, Optional[CdRegion]]]
 
-    def __init__(self, start: int, end: int = None, name: str = None, byte_len: int = None):
-        super().__init__(start, end, name, byte_len)
+    def __init__(self, start: int, end: int = None, name: str = None, byte_len: int = None,
+                 last_modified: datetime = None):
+        super().__init__(start, end, name, byte_len, last_modified)
         self.name_map = {}
+
+    @staticmethod
+    def read_date(data: bytes | bytearray | memoryview) -> datetime | None:
+        try:
+            # according to the spec, this is supposed to be the number of years since 1900, but in practice it seems to
+            # just be the last two digits
+            year = data[0]
+            if year < 60:
+                year += 2000
+            else:
+                year += 1900
+            month = data[1]
+            day = data[2]
+            hour = data[3]
+            minute = data[4]
+            second = data[5]
+            offset = int.from_bytes(data[6:7], signed=True)
+
+            tz = timezone(timedelta(minutes=offset * 15))
+            return datetime(year, month, day, hour, minute, second, tzinfo=tz)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def write_date(date: datetime | None) -> bytes:
+        if date is None:
+            year = month = day = hour = minute = second = offset = 0
+        else:
+            year = date.year % 100
+            month = date.month
+            day = date.day
+            hour = date.hour
+            minute = date.minute
+            second = date.second
+            offset = date.tzinfo.utcoffset(None).seconds // (60 * 15)
+
+        return struct.pack('<6Bb', year, month, day, hour, minute, second, offset)
 
     def read(self, disc: Disc) -> list[CdRegion]:
         regions = [self]
@@ -491,12 +579,15 @@ class Directory(CdRegion):
             if name == b'\0':
                 str_name = '.'
                 new_region = self
+                if self.last_modified is None:
+                    self.last_modified = self.read_date(record[18:25])
             elif name == b'\x01':
                 str_name = '..'
                 new_region = None
             else:
                 extent_loc = int.from_bytes(record[2:6], 'little')
                 data_len = int.from_bytes(record[10:14], 'little')
+                modified_date = self.read_date(record[18:25])
                 flags = record[25]
                 interleave_gap = record[27]
                 if interleave_gap > 0:
@@ -507,9 +598,9 @@ class Directory(CdRegion):
                     full_name += '\\'
                 full_name += str_name
                 if flags & Directory.Flags.DIRECTORY:
-                    new_region = Directory(extent_loc, name=full_name, byte_len=data_len)
+                    new_region = Directory(extent_loc, name=full_name, byte_len=data_len, last_modified=modified_date)
                 else:
-                    new_region = File(extent_loc, name=full_name, byte_len=data_len)
+                    new_region = File(extent_loc, name=full_name, byte_len=data_len, last_modified=modified_date)
                 regions.extend(new_region.read(disc))
             self.name_map[str_name] = (sector_index, record_pos, new_region)
 
@@ -524,6 +615,7 @@ class Directory(CdRegion):
                 yield region
 
     def _update_record(self, name: str, region: CdRegion = None):
+        # TODO: update modified date
         sector_index, record_pos, stored_region = self.name_map[name]
         if region is None:
             region = stored_region
