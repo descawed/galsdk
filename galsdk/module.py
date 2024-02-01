@@ -12,7 +12,7 @@ from typing import Any, BinaryIO, Self, TextIO
 import rabbitizer
 
 from galsdk.format import FileFormat
-from galsdk.game import (REGION_ADDRESSES, KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType,
+from galsdk.game import (ADDRESSES, KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType,
                          GameStateOffsets, Stage)
 from galsdk.model import ACTORS
 
@@ -475,7 +475,7 @@ class RoomModule(FileFormat):
 
     @classmethod
     def sniff(cls, f: BinaryIO) -> Self | None:
-        for addresses in REGION_ADDRESSES.values():
+        for addresses in ADDRESSES.values():
             f.seek(0)
             try:
                 module = cls.load(f, addresses['ModuleLoadAddresses'][0])
@@ -486,18 +486,18 @@ class RoomModule(FileFormat):
         return None
 
     @classmethod
-    def read(cls, f: BinaryIO, *, language: str = None, entry_point: int = None, **kwargs) -> Self:
-        if language is None:
+    def read(cls, f: BinaryIO, *, version: str = None, entry_point: int = None, **kwargs) -> Self:
+        if version is None:
             # we'll just have to guess what the address is
             module = cls.sniff(f)
             if module is None:
                 raise ValueError('Provided file does not appear to be a room module')
             return None
         if entry_point is None:
-            return cls.load(f, REGION_ADDRESSES[language]['ModuleLoadAddresses'][0])
-        return cls.parse(f, language, entry_point)
+            return cls.load(f, ADDRESSES[version]['ModuleLoadAddresses'][0])
+        return cls.parse(f, version, entry_point)
 
-    def write(self, f: BinaryIO, *, language: str = None, **kwargs):
+    def write(self, f: BinaryIO, *, version: str = None, **kwargs):
         self.validate_for_write()
 
         f.write(self.raw_data)
@@ -567,8 +567,8 @@ class RoomModule(FileFormat):
             f.write(self.triggers.encode())
 
         addresses = None
-        if language is not None:
-            addresses = REGION_ADDRESSES[language]
+        if version is not None:
+            addresses = ADDRESSES[version]
         for address, callback in self.functions.items():
             for call in callback.calls:
                 offset = call.call_address - self.load_address
@@ -664,7 +664,7 @@ class RoomModule(FileFormat):
         }, f)
 
     @classmethod
-    def load_with_metadata(cls, path: Path, language: str = None) -> RoomModule:
+    def load_with_metadata(cls, path: Path, version: str = None) -> RoomModule:
         meta_path = path.with_suffix('.json')
         with meta_path.open() as f:
             metadata = json.load(f)
@@ -676,8 +676,8 @@ class RoomModule(FileFormat):
             functions[int(hex_addr, 16)] = CallbackFunction([FunctionCall(**call) for call in callback['calls']],
                                                             FunctionArgument(*callback['return_value']))
 
-        if language is not None:
-            addresses = REGION_ADDRESSES[language]
+        if version is not None:
+            addresses = ADDRESSES[version]
             game_state = addresses['GameState']
 
             known_functions = {}
@@ -1206,11 +1206,11 @@ class RoomModule(FileFormat):
                    functions, entry_point)
 
     @classmethod
-    def parse(cls, f: BinaryIO, language: str, entry_point: int) -> RoomModule:
+    def parse(cls, f: BinaryIO, version: str, entry_point: int) -> RoomModule:
         data = f.read()
         module_id = int.from_bytes(data[:4], 'little')
 
-        addresses = REGION_ADDRESSES[language]
+        addresses = ADDRESSES[version]
         load_address = addresses['ModuleLoadAddresses'][0]
 
         if (entry_point - load_address) >= len(data):
@@ -1315,25 +1315,25 @@ class RoomModule(FileFormat):
                    data, {}, 0)
 
 
-def dump_info(module_path: str, language: str | None, force: bool, json_path: str | None, entry_point: int = None):
+def dump_info(module_path: str, version: str | None, force: bool, json_path: str | None, entry_point: int = None):
     guessed = ''
     with open(module_path, 'rb') as f:
-        if language is None:
+        if version is None:
             module = RoomModule.sniff(f)
             guessed = ' (guessed)'
         elif entry_point is None:
-            module = RoomModule.load(f, REGION_ADDRESSES[language]['ModuleLoadAddresses'][0])
+            module = RoomModule.load(f, ADDRESSES[version]['ModuleLoadAddresses'][0])
         else:
-            module = RoomModule.parse(f, language, entry_point)
+            module = RoomModule.parse(f, version, entry_point)
 
     if module is None or not (force or module.is_valid):
         print(f'{module_path} does not appear to be a Galerians room module')
         return
 
-    language = 'unknown'
-    for addr_lang, addresses in REGION_ADDRESSES.items():
+    version = 'unknown'
+    for addr_version, addresses in ADDRESSES.items():
         if addresses['ModuleLoadAddresses'][0] == module.load_address:
-            language = addr_lang
+            version = addr_version
             break
 
     if json_path is not None:
@@ -1341,7 +1341,7 @@ def dump_info(module_path: str, language: str | None, force: bool, json_path: st
             module.save_metadata(f)
 
     print(f'Name: {module.name}')
-    print(f'Load address{guessed}: {module.load_address:08X} ({language})')
+    print(f'Load address{guessed}: {module.load_address:08X} ({version})')
 
     print(f'Room layout: {module.layout.address:08X}')
     print('\tColliders:')
@@ -1466,8 +1466,8 @@ def dump_info(module_path: str, language: str | None, force: bool, json_path: st
                 print(f'\t\t\t\tUnknown 2: {actor.unknown2:04X}')
 
 
-def dump_calls(language: str | None, module_type: int | None, module_path: str, entry_points: list[int]):
-    addresses = REGION_ADDRESSES[language]
+def dump_calls(version: str | None, module_type: int | None, module_path: str, entry_points: list[int]):
+    addresses = ADDRESSES[version]
     load_address = addresses['ModuleLoadAddresses'][module_type]
 
     with open(module_path, 'rb') as f:
@@ -1533,9 +1533,9 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers()
 
     room_parser = subparsers.add_parser('room', help='Dump information about Galerians room modules')
-    room_parser.add_argument('-l', '--language', help='The language of the game version this room module is from. If '
-                                                      'not provided, we will attempt to guess.',
-                             choices=list(REGION_ADDRESSES))
+    room_parser.add_argument('-v', '--version', help='The ID of the game version this room module is from. If '
+                                                     'not provided, we will attempt to guess.',
+                             choices=list(ADDRESSES))
     room_parser.add_argument('-e', '--entry', help="Address in hexadecimal of the room's startup function. This will "
                                                    'help parse the module more accurately, but only for game versions '
                                                    'supported by the editor.', type=lambda e: int(e, 16))
@@ -1545,17 +1545,17 @@ if __name__ == '__main__':
                                                   "written if the module isn't valid unless the --force flag was "
                                                   'given.')
     room_parser.add_argument('module', help='Path to the room module to examine')
-    room_parser.set_defaults(action=lambda a: dump_info(a.module, a.language, a.force, a.json, a.entry))
+    room_parser.set_defaults(action=lambda a: dump_info(a.module, a.version, a.force, a.json, a.entry))
 
     call_parser = subparsers.add_parser('calls', help='Dump information about known function calls in a module')
-    call_parser.add_argument('language', help='The language of the game version this module is from. '
-                             'The type must be provided as well.', choices=list(REGION_ADDRESSES))
+    call_parser.add_argument('version', help='The ID of the game version this module is from. '
+                                             'The type must be provided as well.', choices=list(ADDRESSES))
     call_parser.add_argument('type', help='The module type, an integer between 0 and 3 or 4 depending on '
-                             'the game version. The language must be provided as well.', type=int)
+                             'the game version. The version must be provided as well.', type=int)
     call_parser.add_argument('module', help='Path to the module to examine')
     call_parser.add_argument('functions', nargs='+', help='One or more addresses, in hexadecimal, of functions '
                              'to start parsing from.', type=lambda e: int(e, 16))
-    call_parser.set_defaults(action=lambda a: dump_calls(a.language, a.type, a.module, a.functions))
+    call_parser.set_defaults(action=lambda a: dump_calls(a.version, a.type, a.module, a.functions))
 
     args = parser.parse_args()
     args.action(args)

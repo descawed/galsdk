@@ -16,9 +16,8 @@ from galsdk import file
 from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
-from galsdk.game import (Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_ACTOR_INSTANCES, NUM_KEY_ITEMS, NUM_MED_ITEMS,
-                         NUM_MAPS, NUM_MOVIES, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS,
-                         ADDRESSES)
+from galsdk.game import (Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_KEY_ITEMS, NUM_MED_ITEMS, NUM_MAPS, MAP_NAMES,
+                         MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS, ADDRESSES)
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
 from galsdk.model import ACTORS, ActorModel, ItemModel
@@ -29,7 +28,6 @@ from galsdk.tim import TimDb, TimFormat
 from galsdk.vab import VabDb
 from galsdk.xa import XaAudio, XaDatabase, XaRegion
 from psx.cd import Patch, PsxCd
-from psx.config import Config
 from psx.exe import Exe, Region
 
 
@@ -85,8 +83,8 @@ class Project:
                  create_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
-        self.create_date = create_date or datetime.datetime.now(datetime.timezone.utc)
-        self.last_export_date = last_export_date or datetime.datetime.now(datetime.timezone.utc)
+        self.create_date = create_date or datetime.datetime.now(datetime.UTC)
+        self.last_export_date = last_export_date or datetime.datetime.now(datetime.UTC)
         self.actor_graphics = actor_graphics or []
         self.module_sets = module_sets or []
         self.x_scales = x_scales or []
@@ -171,18 +169,15 @@ class Project:
 
         # determine game version
         version = cls.detect_files_version(game_dir)
-        if version.language == 'fr' or version.is_demo:
-            raise NotImplementedError('Demos and the French version are not currently supported')
+        if version.language == 'fr' or (version.is_demo and version.region == Region.PAL):
+            raise NotImplementedError('The French version and the European demo are not currently supported')
 
         addresses = ADDRESSES[version.id]
         # locate files we're interested in
         config_path = game_path / 'SYSTEM.CNF'
         game_data = game_path / 'T4'
 
-        with config_path.open() as f:
-            config = Config.read(f)
-        boot_path = config.boot.split(':\\')[1].rsplit(';')[0].replace('\\', '/')
-        exe_path = game_path / boot_path
+        exe_path = (game_data if version.is_demo or version.region == Region.NTSC_J else game_path) / version.exe_name
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
 
@@ -251,6 +246,7 @@ class Project:
             message_manifest.rename(0, 'Debug')
             message_manifest.save()
         else:
+            # FIXME: this file also exists in the Japanese demo
             ge_db_path = game_data / 'GE.CDB'  # debug strings only present in the US version
             if ge_db_path.exists():
                 with ge_db_path.open('rb') as f:
@@ -270,7 +266,8 @@ class Project:
                 kanji_path = font_manifest[page].path
                 page_mapping.append({'image': str(kanji_path.relative_to(project_path)), 'index': page})
 
-            font = {'image': str(font_manifest[2].path.relative_to(project_path)), 'kanji': page_mapping}
+            basic_font = 5 if version.is_demo else 2
+            font = {'image': str(font_manifest[basic_font].path.relative_to(project_path)), 'kanji': page_mapping}
             with font_path.open('w') as f:
                 json.dump(font, f)
         else:
@@ -357,7 +354,7 @@ class Project:
         module_metadata = None
         if (candidate := all_modules_path / version.id).exists():
             module_metadata = candidate
-        elif (candidate := all_modules_path / version.language).exists():
+        elif (candidate := all_modules_path / version.language).exists() and not version.is_demo:
             module_metadata = candidate
 
         if module_metadata is not None:
@@ -375,10 +372,10 @@ class Project:
                     module_file = module_manifest[index]
                     metadata_path = module_file.path.with_suffix('.json')
                     if metadata_path.exists():
-                        module = RoomModule.load_with_metadata(module_file.path, version.language)
+                        module = RoomModule.load_with_metadata(module_file.path, version.id)
                     else:
                         with module_file.path.open('rb') as f:
-                            module = RoomModule.parse(f, version.language, module_entry['entry_point'])
+                            module = RoomModule.parse(f, version.id, module_entry['entry_point'])
                     if not module.is_empty:
                         try:
                             module_manifest.rename(index, module.name, ext=module.suggested_extension)
@@ -426,10 +423,15 @@ class Project:
             item_art_dir = menu_manifest[item_art_id].path
             item_art_manifest = Manifest.load_from(item_art_dir)
             with item_art_manifest:
-                item_art_manifest.rename(36, 'medicine_icons')
-                item_art_manifest.rename(37, 'key_item_icons')
-                item_art_manifest.rename(41, 'ability_icons')
+                if version.is_demo and version.region == Region.NTSC_J:
+                    item_art_manifest.rename(0, 'key_item_icons_a')
+                    item_art_manifest.rename(1, 'key_item_icons_b')
+                else:
+                    item_art_manifest.rename(36, 'medicine_icons')
+                    item_art_manifest.rename(37, 'key_item_icons')
+                    item_art_manifest.rename(41, 'ability_icons')
 
+        # FIXME: item count and names are not correct for the Japanese demo
         raw_item_art = struct.unpack(f'<{4 * NUM_KEY_ITEMS}I',
                                      exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * NUM_KEY_ITEMS])
         item_art = [(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
@@ -439,10 +441,14 @@ class Project:
             struct.unpack(f'<{NUM_KEY_ITEMS}I',
                           exe[addresses['KeyItemDescriptions']:addresses['KeyItemDescriptions'] + 4 * NUM_KEY_ITEMS])
         )
-        med_item_descriptions = list(
-            struct.unpack(f'<{NUM_MED_ITEMS}I',
-                          exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * NUM_MED_ITEMS])
-        )
+        if 'MedItemDescriptions' in addresses:
+            med_item_descriptions = list(
+                struct.unpack(f'<{NUM_MED_ITEMS}I',
+                              exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * NUM_MED_ITEMS]
+                              )
+            )
+        else:
+            med_item_descriptions = []
         if version.region == Region.NTSC_J:
             # the Japanese version uses offsets instead of indexes, so we need to convert
             menu_db_path = game_data / 'MENU.CDB'
@@ -457,10 +463,10 @@ class Project:
 
         item_path = project_path / 'item.json'
         items = []
-        for i in range(NUM_KEY_ITEMS):
+        for i in range(len(item_art)):
             items.append({'id': i, 'model': item_art[i][0], 'flags': item_art[i][3],
                           'description': key_item_descriptions[i]})
-        for i in range(NUM_MED_ITEMS):
+        for i in range(len(med_item_descriptions)):
             items.append({'id': i, 'model': None, 'flags': 0, 'description': med_item_descriptions[i]})
         with item_path.open('w') as f:
             json.dump(items, f)
@@ -475,13 +481,15 @@ class Project:
         voice_dir = project_path / 'voice'
         voice_dir.mkdir(exist_ok=True)
 
-        if version.region == Region.NTSC_J:
-            xa_dir = game_data / 'XA'
-            for xa_bin in xa_dir.iterdir():
-                if xa_bin.suffix == '.BIN':
-                    shutil.copy(xa_bin, voice_dir)
-        else:
-            shutil.copy(game_data / 'XA.MXA', voice_dir)
+        # demos have no XA audio
+        if not version.is_demo:
+            if version.region == Region.NTSC_J:
+                xa_dir = game_data / 'XA'
+                for xa_bin in xa_dir.iterdir():
+                    if xa_bin.suffix == '.BIN':
+                        shutil.copy(xa_bin, voice_dir)
+            else:
+                shutil.copy(game_data / 'XA.MXA', voice_dir)
         Manifest.from_directory(voice_dir, 'XA')
 
         # prepare export directory
@@ -575,6 +583,9 @@ class Project:
             yield Movie(path)
 
     def get_xa_databases(self) -> list[XaDatabase]:
+        if self.version.is_demo:
+            return []
+
         voice_dir = self.project_dir / 'voice'
         voice_manifest = Manifest.load_from(voice_dir)
 
@@ -681,7 +692,7 @@ class Project:
         manifest = Manifest.load_from(self.project_dir / 'modules')
         indexes_seen = set()
         maps = self.get_maps()
-        loader = functools.partial(RoomModule.load_with_metadata, language=self.version.language)
+        loader = functools.partial(RoomModule.load_with_metadata, version=self.version.id)
         for map_index in STAGE_MAPS[stage]:
             for room in maps[map_index].rooms:
                 if room.module_index in indexes_seen:
@@ -726,9 +737,8 @@ class Project:
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
 
-        num_movies = NUM_MOVIES
+        num_movies = self.version.num_movies
         if self.version.region != Region.NTSC_J:
-            num_movies += 1  # +1 for the Crave logo
             layout = '<28s3I'
         else:
             layout = '<28s4I'
@@ -741,21 +751,26 @@ class Project:
             movies.append(unpacked[0].rstrip(b'\0').decode())
         return movies
 
-    def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
+    def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel | None]:
+        is_japanese_demo = self.version.is_demo and self.version.region == Region.NTSC_J
         manifest = Manifest.load_from(self.project_dir / 'models')
         for actor in ACTORS:
             if actor.model_index is None:
                 graphics = self.actor_graphics[actor.id]
                 model_index = graphics.model_index
                 anim_index = graphics.anim_index
-            elif usable_only:
+            elif usable_only or is_japanese_demo:
                 continue
             else:
                 model_index = actor.model_index
                 anim_index = None
-            model_file = manifest[model_index]
-            with model_file.path.open('rb') as f:
-                yield ActorModel.read(f, actor=actor, anim_index=anim_index)
+
+            if model_index == 0 and is_japanese_demo:
+                yield None
+            else:
+                model_file = manifest[model_index]
+                with model_file.path.open('rb') as f:
+                    yield ActorModel.read(f, actor=actor, anim_index=anim_index)
 
     @functools.cache
     def get_animations(self) -> Manifest:
@@ -788,6 +803,7 @@ class Project:
             yield Item(entry['id'], name, model, entry['description'], is_key_item)
 
     def get_all_models(self) -> tuple[dict[int, ActorModel], dict[int, ItemModel], dict[int, ItemModel]]:
+        is_japanese_demo = self.version.is_demo and self.version.region == Region.NTSC_J
         model_manifest = Manifest.load_from(self.project_dir / 'models')
         json_path = self.project_dir / 'item.json'
         with json_path.open() as f:
@@ -799,7 +815,11 @@ class Project:
                 graphics = self.actor_graphics[actor.id]
                 model_index = graphics.model_index
                 anim_index = graphics.anim_index
+                if model_index == 0 and is_japanese_demo:
+                    continue
             else:
+                if is_japanese_demo:
+                    continue
                 model_index = actor.model_index
                 anim_index = None
             if model_index not in actor_models:
@@ -822,7 +842,12 @@ class Project:
                     name, use_transparency = item_models[i]
                     items[i] = ItemModel.read(f, name=name, use_transparency=use_transparency)
                 else:
-                    other[i] = ItemModel.read(f, name=str(i))
+                    try:
+                        other[i] = ActorModel.read(f) if model_file.format == '.G3A' else ItemModel.read(f, name=str(i))
+                    except Exception:
+                        # swallow exceptions for the Japanese demo as we don't have all those models working yet
+                        if not is_japanese_demo:
+                            raise
 
         return actors, items, other
 
@@ -845,10 +870,10 @@ class Project:
 
     @functools.cache
     def get_actor_instance_health(self) -> list[tuple[int, int]]:
-        num_bytes = NUM_ACTOR_INSTANCES * 4
+        num_bytes = self.version.num_actor_instances * 4
         if self.version.region == Region.NTSC_J:
             manifest = Manifest.load_from(self.project_dir / 'modules')
-            with manifest[129].path.open('rb') as f:
+            with manifest[self.version.health_module_index].path.open('rb') as f:
                 f.seek(0x40)
                 data = f.read()
         else:
@@ -965,7 +990,7 @@ class Project:
         exe_path = boot_dir / self.version.exe_name
         if exe_path.stat().st_mtime > mtime:
             data = exe_path.read_bytes()
-            if self.version.region == Region.NTSC_J:
+            if self.version.region == Region.NTSC_J or self.version.is_demo:
                 patches.append(Patch(rf'\T4\{exe_path.name};1', data))
             else:
                 patches.append(Patch(rf'\{exe_path.name};1', data))
@@ -1018,5 +1043,5 @@ class Project:
             cd_data = f.getvalue()
         output_image.write_bytes(cd_data)
 
-        self.last_export_date = datetime.datetime.utcnow()
+        self.last_export_date = datetime.datetime.now(datetime.UTC)
         self.save()

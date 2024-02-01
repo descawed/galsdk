@@ -146,7 +146,7 @@ class Manifest:
 
     @staticmethod
     def now() -> float:
-        return datetime.datetime.now(datetime.timezone.utc).timestamp()
+        return datetime.datetime.now(datetime.UTC).timestamp()
 
     def _unpack_file(self, mf: ManifestFile, parent: Archive, i: int, sniff: bool | list[type[FileFormat]],
                      flatten: bool, recursive: bool):

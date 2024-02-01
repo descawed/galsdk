@@ -8,8 +8,9 @@ from galsdk.ui.util import validate_int, validate_float, StringVar
 
 
 class ActorEditor(ttk.Frame):
-    def __init__(self, actor: ActorObject, actor_models: list[ActorModel], actor_instance_health: list[tuple[int, int]],
-                 on_update_type: Callable[[ActorObject], None], *args, **kwargs):
+    def __init__(self, actor: ActorObject, actor_models: list[ActorModel | None],
+                 actor_instance_health: list[tuple[int, int]], on_update_type: Callable[[ActorObject], None],
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.actor = actor
         self.actor_models = actor_models

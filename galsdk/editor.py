@@ -290,7 +290,7 @@ class Editor(ShowBase):
 
         self.file_menu.entryconfigure(4, state=tk.NORMAL)
         self.file_menu.entryconfigure(5, state=tk.NORMAL)
-        self.tools_menu.entryconfigure(1, state=tk.NORMAL)
+        self.tools_menu.entryconfigure(1, state=tk.DISABLED if self.project.version.is_demo else tk.NORMAL)
 
         self.project_open_complete = True
 

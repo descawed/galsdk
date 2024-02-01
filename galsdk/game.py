@@ -103,8 +103,6 @@ STAGE_MAPS = {
 NUM_KEY_ITEMS = len(KEY_ITEM_NAMES)
 NUM_MED_ITEMS = len(MED_ITEM_NAMES)
 NUM_MAPS = len(MAP_NAMES)
-NUM_MOVIES = 65
-NUM_ACTOR_INSTANCES = 138
 MODULE_ENTRY_SIZE = 8
 
 
@@ -246,7 +244,42 @@ class GameVersion:
 
     @property
     def exe_name(self) -> str:
+        if self.is_demo:
+            if self.region == Region.NTSC_J:
+                return 'MAIN.EXE'
+            if self.region == Region.NTSC_U:
+                return 'GALE.EXE'
+
         return self.id[:4] + '_' + self.id[5:8] + '.' + self.id[8:]
+
+    @property
+    def key_item_tile_counts(self) -> list[int]:
+        if self.is_demo and self.region == Region.NTSC_J:
+            return [29, 13]
+        return [NUM_KEY_ITEMS]
+
+    @property
+    def num_movies(self) -> int:
+        if self.is_demo:
+            if self.region == Region.NTSC_J:
+                return 54
+        if self.region == Region.NTSC_J:
+            return 65
+        return 66
+
+    @property
+    def num_actor_instances(self) -> int:
+        if self.is_demo and self.region == Region.NTSC_J:
+            return 32
+        return 138
+
+    @property
+    def health_module_index(self) -> int | None:
+        if self.region != Region.NTSC_J:
+            return None
+        if self.is_demo:
+            return 138  # 137 also seems to be a type 2 module
+        return 129
 
 
 VERSIONS = [
@@ -259,6 +292,8 @@ VERSIONS = [
     GameVersion('SLPS-02192', Region.NTSC_J, 'ja', 1),
     GameVersion('SLPS-02193', Region.NTSC_J, 'ja', 2),
     GameVersion('SLPS-02194', Region.NTSC_J, 'ja', 3),
+
+    GameVersion('SLPM-80289', Region.NTSC_J, 'ja', 1, is_demo=True),
 
     GameVersion('SLES-02328', Region.PAL, 'en-GB', 1),
     GameVersion('SLES-12328', Region.PAL, 'en-GB', 2),
@@ -446,4 +481,19 @@ REGION_ADDRESSES = {
 ADDRESSES = {
     version.id: REGION_ADDRESSES[version.language]
     for version in VERSIONS if version.language in REGION_ADDRESSES and not version.is_demo
+}
+
+ADDRESSES['SLPM-80289'] = {
+    'FontPages': 0x8017E8FC,
+    'StageMessageIndexes': 0x8017E944,
+    'ActorModels': 0x8017F9BC,
+    'ActorAnimations': 0x8017E954,
+    'ItemArt': 0x8017E260,
+    'KeyItemDescriptions': 0x8017F8CC,
+    'MapModules': 0x8017ED90,
+    'ModuleLoadAddresses': [0x801CB068, 0x801CFD74, 0x801CFFF8],
+    'GameState': 0x8019AAA0,
+    'Movies': 0x8017EEEC,
+    'SetRoomLayout': 0x8013D654,
+    'SetCollisionObjects': 0x80135684,
 }

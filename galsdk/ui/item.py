@@ -22,10 +22,15 @@ class ItemTab(Tab):
         self.base = base
         self.items = []
         self.item_art = self.project.get_item_art()
-        with self.item_art.get_first('key_item_icons').path.open('rb') as f:
-            self.key_item_icons = TileSet(Tim.read(f), self.ICON_WIDTH, self.ICON_HEIGHT)
-        with self.item_art.get_first('medicine_icons').path.open('rb') as f:
-            self.med_item_icons = TileSet(Tim.read(f), self.ICON_WIDTH, self.ICON_HEIGHT)
+        self.key_item_icons = []
+        self.med_item_icons = []
+        for mf in self.item_art:
+            if mf.name.startswith('key_item_icons'):
+                with self.item_art.get_first(mf.name).path.open('rb') as f:
+                    self.key_item_icons.append(TileSet(Tim.read(f), self.ICON_WIDTH, self.ICON_HEIGHT))
+            elif mf.name.startswith('medicine_icons'):
+                with self.item_art.get_first(mf.name).path.open('rb') as f:
+                    self.med_item_icons.append(TileSet(Tim.read(f), self.ICON_WIDTH, self.ICON_HEIGHT))
         # pre-load description images
         self.descriptions = []
         for description in self.item_art.iter_flat():
@@ -91,8 +96,18 @@ class ItemTab(Tab):
             self.description_label.configure(image=desc_photo)
             self.description_label.image = desc_photo
 
-            source = self.key_item_icons if item.is_key_item else self.med_item_icons
-            icon_image = source[item.id]
+            if item.is_key_item:
+                index = item.id
+                for i, tile_set in enumerate(self.key_item_icons):
+                    num_tiles = self.project.version.key_item_tile_counts[i]
+                    if index < num_tiles:
+                        icon_image = tile_set[index]
+                        break
+                    index -= num_tiles
+                else:
+                    raise KeyError(f'Could not find key item with ID {item.id}')
+            else:
+                icon_image = self.med_item_icons[0][item.id]
             width, height = icon_image.size
             icon_photo = ImageTk.PhotoImage(icon_image.resize((width * 2, height * 2)))
             self.icon_label.configure(image=icon_photo)

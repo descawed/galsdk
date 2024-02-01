@@ -157,7 +157,7 @@ class MapEditor(tk.Toplevel):
         if path.with_suffix('.json').exists():
             # this module already has metadata
             try:
-                module = RoomModule.load_with_metadata(path, self.project.version.language)
+                module = RoomModule.load_with_metadata(path, self.project.version.id)
             except Exception as e:
                 tkmsg.showerror('Module load failed', str(e), parent=self)
                 return
@@ -172,7 +172,7 @@ class MapEditor(tk.Toplevel):
 
             with path.open('rb') as f:
                 try:
-                    module = RoomModule.read(f, language=self.project.version.language, entry_point=entry_point)
+                    module = RoomModule.read(f, version=self.project.version.id, entry_point=entry_point)
                 except Exception as e:
                     tkmsg.showerror('Module load failed', str(e), parent=self)
                     return

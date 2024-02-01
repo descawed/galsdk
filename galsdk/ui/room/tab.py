@@ -321,7 +321,7 @@ class RoomViewport(Viewport):
     def start_actor_animation(self, instance: ActorInstance) -> tuple[ActorModel | None, ActiveAnimation | None]:
         if instance.type >= 0:
             model = self.actor_models[instance.type]
-            if model.anim_index is not None:
+            if model is not None and model.anim_index is not None:
                 anim_set = self.get_anim_db(model.anim_index)
                 # FIXME: this is a hack because it relies on the fact that get_panda3d_model caches its result, so
                 #  ActorObject will get the same NodePath
@@ -1163,7 +1163,11 @@ class RoomTab(Tab):
                             if actor_instance.type < 0:
                                 name = 'None'
                             else:
-                                model_name = self.viewport.actor_models[actor_instance.type].name
+                                model = self.viewport.actor_models[actor_instance.type]
+                                if model is None:
+                                    model_name = 'Unknown'
+                                else:
+                                    model_name = model.name
                                 name = f'#{actor_instance.id}: {model_name}'
                             self.tree.insert(layout_iid, tk.END, text=name, iid=actor_iid)
             detail_widget = None

@@ -16,4 +16,5 @@ class ActorTab(ModelViewerTab):
         for model in self.project.get_actor_models():
             model_id = len(self.models)
             self.models.append(model)
-            self.tree.insert('', tk.END, text=f'#{model.id}: {model.name}', iid=str(model_id))
+            if model is not None:
+                self.tree.insert('', tk.END, text=f'#{model.id}: {model.name}', iid=str(model_id))
