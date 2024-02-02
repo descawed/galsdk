@@ -41,6 +41,10 @@ class TriggerType(IntEnum):
     ON_USE_ITEM = 6
     DISABLED = 16  # used in the demo
 
+    @property
+    def has_item(self) -> bool:
+        return self in [TriggerType.ON_SCAN_WITH_ITEM, TriggerType.ON_USE_ITEM]
+
 
 class TriggerFlag(IntFlag):
     ACTOR_1 = 1
@@ -675,8 +679,15 @@ class RoomModule(FileFormat):
         entry_point = metadata.get('entryPoint', 0)
         functions = {}
         for hex_addr, callback in metadata.get('functions', {}).items():
-            functions[int(hex_addr, 16)] = CallbackFunction([FunctionCall(**call) for call in callback['calls']],
-                                                            FunctionArgument(*callback['return_value']))
+            functions[int(hex_addr, 16)] = CallbackFunction(
+                [FunctionCall(
+                    call['call_address'],
+                    call['name'],
+                    [FunctionArgument(*argument) for argument in call['arguments']],
+                    call['is_enabled'],
+                ) for call in callback['calls']],
+                FunctionArgument(*callback['return_value']),
+            )
 
         if version is not None:
             addresses = ADDRESSES[version]

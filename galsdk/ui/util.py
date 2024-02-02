@@ -24,6 +24,12 @@ def validate_float(value: str) -> bool:
         return False
 
 
+def get_preview_string(s: str, max_len: int = 20) -> str:
+    if len(s) > max_len:
+        return s[:max_len - 3] + '...'
+    return s
+
+
 class StringVar(tk.StringVar):
     def __init__(self, master: tk.Misc = None, value: str = None, name: str = None):
         super().__init__(master, value, name)

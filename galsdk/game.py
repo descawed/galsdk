@@ -74,6 +74,7 @@ class ArgumentType(Enum):
     GAME_STATE = auto()
     MOVIE = auto()
     ADDRESS = auto()
+    ITEMTIM = auto()
 
 
 @dataclass
@@ -148,7 +149,7 @@ KNOWN_FUNCTIONS = {
     ]),
     'ShowItemTim': Function([
         ArgumentType.GAME_STATE,
-        ArgumentType.INTEGER,  # index in ITEMTIM.CDB
+        ArgumentType.ITEMTIM,
     ]),
     'SaveMenu': Function([
         ArgumentType.GAME_STATE,
@@ -188,7 +189,7 @@ KNOWN_FUNCTIONS = {
     ]),
     'ShowTimAndMessage': Function([
         ArgumentType.GAME_STATE,
-        ArgumentType.INTEGER,
+        ArgumentType.ITEMTIM,
         ArgumentType.MESSAGE,
         ArgumentType.INTEGER,
     ]),

@@ -6,12 +6,10 @@ from galsdk.coords import Dimension
 from galsdk.game import KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType, GameVersion, Stage
 from galsdk.module import CallbackFunction, FunctionArgument, FunctionCall, TriggerType, TriggerFlag
 from galsdk.room import TriggerObject
-from galsdk.ui.util import validate_int, StringVar
+from galsdk.ui.util import get_preview_string, validate_int, StringVar
 
 
 class TriggerEditor(ttk.Frame):
-    MAX_MESSAGE_LEN = 20
-
     def __init__(self, trigger: TriggerObject, messages: dict[int, str], maps: list[list[str]], movies: list[str],
                  functions: dict[int, CallbackFunction], version: GameVersion, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -25,9 +23,7 @@ class TriggerEditor(ttk.Frame):
         self.messages = {}
         self.message_to_id = {}
         for msg_id, msg in messages.items():
-            new_msg = f'{msg_id}: {msg}'
-            if len(new_msg) > self.MAX_MESSAGE_LEN:
-                new_msg = new_msg[:self.MAX_MESSAGE_LEN - 3] + '...'
+            new_msg = get_preview_string(f'{msg_id}: {msg}')
             self.messages[msg_id] = new_msg
             self.message_to_id[new_msg] = msg_id
         self.maps = maps
@@ -201,7 +197,7 @@ class TriggerEditor(ttk.Frame):
                 var = self.arg_vars.get(arg_addr)
 
                 match arg_type:
-                    case ArgumentType.INTEGER:
+                    case ArgumentType.INTEGER | ArgumentType.ITEMTIM:
                         var, label, select = self.make_int_entry(arg_value, frame, var)
                         getter = self.int_value_getter(var)
                     case ArgumentType.ADDRESS:
@@ -378,8 +374,7 @@ class TriggerEditor(ttk.Frame):
         self.condition_select.grid(row=row, column=1)
         row += 1
 
-        if self.trigger.trigger and self.trigger.trigger.type in [TriggerType.ON_SCAN_WITH_ITEM,
-                                                                  TriggerType.ON_USE_ITEM, TriggerType.DISABLED]:
+        if self.trigger.trigger and self.trigger.trigger.type.has_item:
             self.item_label.grid(row=row, column=0)
             self.item_select.grid(row=row, column=1)
             row += 1

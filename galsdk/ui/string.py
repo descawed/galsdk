@@ -13,6 +13,7 @@ from galsdk.manifest import FromManifest
 from galsdk.project import Project
 from galsdk.string import StringDb
 from galsdk.ui.tab import Tab
+from galsdk.ui.util import get_preview_string
 
 
 @dataclass
@@ -26,8 +27,6 @@ class GameString:
 
 class StringTab(Tab):
     """Tab for viewing and editing text strings"""
-
-    MAX_PREVIEW_LEN = 20
 
     current_index: int | None
     strings: list[GameString | None]
@@ -65,9 +64,7 @@ class StringTab(Tab):
             for j, (raw, string) in string_db.obj.iter_both_ids():
                 string_id = len(self.strings)
                 self.strings.append(GameString(raw, string, 0, string_db, j))
-                preview = f'{j}: {string}'
-                if len(preview) > self.MAX_PREVIEW_LEN:
-                    preview = preview[:self.MAX_PREVIEW_LEN - 3] + '...'
+                preview = get_preview_string(f'{j}: {string}')
                 self.tree.insert(iid, tk.END, text=preview, iid=str(string_id))
 
         for stage in Stage:
@@ -81,9 +78,7 @@ class StringTab(Tab):
             for j, (raw, string) in string_db.obj.iter_both_ids():
                 string_id = len(self.strings)
                 self.strings.append(GameString(raw, string, stage_index, string_db, j))
-                preview = f'{j}: {string}'
-                if len(preview) > self.MAX_PREVIEW_LEN:
-                    preview = preview[:self.MAX_PREVIEW_LEN-3] + '...'
+                preview = get_preview_string(f'{j}: {string}')
                 self.tree.insert(stage, tk.END, text=preview, iid=str(string_id))
 
         self.image_label = ttk.Label(self, compound='image', anchor=tk.CENTER)
@@ -182,9 +177,7 @@ class StringTab(Tab):
                 marker = '* '
             else:
                 marker = ''
-            preview = f'{new_id}: {new_string}'
-            if len(preview) > self.MAX_PREVIEW_LEN:
-                preview = preview[:self.MAX_PREVIEW_LEN-3] + '...'
+            preview = get_preview_string(f'{new_id}: {new_string}')
             self.tree.insert(self.db_context_iid, tk.END, str(ui_index), text=f'{marker}{preview}')
             try:
                 stage_index = int(Stage(self.db_context_iid))
@@ -245,9 +238,7 @@ class StringTab(Tab):
                 return  # user is probably editing
 
             string.text = text
-            preview = f'* {string.db_id}: {string.text}'
-            if len(preview) > self.MAX_PREVIEW_LEN:
-                preview = preview[:self.MAX_PREVIEW_LEN - 3] + '...'
+            preview = get_preview_string(f'* {string.db_id}: {string.text}')
             iid = str(self.current_index)
             self.tree.item(iid, text=preview)
             db_index = db.get_index_from_id(string.db_id)
