@@ -16,7 +16,7 @@ class ActorEditor(ttk.Frame):
         self.actor_models = actor_models
         self.actor_instance_health = actor_instance_health
         self.actor_names = ['None']
-        self.actor_names.extend(model.name for model in self.actor_models)
+        self.actor_names.extend('<Invalid>' if model is None else model.name for model in self.actor_models)
         self.on_update_type = on_update_type
 
         validator = (self.register(validate_int), '%P')

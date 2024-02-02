@@ -12,8 +12,8 @@ from typing import Any, BinaryIO, Self, TextIO
 import rabbitizer
 
 from galsdk.format import FileFormat
-from galsdk.game import (ADDRESSES, KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType,
-                         GameStateOffsets, Stage)
+from galsdk.game import (ADDRESSES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, VERSIONS_BY_ID,
+                         ArgumentType, GameStateOffsets, Stage)
 from galsdk.model import ACTORS
 
 
@@ -39,6 +39,7 @@ class TriggerType(IntEnum):
     ON_SCAN = 4
     ON_SCAN_WITH_ITEM = 5
     ON_USE_ITEM = 6
+    DISABLED = 16  # used in the demo
 
 
 class TriggerFlag(IntFlag):
@@ -46,6 +47,7 @@ class TriggerFlag(IntFlag):
     ACTOR_2 = 2
     ACTOR_3 = 4
     ALLOW_LIVING_ACTOR = 8
+    DISABLED = 32  # used in the demo
 
 
 @dataclass
@@ -874,7 +876,11 @@ class RoomModule(FileFormat):
         for _ in range(num_triggers):
             try:
                 enabled_callback = int.from_bytes(data[offset:offset + 4], 'little')
-                if not cls._is_ptr(enabled_callback):
+                # in the Japanese demo, this field seems to be some sort of flags or ID rather than an enabled callback,
+                # so allow it if the value is low enough that it might plausibly be that.
+                # TODO: the module really needs to hold onto the game version the module is from so it can use it
+                #  during parsing
+                if not cls._is_ptr(enabled_callback) and (not known_good or enabled_callback > 10):
                     raise ValueError
                 trigger_type = TriggerType(data[offset + 4])
                 flags = TriggerFlag(data[offset + 5])
@@ -1017,6 +1023,26 @@ class RoomModule(FileFormat):
                         reg.value = room_address.get_by_address(address)
                         reg.source = address
                         reg.instruction = i
+                case 'sh':
+                    # hacky way to detect med item pickups in the Japanese demo
+                    if inst.getProcessedImmediate() == 0x426:
+                        value_reg = regs[inst.rt.value]
+                        value = value_reg.value
+                        if value is not UNDEFINED:
+                            # fake a call to PickUpMedItem
+                            if value_reg.instruction is UNDEFINED:
+                                instruction = None
+                                can_update = False
+                            else:
+                                instruction = value_reg.instruction
+                                can_update = True
+                            call = FunctionCall(i, 'PickUpMedItem', [
+                                FunctionArgument(None, None, False),
+                                FunctionArgument(instruction, value, can_update),
+                                FunctionArgument(None, 0, False),
+                            ], None)
+                            if call not in function.calls:
+                                function.calls.append(call)
                 case 'lh':
                     address = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     if address is not UNDEFINED:
@@ -1192,15 +1218,16 @@ class RoomModule(FileFormat):
             offset = address - load_address
             entrance_sets.append(cls.parse_entrances(data, offset, room_addresses.num_entrances, room_addresses))
 
+        module_space = range(load_address, load_address + len(data))
         for trigger in triggers.triggers:
             for callback in filter(None, [trigger.enabled_callback, trigger.trigger_callback]):
-                if callback in functions:
+                if callback in functions or callback not in module_space:
                     continue
                 regs = [Register() for _ in range(32)]
                 regs[0].value = 0
                 regs[rabbitizer.RegGprO32.a0.value].value = room_addresses.game_state
-                cls.parse_function(data, callback, range(load_address, load_address + len(data)), regs,
-                                   room_addresses, known_functions, functions, callback)
+                cls.parse_function(data, callback, module_space, regs, room_addresses, known_functions, functions,
+                                   callback)
 
         return cls(module_id, room_layout, backgrounds, actor_layouts, triggers, entrance_sets, load_address, data,
                    functions, entry_point)
@@ -1468,6 +1495,7 @@ def dump_info(module_path: str, version: str | None, force: bool, json_path: str
 
 def dump_calls(version: str | None, module_type: int | None, module_path: str, entry_points: list[int]):
     addresses = ADDRESSES[version]
+    version_info = VERSIONS_BY_ID[version]
     load_address = addresses['ModuleLoadAddresses'][module_type]
 
     with open(module_path, 'rb') as f:
@@ -1511,7 +1539,7 @@ def dump_calls(version: str | None, module_type: int | None, module_path: str, e
                         case ArgumentType.GAME_STATE:
                             arg_strs.append('Game')
                         case ArgumentType.KEY_ITEM:
-                            arg_strs.append(f'{KEY_ITEM_NAMES[arg_value.value]} [{arg_value.value}]')
+                            arg_strs.append(f'{version_info.key_item_names[arg_value.value]} [{arg_value.value}]')
                         case ArgumentType.MED_ITEM:
                             arg_strs.append(f'{MED_ITEM_NAMES[arg_value.value]} [{arg_value.value}]')
                         case ArgumentType.MAP:

@@ -1191,7 +1191,8 @@ class RoomTab(Tab):
                     obj = self.viewport.triggers[object_id]
                     room = self.rooms[self.current_room].obj
                     editor = TriggerEditor(obj, dict(self.strings[room.name[0]].iter_ids()), self.room_names_by_map,
-                                           self.movies, self.viewport.functions, self)
+                                           self.movies, self.viewport.functions, self,
+                                           is_japanese_demo=self.project.version.is_japanese_demo)
                 case 'cut':
                     obj = self.viewport.cuts[object_id]
                     editor = CameraCutEditor(obj, self)

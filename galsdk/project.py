@@ -16,8 +16,8 @@ from galsdk import file
 from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
-from galsdk.game import (Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_KEY_ITEMS, NUM_MED_ITEMS, NUM_MAPS, MAP_NAMES,
-                         MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS, ADDRESSES)
+from galsdk.game import (Stage, MED_ITEM_NAMES, NUM_MED_ITEMS, NUM_MAPS, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS,
+                         GameVersion, VERSIONS, ADDRESSES)
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
 from galsdk.model import ACTORS, ActorModel, ItemModel
@@ -127,7 +127,7 @@ class Project:
     @classmethod
     def detect_cd_version(cls, cd_path: str) -> GameVersion:
         with open(cd_path, 'rb') as f:
-            cd = PsxCd(f)
+            cd = PsxCd(f, ignore_invalid=True)
         with io.BytesIO() as buf:
             cd.extract(r'\SYSTEM.CNF;1', buf)
             return cls._detect_version(buf.getvalue().decode())
@@ -143,7 +143,7 @@ class Project:
         :return: The new project
         """
         with open(cd_path, 'rb') as f:
-            cd = PsxCd(f)
+            cd = PsxCd(f, ignore_invalid=True)
         with tempfile.TemporaryDirectory() as d:
             cls._extract_dir('\\', Path(d), cd)
             return cls.create_from_directory(d, cd_path, project_dir)
@@ -423,7 +423,7 @@ class Project:
             item_art_dir = menu_manifest[item_art_id].path
             item_art_manifest = Manifest.load_from(item_art_dir)
             with item_art_manifest:
-                if version.is_demo and version.region == Region.NTSC_J:
+                if version.is_japanese_demo:
                     item_art_manifest.rename(0, 'key_item_icons_a')
                     item_art_manifest.rename(1, 'key_item_icons_b')
                 else:
@@ -431,15 +431,15 @@ class Project:
                     item_art_manifest.rename(37, 'key_item_icons')
                     item_art_manifest.rename(41, 'ability_icons')
 
-        # FIXME: item count and names are not correct for the Japanese demo
-        raw_item_art = struct.unpack(f'<{4 * NUM_KEY_ITEMS}I',
-                                     exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * NUM_KEY_ITEMS])
+        num_key_items = version.num_key_items
+        raw_item_art = struct.unpack(f'<{4 * num_key_items}I',
+                                     exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * num_key_items])
         item_art = [(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
                     for i in range(0, len(raw_item_art), 4)]
 
         key_item_descriptions = list(
-            struct.unpack(f'<{NUM_KEY_ITEMS}I',
-                          exe[addresses['KeyItemDescriptions']:addresses['KeyItemDescriptions'] + 4 * NUM_KEY_ITEMS])
+            struct.unpack(f'<{num_key_items}I',
+                          exe[addresses['KeyItemDescriptions']:addresses['KeyItemDescriptions'] + 4 * num_key_items])
         )
         if 'MedItemDescriptions' in addresses:
             med_item_descriptions = list(
@@ -752,7 +752,7 @@ class Project:
         return movies
 
     def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel | None]:
-        is_japanese_demo = self.version.is_demo and self.version.region == Region.NTSC_J
+        is_japanese_demo = self.version.is_japanese_demo
         manifest = Manifest.load_from(self.project_dir / 'models')
         for actor in ACTORS:
             if actor.model_index is None:
@@ -793,7 +793,7 @@ class Project:
             if key_items is not None and is_key_item != key_items:
                 continue
             if is_key_item:
-                name = KEY_ITEM_NAMES[entry['id']]
+                name = self.version.key_item_names[entry['id']]
                 model_file = model_manifest[entry['model']]
                 with model_file.path.open('rb') as f:
                     model = ItemModel.read(f, name=name, use_transparency=entry['flags'] & 1 == 0)
@@ -803,7 +803,7 @@ class Project:
             yield Item(entry['id'], name, model, entry['description'], is_key_item)
 
     def get_all_models(self) -> tuple[dict[int, ActorModel], dict[int, ItemModel], dict[int, ItemModel]]:
-        is_japanese_demo = self.version.is_demo and self.version.region == Region.NTSC_J
+        is_japanese_demo = self.version.is_japanese_demo
         model_manifest = Manifest.load_from(self.project_dir / 'models')
         json_path = self.project_dir / 'item.json'
         with json_path.open() as f:
@@ -828,7 +828,7 @@ class Project:
         item_models = {}
         for entry in item_info:
             if entry['model'] is not None and entry['model'] not in item_models:
-                item_models[entry['model']] = (KEY_ITEM_NAMES[entry['id']], entry['flags'] & 1 == 0)
+                item_models[entry['model']] = (self.version.key_item_names[entry['id']], entry['flags'] & 1 == 0)
 
         actors = {}
         items = {}

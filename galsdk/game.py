@@ -32,48 +32,6 @@ class GameStateOffsets(IntEnum):
     MESSAGE_ID = 0x44
 
 
-KEY_ITEM_NAMES = [
-    'Unused #0',
-    'Security Card',
-    'Beeject',
-    'Freezer Room Key',
-    'PPEC Storage Key',
-    'Fuse',
-    'Liquid Explosive',
-    'Unused #7',
-    'Security Card (reformatted)',
-    'Special PPEC Office Key',
-    'Unused #10',
-    'Test Lab Key',
-    'Control Room Key',
-    'Research Lab Key',
-    'Two-Headed Snake',
-    'Two-Headed Monkey',
-    'Two-Headed Wolf',
-    'Two-Headed Eagle',
-    'Unused #18',
-    'Backdoor Key',
-    'Door Knob',
-    '9 Ball',
-    "Mother's Ring",
-    "Father's Ring",
-    "Lilia's Doll",
-    'Metamorphosis',
-    'Bedroom Key',
-    'Second Floor Key',
-    'Medical Staff Notes',
-    'G Project Report',
-    'Photo of Parents',
-    "Rion's test data",
-    "Dr. Lem's Notes",
-    'New Replicative Computer Theory',
-    "Dr. Pascalle's Diary",
-    'Letter from Elsa',
-    'Newspaper',
-    '3 Ball',
-    'Shed Key',
-    'Letter from Lilia',
-]
 MED_ITEM_NAMES = [
     'Nalcon',
     'Red',
@@ -100,7 +58,6 @@ STAGE_MAPS = {
     Stage.C: [5, 6, 7],
     Stage.D: [8],
 }
-NUM_KEY_ITEMS = len(KEY_ITEM_NAMES)
 NUM_MED_ITEMS = len(MED_ITEM_NAMES)
 NUM_MAPS = len(MAP_NAMES)
 MODULE_ENTRY_SIZE = 8
@@ -229,6 +186,12 @@ KNOWN_FUNCTIONS = {
         ArgumentType.INTEGER,
         ArgumentType.INTEGER,
     ]),
+    'ShowTimAndMessage': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.INTEGER,
+        ArgumentType.MESSAGE,
+        ArgumentType.INTEGER,
+    ]),
 }
 
 
@@ -254,9 +217,109 @@ class GameVersion:
 
     @property
     def key_item_tile_counts(self) -> list[int]:
-        if self.is_demo and self.region == Region.NTSC_J:
-            return [29, 13]
-        return [NUM_KEY_ITEMS]
+        if self.is_japanese_demo:
+            return [29, 17]
+        return [self.num_key_items]
+
+    @property
+    def num_key_items(self) -> int:
+        return 46 if self.is_japanese_demo else 40
+
+    @property
+    def key_item_names(self) -> list[str]:
+        if self.is_japanese_demo:
+            # TODO: verify translation of cut item names
+            return [
+                'Liquid Explosive',
+                'Medical Staff Notes',
+                'Security Card',
+                'Life Support Data',
+                'Pill Case',
+                'Freezer Room Key',
+                'PPEC Storage Key',  # maybe should call this "Medicine Storage Key"? that agrees with the NA demo
+                'Fuse',
+                'Unknown #8',  # the icon says は something; can't read the second character
+                'Unknown #9',  # can't read the icon
+                'G Project Report',
+                'Beeject',
+                'Security Card (reformatted)',
+                'Startup Disk',
+                'Security Card (red)',
+                'Photo of Parents',
+                'Eyeball Lens',
+                'Pharmaceutical Factory Key',
+                'Two-Headed Snake',
+                'Two-Headed Wolf',
+                "Rion's test data",
+                'Test Lab Key',
+                'Two-Headed Eagle',
+                "Dr. Lem's Notes",
+                "Lilia's image data",
+                'Unknown #25',  # some kind of disk
+                'Control Room Key',
+                'Two-Headed Monkey',
+                'Research Lab Key',
+                'Familiar recollections',  # no label or icon; name is taken from the model
+                'New Replicative Computer Theory',
+                'Unknown #31',  # one of these is probably the Letter from Elsa, probably this one
+                'Unknown #32',
+                "Dr. Pascalle's Diary",
+                'Backdoor Key',
+                'Door Knob',
+                '9 Ball',
+                "Mother's Ring",
+                "Father's Ring",
+                "Lilia's Doll",
+                'Metamorphosis',
+                'Bedroom Key',
+                'Memory Chip A',
+                'Memory Chip B',
+                'Memory Chip C',
+                'Unknown #45',
+            ]
+        else:
+            return [
+                'Isolation Ward 15F Map',
+                'Security Card',
+                'Beeject',
+                'Freezer Room Key',
+                'PPEC Storage Key',
+                'Fuse',
+                'Liquid Explosive',
+                'Isolation Ward 14F Map',
+                'Security Card (reformatted)',
+                'Special PPEC Office Key',
+                'Isolation Ward 13F Map',
+                'Test Lab Key',
+                'Control Room Key',
+                'Research Lab Key',
+                'Two-Headed Snake',
+                'Two-Headed Monkey',
+                'Two-Headed Wolf',
+                'Two-Headed Eagle',
+                'Unused #18',
+                'Backdoor Key',
+                'Door Knob',
+                '9 Ball',
+                "Mother's Ring",
+                "Father's Ring",
+                "Lilia's Doll",
+                'Metamorphosis',
+                'Bedroom Key',
+                'Second Floor Key',
+                'Medical Staff Notes',
+                'G Project Report',
+                'Photo of Parents',
+                "Rion's test data",
+                "Dr. Lem's Notes",
+                'New Replicative Computer Theory',
+                "Dr. Pascalle's Diary",
+                'Letter from Elsa',
+                'Newspaper',
+                '3 Ball',
+                'Shed Key',
+                'Letter from Lilia',
+            ]
 
     @property
     def num_movies(self) -> int:
@@ -269,7 +332,7 @@ class GameVersion:
 
     @property
     def num_actor_instances(self) -> int:
-        if self.is_demo and self.region == Region.NTSC_J:
+        if self.is_japanese_demo:
             return 32
         return 138
 
@@ -280,6 +343,10 @@ class GameVersion:
         if self.is_demo:
             return 138  # 137 also seems to be a type 2 module
         return 129
+
+    @property
+    def is_japanese_demo(self) -> bool:
+        return self.id == 'SLPM-80289'
 
 
 VERSIONS = [
@@ -309,6 +376,8 @@ VERSIONS = [
     GameVersion('SLES-12330', Region.PAL, 'de', 2),
     GameVersion('SLES-22330', Region.PAL, 'de', 3),
 ]
+
+VERSIONS_BY_ID = {version.id: version for version in VERSIONS}
 
 LANG_DISC_MAP = {
     ('en-US', 1): VERSIONS[0],
@@ -496,4 +565,14 @@ ADDRESSES['SLPM-80289'] = {
     'Movies': 0x8017EEEC,
     'SetRoomLayout': 0x8013D654,
     'SetCollisionObjects': 0x80135684,
+    'GetStateFlag': 0x80139454,
+    'SetStateFlag': 0x80139540,
+    'ClearStateFlag': 0x801396AC,
+    'GoToRoom': 0x80134B10,
+    'PickUpFile': 0x80148090,
+    'PickUpKeyItem': 0x80133904,
+    # med items appear to be added to the inventory manually, not by calling a function
+    'PlayMovie': 0x80134778,
+    'ShowItemTim': 0x8015763C,
+    'ShowTimAndMessage': 0x80134538,
 }

@@ -3,7 +3,7 @@ from tkinter import ttk
 from typing import Callable
 
 from galsdk.coords import Dimension
-from galsdk.game import KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType, Stage
+from galsdk.game import KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType, GameVersion, Stage
 from galsdk.module import CallbackFunction, FunctionArgument, FunctionCall, TriggerType, TriggerFlag
 from galsdk.room import TriggerObject
 from galsdk.ui.util import validate_int, StringVar
@@ -13,11 +13,15 @@ class TriggerEditor(ttk.Frame):
     MAX_MESSAGE_LEN = 20
 
     def __init__(self, trigger: TriggerObject, messages: dict[int, str], maps: list[list[str]], movies: list[str],
-                 functions: dict[int, CallbackFunction], *args, **kwargs):
+                 functions: dict[int, CallbackFunction], version: GameVersion, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.trigger = trigger
+        self.version = version
+        self.is_japanese_demo = self.version.is_japanese_demo
         self.conditions = ['Always', 'Not attacking', 'On activate', 'On scan (hard-coded item)', 'On scan',
                            'On scan with item', 'On use item']
+        if self.is_japanese_demo:
+            self.conditions.append('Disabled')
         self.messages = {}
         self.message_to_id = {}
         for msg_id, msg in messages.items():
@@ -71,7 +75,10 @@ class TriggerEditor(ttk.Frame):
         self.enabled_actions_frame = None
 
         if self.trigger.trigger:
-            value = self.conditions[self.trigger.trigger.type]
+            try:
+                value = self.conditions[self.trigger.trigger.type]
+            except IndexError:
+                value = 'Disabled'
         else:
             value = 'Always'
         self.condition_var = tk.StringVar(self, value)
@@ -80,25 +87,37 @@ class TriggerEditor(ttk.Frame):
         self.condition_select.configure(state=state)
 
         item_id = self.trigger.trigger.item_id if self.trigger.trigger else 0
-        self.item_var, self.item_label, self.item_select = self.make_option_select(item_id, 'Item', KEY_ITEM_NAMES)
+        self.item_var, self.item_label, self.item_select = self.make_option_select(item_id, 'Item',
+                                                                                   self.version.key_item_names)
         self.item_select.configure(state='readonly' if state == tk.NORMAL else state)
 
         if self.trigger.trigger:
             flags = self.trigger.trigger.flags
         else:
             flags = TriggerFlag(0)
+
+        has_disabled_flag = bool(flags & TriggerFlag.DISABLED)
+        flag_state = tk.DISABLED if has_disabled_flag else state
+
         self.actor_1_var = tk.BooleanVar(self, bool(flags & TriggerFlag.ACTOR_1))
-        self.actor_1_checkbox = ttk.Checkbutton(self, text='Actor 1', variable=self.actor_1_var, state=state)
+        self.actor_1_checkbox = ttk.Checkbutton(self, text='Actor 1', variable=self.actor_1_var, state=flag_state)
 
         self.actor_2_var = tk.BooleanVar(self, bool(flags & TriggerFlag.ACTOR_2))
-        self.actor_2_checkbox = ttk.Checkbutton(self, text='Actor 2', variable=self.actor_2_var, state=state)
+        self.actor_2_checkbox = ttk.Checkbutton(self, text='Actor 2', variable=self.actor_2_var, state=flag_state)
 
         self.actor_3_var = tk.BooleanVar(self, bool(flags & TriggerFlag.ACTOR_3))
-        self.actor_3_checkbox = ttk.Checkbutton(self, text='Actor 3', variable=self.actor_3_var, state=state)
+        self.actor_3_checkbox = ttk.Checkbutton(self, text='Actor 3', variable=self.actor_3_var, state=flag_state)
 
         self.living_actor_var = tk.BooleanVar(self, bool(flags & TriggerFlag.ALLOW_LIVING_ACTOR))
         self.living_actor_checkbox = ttk.Checkbutton(self, text='Allow living actor', variable=self.living_actor_var,
-                                                     state=state)
+                                                     state=flag_state)
+
+        self.disabled_flag_var = tk.BooleanVar(self, has_disabled_flag)
+        if self.is_japanese_demo:
+            self.disabled_flag_checkbox = ttk.Checkbutton(self, text='Disabled', variable=self.disabled_flag_var,
+                                                          state=state)
+        else:
+            self.disabled_flag_checkbox = None
 
         if self.trigger.trigger:
             self.last_trigger_callback = self.trigger.trigger.trigger_callback
@@ -123,6 +142,7 @@ class TriggerEditor(ttk.Frame):
         self.actor_3_var.trace_add('write', lambda *_: self.on_change_flag(TriggerFlag.ACTOR_3, self.actor_3_var))
         self.living_actor_var.trace_add('write', lambda *_: self.on_change_flag(TriggerFlag.ALLOW_LIVING_ACTOR,
                                                                                 self.living_actor_var))
+        self.disabled_flag_var.trace_add('write', self.on_change_flag_disable)
         self.callback_var.trace_add('write', self.on_change_callback)
 
         id_label.grid(row=0, column=0)
@@ -198,8 +218,9 @@ class TriggerEditor(ttk.Frame):
                         var, label, select = self.make_msg_select(arg_value, frame)
                         getter = self.msg_value_getter(var)
                     case ArgumentType.KEY_ITEM:
-                        var, label, select = self.make_option_select(arg_value, 'Key Item', KEY_ITEM_NAMES, frame, var)
-                        getter = self.string_value_getter(var, KEY_ITEM_NAMES)
+                        var, label, select = self.make_option_select(arg_value, 'Key Item',
+                                                                     self.version.key_item_names, frame, var)
+                        getter = self.string_value_getter(var, self.version.key_item_names)
                     case ArgumentType.MED_ITEM:
                         var, label, select = self.make_option_select(arg_value, 'Medicine', MED_ITEM_NAMES, frame, var)
                         getter = self.string_value_getter(var, MED_ITEM_NAMES)
@@ -256,7 +277,10 @@ class TriggerEditor(ttk.Frame):
 
     def msg_value_getter(self, var: tk.StringVar) -> Callable[[], int]:
         def getter() -> int:
-            return self.message_to_id[var.get()]
+            msg_id = self.message_to_id[var.get()]
+            if self.is_japanese_demo:
+                msg_id |= 0x4000
+            return msg_id
         return getter
 
     def room_value_getter(self, room_var: tk.StringVar, map_var: tk.StringVar) -> Callable[[], int]:
@@ -292,7 +316,7 @@ class TriggerEditor(ttk.Frame):
         item_label = ttk.Label(parent, text=f'{label}:', anchor=tk.W)
         item_select = ttk.Combobox(parent, textvariable=item_var, values=names, state='readonly')
         return item_var, item_label, item_select
-    
+
     def make_int_entry(self, default_value: int, parent: tk.Widget, int_var: tk.StringVar = None, text: str = 'Integer',
                        is_hex: bool = False) -> tuple[tk.StringVar, ttk.Label, ttk.Entry]:
         if int_var is None:
@@ -305,9 +329,12 @@ class TriggerEditor(ttk.Frame):
 
     def make_msg_select(self, default_msg: int, parent: tk.Widget, msg_var: tk.StringVar = None)\
             -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
-        assert default_msg >= 0
         if msg_var is None:
-            value = self.messages[default_msg]
+            try:
+                # for some reason, all message IDs in the Japanese demo have bit 0x4000 set
+                value = self.messages[default_msg & 0x3fff]
+            except KeyError:
+                value = f'<Invalid: {default_msg}>'
             msg_var = tk.StringVar(self, value)
         msg_label = ttk.Label(parent, text='Message:', anchor=tk.W)
         msg_select = ttk.Combobox(parent, textvariable=msg_var, values=list(self.messages.values()), state='readonly')
@@ -352,7 +379,7 @@ class TriggerEditor(ttk.Frame):
         row += 1
 
         if self.trigger.trigger and self.trigger.trigger.type in [TriggerType.ON_SCAN_WITH_ITEM,
-                                                                  TriggerType.ON_USE_ITEM]:
+                                                                  TriggerType.ON_USE_ITEM, TriggerType.DISABLED]:
             self.item_label.grid(row=row, column=0)
             self.item_select.grid(row=row, column=1)
             row += 1
@@ -368,6 +395,9 @@ class TriggerEditor(ttk.Frame):
         row += 1
         self.living_actor_checkbox.grid(row=row, column=0, columnspan=2)
         row += 1
+        if self.disabled_flag_checkbox is not None:
+            self.disabled_flag_checkbox.grid(row=row, column=0, columnspan=2)
+            row += 1
         self.callback_label.grid(row=row, column=0)
         self.callback_input.grid(row=row, column=1)
         row += 1
@@ -399,17 +429,41 @@ class TriggerEditor(ttk.Frame):
         self.toggle_item()
 
     def on_change_condition(self, *_):
-        self.trigger.trigger.type = TriggerType(self.conditions.index(self.condition_var.get()))
+        trigger_type = self.conditions.index(self.condition_var.get())
+        if trigger_type > TriggerType.ON_USE_ITEM:
+            self.trigger.trigger.type = TriggerType.DISABLED
+        else:
+            self.trigger.trigger.type = TriggerType(trigger_type)
         self.toggle_item()
 
     def on_change_item(self, *_):
-        self.trigger.trigger.item_id = KEY_ITEM_NAMES.index(self.item_var.get())
+        self.trigger.trigger.item_id = self.version.key_item_names.index(self.item_var.get())
 
     def on_change_flag(self, flag: TriggerFlag, value: tk.BooleanVar):
         if value.get():
             self.trigger.trigger.flags |= flag
         else:
             self.trigger.trigger.flags &= ~flag
+
+    def on_change_flag_disable(self, *_):
+        if self.disabled_flag_var.get():
+            self.actor_1_var.set(True)
+            self.actor_2_var.set(True)
+            self.actor_3_var.set(True)
+            self.living_actor_var.set(False)
+            self.trigger.trigger.flags |= TriggerFlag.DISABLED
+
+            self.actor_1_checkbox.configure(state=tk.DISABLED)
+            self.actor_2_checkbox.configure(state=tk.DISABLED)
+            self.actor_3_checkbox.configure(state=tk.DISABLED)
+            self.living_actor_checkbox.configure(state=tk.DISABLED)
+        else:
+            self.trigger.trigger.flags &= ~TriggerFlag.DISABLED
+
+            self.actor_1_checkbox.configure(state=tk.NORMAL)
+            self.actor_2_checkbox.configure(state=tk.NORMAL)
+            self.actor_3_checkbox.configure(state=tk.NORMAL)
+            self.living_actor_checkbox.configure(state=tk.NORMAL)
 
     def on_change_callback(self, *_):
         self.trigger.trigger.trigger_callback = int(self.callback_var.get() or '0', 16)
