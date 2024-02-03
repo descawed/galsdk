@@ -3,7 +3,7 @@ from tkinter import ttk
 from typing import Callable
 
 from galsdk.coords import Dimension
-from galsdk.game import KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType, GameVersion, Stage
+from galsdk.game import KNOWN_FUNCTIONS, MAP_NAMES, ArgumentType, GameVersion, Stage
 from galsdk.module import CallbackFunction, FunctionArgument, FunctionCall, TriggerType, TriggerFlag
 from galsdk.room import TriggerObject
 from galsdk.ui.util import get_preview_string, validate_int, StringVar
@@ -235,8 +235,9 @@ class TriggerEditor(ttk.Frame):
                                                                      self.version.key_item_names, frame, var)
                         getter = self.string_value_getter(var, self.version.key_item_names)
                     case ArgumentType.MED_ITEM:
-                        var, label, select = self.make_option_select(arg_value, 'Medicine', MED_ITEM_NAMES, frame, var)
-                        getter = self.string_value_getter(var, MED_ITEM_NAMES)
+                        var, label, select = self.make_option_select(arg_value, 'Medicine',
+                                                                     self.version.med_item_names, frame, var)
+                        getter = self.string_value_getter(var, self.version.med_item_names)
                     case ArgumentType.STAGE:
                         var, label, select = self.make_option_select(arg_value, 'Stage', stages, frame, var)
                         getter = self.string_value_getter(var, stages)

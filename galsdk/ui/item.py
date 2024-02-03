@@ -89,12 +89,16 @@ class ItemTab(Tab):
             item = self.items[index]
             self.model_frame.set_model(item.model)
 
-            # these icons are pretty small, so we scale them up
-            desc_image = self.descriptions[item.description_index].to_image()
-            width, height = desc_image.size
-            desc_photo = ImageTk.PhotoImage(desc_image.resize((width * 2, height * 2)))
-            self.description_label.configure(image=desc_photo)
-            self.description_label.image = desc_photo
+            if item.description_index > 0:
+                # these icons are pretty small, so we scale them up
+                desc_image = self.descriptions[item.description_index].to_image()
+                width, height = desc_image.size
+                desc_photo = ImageTk.PhotoImage(desc_image.resize((width * 2, height * 2)))
+                self.description_label.configure(image=desc_photo)
+                self.description_label.image = desc_photo
+            else:
+                self.description_label.configure(image=None)
+                self.description_label.image = None
 
             if item.is_key_item:
                 index = item.id

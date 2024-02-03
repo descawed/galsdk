@@ -12,8 +12,7 @@ from typing import Any, BinaryIO, Self, TextIO
 import rabbitizer
 
 from galsdk.format import FileFormat
-from galsdk.game import (ADDRESSES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, VERSIONS_BY_ID,
-                         ArgumentType, GameStateOffsets, Stage)
+from galsdk.game import ADDRESSES, KNOWN_FUNCTIONS, MAP_NAMES, VERSIONS_BY_ID, ArgumentType, GameStateOffsets, Stage
 from galsdk.model import ACTORS
 
 
@@ -668,6 +667,15 @@ class RoomModule(FileFormat):
             'functions': {f'{addr:08X}': asdict(callback) for addr, callback in self.functions.items()},
             'entryPoint': self.entry_point,
         }, f)
+
+    def reparse(self, path: Path, version: str):
+        with path.open('rb') as f:
+            new_module = RoomModule.parse(f, version, self.entry_point)
+        self.__init__(new_module.module_id, new_module.layout, new_module.backgrounds, new_module.actor_layouts,
+                      new_module.triggers, new_module.entrances, new_module.load_address, new_module.raw_data,
+                      new_module.functions, new_module.entry_point)
+        with path.with_suffix('.json').open('w') as f:
+            self.save_metadata(f)
 
     @classmethod
     def load_with_metadata(cls, path: Path, version: str = None) -> RoomModule:
@@ -1621,7 +1629,7 @@ def dump_calls(version: str | None, module_type: int | None, module_path: str, e
                         case ArgumentType.KEY_ITEM:
                             arg_strs.append(f'{version_info.key_item_names[arg_value.value]} [{arg_value.value}]')
                         case ArgumentType.MED_ITEM:
-                            arg_strs.append(f'{MED_ITEM_NAMES[arg_value.value]} [{arg_value.value}]')
+                            arg_strs.append(f'{version_info.med_item_names[arg_value.value]} [{arg_value.value}]')
                         case ArgumentType.MAP:
                             arg_strs.append(f'{MAP_NAMES[arg_value.value]} [{arg_value.value}]')
                         case ArgumentType.STAGE:

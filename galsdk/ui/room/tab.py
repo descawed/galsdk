@@ -1,6 +1,7 @@
 import copy
 import math
 import tkinter as tk
+import tkinter.messagebox as tkmsg
 from enum import Enum, auto
 from itertools import zip_longest
 from pathlib import Path
@@ -740,6 +741,9 @@ class RoomTab(Tab):
         self.group_menu = tk.Menu(self, tearoff=False)
         self.group_menu.add_command(label='Hide', command=self.toggle_current_group)
 
+        self.module_menu = tk.Menu(self, tearoff=False)
+        self.module_menu.add_command(label='Re-parse module', command=self.reparse_module)
+
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
@@ -817,6 +821,32 @@ class RoomTab(Tab):
         self.tree.insert(iid, tk.END, text='Cuts', iid=cut_iid)
         trigger_iid = f'triggers_{room_id}'
         self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
+
+    def reparse_module(self, *_):
+        if not self.menu_item:
+            return
+
+        if self.has_unsaved_changes:
+            confirm = tkmsg.askyesno('Unsaved changes',
+                                     'You have unsaved changes. If you re-parse, any unsaved changes to this module '
+                                     'will be lost. Do you want to continue without saving?')
+            if not confirm:
+                return
+
+        if self.menu_item in Stage:
+            room_ids = [int(iid.split('_')[1]) for iid in self.tree.get_children(self.menu_item)]
+        else:
+            room_ids = [int(self.menu_item.split('_')[1])]
+
+        for room_id in room_ids:
+            room = self.rooms[room_id]
+            room.obj.reparse(room.file.path, self.project.version.id)
+            if room_id == self.current_room:
+                self.set_detail_widget(None)
+                self.current_room = None
+                self.set_room(room_id)
+
+        tkmsg.showinfo('Complete', f'Completed re-parsing of {len(room_ids)} module{"s" if len(room_ids) > 1 else ""}')
 
     def edit_maps(self, *_):
         # make a copy of the maps which the map editor can edit before changes are confirmed
@@ -1094,23 +1124,26 @@ class RoomTab(Tab):
                     break
 
     def handle_right_click(self, event: tk.Event):
+        self.group_menu.unpost()
+        self.menu_item = None
+        self.module_menu.unpost()
+
         iid = self.tree.identify_row(event.y)
         for group in self.visibility:
             if iid.startswith(f'{group}_'):
                 if self.menu_item == iid:
-                    self.menu_item = None
-                    self.group_menu.unpost()
-                    break
+                    return
                 room_id = int(iid.split('_')[1])
                 if self.current_room != room_id:
                     self.tree.selection_set(iid)
                 self.group_menu.entryconfigure(1, label='Hide' if self.visibility[group] else 'Show')
                 self.group_menu.post(event.x_root, event.y_root)
                 self.menu_item = iid
-                break
-        else:
-            self.menu_item = None
-            self.group_menu.unpost()
+                return
+
+        if iid.startswith('room_') or iid in Stage:
+            self.menu_item = iid
+            self.module_menu.post(event.x_root, event.y_root)
 
     def set_detail_widget(self, widget: ttk.Frame | None):
         if self.detail_widget:
@@ -1128,6 +1161,7 @@ class RoomTab(Tab):
 
     def select_item(self, _=None):
         self.group_menu.unpost()
+        self.module_menu.unpost()
         selection = self.tree.selection()
         if not selection:
             return

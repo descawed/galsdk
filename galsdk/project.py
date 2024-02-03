@@ -16,8 +16,7 @@ from galsdk import file
 from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
-from galsdk.game import (Stage, MED_ITEM_NAMES, NUM_MED_ITEMS, NUM_MAPS, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS,
-                         GameVersion, VERSIONS, ADDRESSES)
+from galsdk.game import Stage, NUM_MAPS, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS, ADDRESSES
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
 from galsdk.model import ACTORS, ActorModel, ItemModel
@@ -432,6 +431,7 @@ class Project:
                     item_art_manifest.rename(41, 'ability_icons')
 
         num_key_items = version.num_key_items
+        num_med_items = version.num_med_items
         raw_item_art = struct.unpack(f'<{4 * num_key_items}I',
                                      exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * num_key_items])
         item_art = [(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
@@ -443,8 +443,8 @@ class Project:
         )
         if 'MedItemDescriptions' in addresses:
             med_item_descriptions = list(
-                struct.unpack(f'<{NUM_MED_ITEMS}I',
-                              exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * NUM_MED_ITEMS]
+                struct.unpack(f'<{num_med_items}I',
+                              exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * num_med_items]
                               )
             )
         else:
@@ -703,7 +703,14 @@ class Project:
             for room in maps[map_index].rooms:
                 if room.module_index in indexes_seen:
                     continue
-                yield manifest.load_file(room.module_index, loader)
+                module = manifest.load_file(room.module_index, loader)
+                # check if the module has been changed since its metadata last was. if so, reparse.
+                module_mtime = module.file.path.stat().st_mtime
+                metadata_path = module.file.path.with_suffix('.json')
+                metadata_mtime = metadata_path.stat().st_mtime
+                if module_mtime > metadata_mtime:
+                    module.obj.reparse(module.file.path, self.version.id)
+                yield module
                 indexes_seen.add(room.module_index)
 
     def get_modules(self) -> Manifest:
@@ -817,7 +824,7 @@ class Project:
                 with model_file.path.open('rb') as f:
                     model = ItemModel.read(f, name=name, use_transparency=entry['flags'] & 1 == 0)
             else:
-                name = MED_ITEM_NAMES[entry['id']]
+                name = self.version.med_item_names[entry['id']]
                 model = None
             yield Item(entry['id'], name, model, entry['description'], is_key_item)
 

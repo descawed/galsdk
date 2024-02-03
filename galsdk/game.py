@@ -32,15 +32,6 @@ class GameStateOffsets(IntEnum):
     MESSAGE_ID = 0x44
 
 
-MED_ITEM_NAMES = [
-    'Nalcon',
-    'Red',
-    'D-Felon',
-    'Recovery Capsule',
-    'Delmetor',
-    'Appollinar',
-    'Skip',
-]
 MAP_NAMES = [
     'Hospital 15F',
     'Hospital 14F',
@@ -58,7 +49,6 @@ STAGE_MAPS = {
     Stage.C: [5, 6, 7],
     Stage.D: [8],
 }
-NUM_MED_ITEMS = len(MED_ITEM_NAMES)
 NUM_MAPS = len(MAP_NAMES)
 MODULE_ENTRY_SIZE = 8
 
@@ -125,6 +115,12 @@ KNOWN_FUNCTIONS = {
         ArgumentType.INTEGER,
         # there's actually a 5th argument which is a pointer to a struct with sound and animation info for the pickup,
         # but we don't currently support stack arguments
+    ]),
+    'PickUpSaveItem': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.KEY_ITEM,
+        ArgumentType.MESSAGE,
+        ArgumentType.INTEGER,
     ]),
     'PickUpMedItem': Function([
         ArgumentType.GAME_STATE,
@@ -231,12 +227,12 @@ class GameVersion:
     @property
     def key_item_tile_counts(self) -> list[int]:
         if self.is_japanese_demo:
-            return [29, 17]
+            return [29, 22]
         return [self.num_key_items]
 
     @property
     def num_key_items(self) -> int:
-        return 46 if self.is_japanese_demo else 40
+        return len(self.key_item_names)
 
     @property
     def key_item_names(self) -> list[str]:
@@ -289,20 +285,25 @@ class GameVersion:
                 'Memory Chip B',
                 'Memory Chip C',
                 'Unknown #45',
+                'Memory Chip A (15th floor)',
+                'Memory Chip B (14th floor)',
+                'Memory Chip C (13th floor)',
+                'Unknown #49',  # memory chip for stage B?
+                'Memory Chip (hotel)',
             ]
         else:
             return [
-                'Isolation Ward 15F Map',
+                'Unknown #0',  # based on the demo, these are either maps or memory chips
                 'Security Card',
                 'Beeject',
                 'Freezer Room Key',
                 'PPEC Storage Key',
                 'Fuse',
                 'Liquid Explosive',
-                'Isolation Ward 14F Map',
+                'Unknown #7',
                 'Security Card (reformatted)',
                 'Special PPEC Office Key',
-                'Isolation Ward 13F Map',
+                'Unknown #10',
                 'Test Lab Key',
                 'Control Room Key',
                 'Research Lab Key',
@@ -332,6 +333,44 @@ class GameVersion:
                 '3 Ball',
                 'Shed Key',
                 'Letter from Lilia',
+            ]
+
+    @property
+    def num_med_items(self) -> int:
+        return len(self.med_item_names)
+
+    @property
+    def med_item_names(self) -> list[str]:
+        if self.is_japanese_demo:
+            return [
+                'Nalcon',
+                'Red',
+                'Platon',
+                'Maggy',
+                'Skip',
+                'Delmetor',  # also possible this is melatropin, but its behavior seems more like delmetor
+                'Recovery Agent',
+                # other items are mentioned in the message text, such as melatropin and appollinar, but the code only
+                # recognizes 9 item codes, and the last two are empty vials. additionally, the message text tied to
+                # these items in the code is all placeholders.
+                'Unknown #7',
+                'Unknown #8',
+                'Unknown #9',
+                'Unknown #10',
+                'Unknown #11',
+                'Unknown #12',
+                'Unknown #13',
+                'Unknown #14',
+            ]
+        else:
+            return [
+                'Nalcon',
+                'Red',
+                'D-Felon',
+                'Recovery Capsule',
+                'Delmetor',
+                'Appollinar',
+                'Skip',
             ]
 
     @property
@@ -583,6 +622,8 @@ ADDRESSES['SLPM-80289'] = {
     'ActorAnimations': 0x8017E954,
     'ItemArt': 0x8017E260,
     'KeyItemDescriptions': 0x8017F8CC,
+    # the demo does have message text IDs for med items, in pairs of "do you want to pick it up?" and "you picked it
+    # up", but they're mostly placeholders despite appropriate messages actually existing
     'MapModules': 0x8017ED90,
     'ModuleLoadAddresses': [0x801CB068, 0x801CFD74, 0x801CFFF8],
     'GameState': 0x8019AAA0,
@@ -597,7 +638,9 @@ ADDRESSES['SLPM-80289'] = {
     'ChangeStage': 0x80134AC0,
     'PickUpFile': 0x80148090,
     'PickUpKeyItem': 0x80133904,
-    # med items appear to be added to the inventory manually, not by calling a function
+    'PickUpSaveItem': 0x801337FC,
+    'PickUpMedItem': 0x801338A8,
+    # med items in the demo portion are added to the inventory manually, not by calling a function
     'PlayMovie': 0x80134778,
     'ShowItemTim': 0x8015763C,
     'ShowTimAndMessage': 0x80134538,
