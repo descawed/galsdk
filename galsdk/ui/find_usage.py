@@ -22,9 +22,10 @@ class FindUsageDialog(tk.Toplevel):
 
         type_label = ttk.Label(self, text='Type:', anchor=tk.W)
         type_select = ttk.Combobox(self, textvariable=self.type_var, state='readonly',
-                                   values=['Message', 'Item TIM', 'Item', 'Background', 'Actor', 'Function'])
+                                   values=['Message', 'Item TIM', 'Item', 'Background', 'Actor', 'Function',
+                                           'Empty Trigger'])
 
-        unused_checkbox = ttk.Checkbutton(self, text='Find unused', variable=self.unused_var)
+        self.unused_checkbox = ttk.Checkbutton(self, text='Find unused', variable=self.unused_var)
 
         object_label = ttk.Label(self, text='Object:', anchor=tk.W)
         self.object_select = ttk.Combobox(self, textvariable=self.object_var, state='readonly')
@@ -43,7 +44,7 @@ class FindUsageDialog(tk.Toplevel):
 
         type_label.grid(row=0, column=0, padx=5, pady=5)
         type_select.grid(row=0, column=1, padx=5, pady=5)
-        unused_checkbox.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+        self.unused_checkbox.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
         object_label.grid(row=2, column=0, padx=5, pady=5)
         self.object_select.grid(row=2, column=1, padx=5, pady=5)
         result_frame.grid(row=3, column=0, columnspan=2, padx=5, pady=5)
@@ -54,7 +55,7 @@ class FindUsageDialog(tk.Toplevel):
         self.on_change_type()
 
     def on_toggle_unused(self, *_):
-        state = tk.DISABLED if self.unused_var.get() else 'readonly'
+        state = tk.DISABLED if self.unused_var.get() or self.type_var.get() == 'Empty Trigger' else 'readonly'
         self.object_select.configure(state=state)
 
     def get_all_objects(self, preview_len: int = 20) -> dict[tuple[Stage | None, int | str], str]:
@@ -88,6 +89,8 @@ class FindUsageDialog(tk.Toplevel):
                 for name, function in KNOWN_FUNCTIONS.items():
                     if name in addresses or function.can_be_pseudo:
                         out[(None, name)] = name
+            case _:
+                out[(None, 'N/A')] = 'N/A'
 
         return out
 
@@ -95,6 +98,8 @@ class FindUsageDialog(tk.Toplevel):
         values = list(self.get_all_objects().values())
         self.object_var.set(values[0])
         self.object_select.configure(values=values)
+        self.on_toggle_unused()
+        self.unused_checkbox.configure(state=tk.DISABLED if self.type_var.get() == 'Empty Trigger' else tk.NORMAL)
 
     @property
     def argument_type(self) -> ArgumentType | None:
@@ -109,7 +114,7 @@ class FindUsageDialog(tk.Toplevel):
                 return None
 
     def get_selection(self) -> tuple[Stage | None, int | str | None]:
-        if self.unused_var.get():
+        if self.unused_var.get() and self.type_var.get() != 'Empty Trigger':
             return None, None
 
         object_selection = self.object_var.get()
@@ -161,6 +166,12 @@ class FindUsageDialog(tk.Toplevel):
                                 ids_seen.add((None, actor.type))
                                 if actor.type == id_value:
                                     usages.add(f'{module.name}: actor layout set {i} layout {j} instance {k}')
+                case 'Empty Trigger':
+                    for i, trigger in enumerate(module.triggers.triggers):
+                        callbacks = [('enabled', trigger.enabled_callback), ('action', trigger.trigger_callback)]
+                        for name, callback in callbacks:
+                            if callback in module.functions and not module.functions[callback].calls:
+                                usages.add(f'{module.name}: trigger {i} {name} callback')
 
             if expected_arg_type is not None or object_type == 'Function':
                 for address, function in module.functions.items():

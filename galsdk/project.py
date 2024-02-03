@@ -688,6 +688,12 @@ class Project:
                 databases.append(messages.load_file(entry.name, JapaneseStringDb))
         return databases
 
+    @property
+    def exe(self) -> Exe:
+        exe_path = self.project_dir / 'boot' / self.version.exe_name
+        with exe_path.open('rb') as f:
+            return Exe.read(f)
+
     def get_stage_rooms(self, stage: Stage) -> Iterable[FromManifest[RoomModule]]:
         manifest = Manifest.load_from(self.project_dir / 'modules')
         indexes_seen = set()
@@ -705,11 +711,7 @@ class Project:
 
     @functools.cache
     def get_maps(self) -> list[Map]:
-        exe_path = self.project_dir / 'boot' / self.version.exe_name
-        with exe_path.open('rb') as f:
-            exe = Exe.read(f)
-
-        maps = self._get_maps(self.addresses['MapModules'], exe)
+        maps = self._get_maps(self.addresses['MapModules'], self.exe)
         out = []
         for i, map_ in enumerate(maps):
             rooms = [MapRoom(j, room['index'], room['entry_point']) for j, room in enumerate(map_)]
@@ -733,9 +735,7 @@ class Project:
             exe.write(f)
 
     def get_movie_list(self) -> list[str]:
-        exe_path = self.project_dir / 'boot' / self.version.exe_name
-        with exe_path.open('rb') as f:
-            exe = Exe.read(f)
+        exe = self.exe
 
         num_movies = self.version.num_movies
         if self.version.region != Region.NTSC_J:
@@ -783,11 +783,30 @@ class Project:
         for path in sorted((self.project_dir / 'art').iterdir()):
             yield Manifest.load_from(path)
 
-    def get_items(self, key_items: bool | None = None) -> Iterable[Item]:
-        model_manifest = Manifest.load_from(self.project_dir / 'models')
+    def get_item_info(self) -> list[dict[str, int | None]]:
+        # FIXME: we can only partially reload the info from the exe because we have no way to get back to the offsets
+        #  after unpacking the TIM DB
+        num_key_items = self.version.num_key_items
+        addresses = self.addresses
+        raw_item_art = struct.unpack(f'<{4 * num_key_items}I',
+                                     self.exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * num_key_items])
+        item_art = [(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
+                    for i in range(0, len(raw_item_art), 4)]
+
         json_path = self.project_dir / 'item.json'
         with json_path.open() as f:
             info = json.load(f)
+        for entry in info:
+            if entry['model'] is not None:
+                entry['model'] = item_art[entry['id']][0]
+                entry['flags'] = item_art[entry['id']][3]
+        with json_path.open('w') as f:
+            json.dump(info, f)
+        return info
+
+    def get_items(self, key_items: bool | None = None) -> Iterable[Item]:
+        model_manifest = Manifest.load_from(self.project_dir / 'models')
+        info = self.get_item_info()
         for entry in info:
             is_key_item = entry['model'] is not None
             if key_items is not None and is_key_item != key_items:

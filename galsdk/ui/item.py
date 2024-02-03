@@ -52,7 +52,7 @@ class ItemTab(Tab):
             item_id = len(self.items)
             self.items.append(item)
             parent = 'key' if item.is_key_item else 'med'
-            self.tree.insert(parent, tk.END, text=item.name, iid=str(item_id))
+            self.tree.insert(parent, tk.END, text=f'{item_id}: {item.name}', iid=str(item_id))
 
         self.model_frame = ModelViewer('item', self.base, 1280, 720, self)
 
