@@ -22,7 +22,7 @@ class FindUsageDialog(tk.Toplevel):
 
         type_label = ttk.Label(self, text='Type:', anchor=tk.W)
         type_select = ttk.Combobox(self, textvariable=self.type_var, state='readonly',
-                                   values=['Message', 'Item TIM', 'Item', 'Background', 'Actor'])
+                                   values=['Message', 'Item TIM', 'Item', 'Background', 'Actor', 'Function'])
 
         unused_checkbox = ttk.Checkbutton(self, text='Find unused', variable=self.unused_var)
 
@@ -57,7 +57,7 @@ class FindUsageDialog(tk.Toplevel):
         state = tk.DISABLED if self.unused_var.get() else 'readonly'
         self.object_select.configure(state=state)
 
-    def get_all_objects(self) -> dict[tuple[Stage | None, int], str]:
+    def get_all_objects(self, preview_len: int = 20) -> dict[tuple[Stage | None, int | str], str]:
         out = {}
         match self.type_var.get():
             case 'Message':
@@ -65,7 +65,7 @@ class FindUsageDialog(tk.Toplevel):
                     stage: Stage
                     string_db = self.project.get_stage_strings(stage)
                     for string_id, string in string_db.obj.iter_ids():
-                        out[(stage, string_id)] = get_preview_string(f'{stage} {string_id}: {string}')
+                        out[(stage, string_id)] = get_preview_string(f'{stage} {string_id}: {string}', preview_len)
             case 'Item TIM':
                 for art_manifest in self.project.get_art_manifests():
                     if art_manifest.name == 'ITEMTIM':
@@ -83,6 +83,11 @@ class FindUsageDialog(tk.Toplevel):
             case 'Actor':
                 for actor in self.project.get_actor_models(True):
                     out[(None, actor.id)] = f'{actor.id}: {actor.name}'
+            case 'Function':
+                addresses = self.project.version.addresses
+                for name, function in KNOWN_FUNCTIONS.items():
+                    if name in addresses or function.can_be_pseudo:
+                        out[(None, name)] = name
 
         return out
 
@@ -103,11 +108,15 @@ class FindUsageDialog(tk.Toplevel):
             case _:
                 return None
 
-    def get_selection(self) -> tuple[Stage | None, int | None]:
+    def get_selection(self) -> tuple[Stage | None, int | str | None]:
         if self.unused_var.get():
             return None, None
 
-        id_str = self.object_var.get().split(':')[0]
+        object_selection = self.object_var.get()
+        if ':' not in object_selection:
+            return None, object_selection
+
+        id_str = object_selection.split(':')[0]
         if ' ' in id_str:
             stage, id_value = id_str.split()
             return Stage(stage), int(id_value)
@@ -131,6 +140,7 @@ class FindUsageDialog(tk.Toplevel):
         ids_seen = set()
         for module in modules:
             module_stage = Stage(module.name[0])
+            include_stage = object_type in ['Background', 'Message']
             match object_type:
                 case 'Item':
                     for i, trigger in enumerate(module.triggers.triggers):
@@ -152,15 +162,21 @@ class FindUsageDialog(tk.Toplevel):
                                 if actor.type == id_value:
                                     usages.add(f'{module.name}: actor layout set {i} layout {j} instance {k}')
 
-            if expected_arg_type is not None:
+            if expected_arg_type is not None or object_type == 'Function':
                 for address, function in module.functions.items():
                     for call in function.calls:
+                        if object_type == 'Function':
+                            ids_seen.add((None, call.name))
+                            if call.name == id_value:
+                                usages.add(f'{module.name}: function {address:08X} @ {call.call_address:08X}')
+                            continue
+
                         for argument, arg_type in zip(call.arguments, KNOWN_FUNCTIONS[call.name].arguments):
                             if arg_type == expected_arg_type and argument.value is not None:
                                 arg_id = argument.value
                                 if expected_arg_type == ArgumentType.MESSAGE:
                                     arg_id &= 0x3fff
-                                ids_seen.add((module_stage if stage is not None else None, arg_id))
+                                ids_seen.add((module_stage if include_stage else None, arg_id))
                                 if arg_id == id_value:
                                     usages.add(
                                         f'{module.name}: function {address:08X} {call.name} @ {call.call_address:08X}'
@@ -168,12 +184,15 @@ class FindUsageDialog(tk.Toplevel):
 
         if id_value is None:
             # we're searching for unused IDs
-            all_objects = self.get_all_objects()
+            all_objects = self.get_all_objects(30)
             all_ids = set(all_objects)
             unused_ids = all_ids - ids_seen
             text = '\n'.join(all_objects[unused_id] for unused_id in sorted(unused_ids))
         else:
-            text = '\n'.join(usages)
+            text = '\n'.join(sorted(usages))
+
+        if not text:
+            text = '(no usages found)'
 
         self.result_text.configure(state=tk.NORMAL)
         self.result_text.delete('1.0', tk.END)

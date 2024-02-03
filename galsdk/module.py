@@ -927,28 +927,48 @@ class RoomModule(FileFormat):
             if inst.getOpcodeName() == 'slti':
                 return inst.getProcessedImmediate()
 
+    @staticmethod
+    def make_call_identifier(regs: list[Register], call_address: int) -> bytes:
+        # first, flags for which registers are undefined
+        undefined_flags = 0
+        for i, reg in enumerate(regs):
+            if reg.value is UNDEFINED:
+                undefined_flags |= (1 << i)
+        out = undefined_flags.to_bytes(4, 'little')
+        for reg in regs:
+            value = reg.value
+            if value is UNDEFINED:
+                value = 0
+            out += (value & 0xffffffff).to_bytes(4, 'little')
+        out += call_address.to_bytes(4, 'little')
+        return out
+
     @classmethod
     def parse_function(cls, data: bytes, start_address: int, module_space: range, regs: list[Register],
                        room_address: RoomAddresses, known_functions: dict[int, str],
                        function_calls: dict[int, CallbackFunction], function_address: int,
-                       parsed_addresses: set = None, allow_invalid_arguments: bool = False):
+                       parsed_addresses: set[bytes] = None, allow_invalid_arguments: bool = False):
         in_delay_slot = False
         jump_is_call = False
-        jump_address = None
+        jump_addresses = set()
         do_return = False
         restore_regs = False
         grab_room_layout_ptr = False
         found_entrance_array = False
         ever_branched = False
         function_name = None
+        switch = (None, None)
+        jump_table = (None, None)
         arg_regs = [rabbitizer.RegGprO32.a0.value, rabbitizer.RegGprO32.a1.value, rabbitizer.RegGprO32.a2.value,
                     rabbitizer.RegGprO32.a3.value]
         if parsed_addresses is None:
             parsed_addresses = set()
-        if start_address in parsed_addresses:
-            # we've visited this code before
+        # don't parse the same code multiple times when we're in the same state
+        call_id = cls.make_call_identifier(regs, start_address)
+        if call_id in parsed_addresses:
+            # we've visited this function before
             return
-        parsed_addresses.add(start_address)
+        parsed_addresses.add(call_id)
 
         function = function_calls.setdefault(function_address,
                                              CallbackFunction([], FunctionArgument(None, None, False)))
@@ -971,6 +991,10 @@ class RoomModule(FileFormat):
                     reg.value = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     reg.source = UNDEFINED
                     reg.instruction = i
+
+                    # check if we could possibly be loading a jump table address
+                    if reg.value is not UNDEFINED and reg.value in module_space:
+                        jump_table = (i, reg.value)
                 case 'addu':
                     reg = regs[inst.rd.value]
                     reg.value = regs[inst.rs.value].value + regs[inst.rt.value].value
@@ -999,7 +1023,7 @@ class RoomModule(FileFormat):
                     dest = inst.getInstrIndexAsVram()
                     in_delay_slot = True
                     if dest in module_space:
-                        jump_address = dest
+                        jump_addresses = {dest}
                         jump_is_call = True
                     if dest == room_address.set_room_layout:
                         grab_room_layout_ptr = True
@@ -1010,6 +1034,40 @@ class RoomModule(FileFormat):
                 case 'jr':
                     in_delay_slot = True
                     do_return = inst.isJrRa()
+                    if not do_return:
+                        # this could be a switch statement through a jump table. let's see if saw a count of cases and
+                        # a potential jump table.
+                        sltiu_address, num_cases = switch
+                        # we'll somewhat arbitrarily choose 20 instructions as the threshold. if the sltiu was further
+                        # away than that, it's probably unrelated to this instruction.
+                        if sltiu_address is None or abs(i - sltiu_address) >= 80:
+                            switch = (None, None)
+                            jump_table = (None, None)
+                            continue
+
+                        li_address, jump_table_address = jump_table
+                        if li_address is None or abs(i - li_address) >= 80:
+                            switch = (None, None)
+                            jump_table = (None, None)
+                            continue
+
+                        # next, let's examine the potential jump table and see if everything checks out
+                        jpt_offset = jump_table_address - module_space.start
+                        for j in range(num_cases):
+                            case_offset = jpt_offset + j * 4
+                            case_address = int.from_bytes(data[case_offset:case_offset + 4], 'little')
+                            if case_address not in module_space:
+                                jump_addresses.clear()
+                                break  # not a jump table
+                            jump_addresses.add(case_address)
+                        else:
+                            # if we didn't break, this is a valid jump table
+                            jump_is_call = False
+                            # exit this code path; we'll continue parsing the function through the cases
+                            do_return = True
+
+                        switch = (None, None)
+                        jump_table = (None, None)
                     continue
                 case 'sw':
                     address = regs[inst.rs.value].value + inst.getProcessedImmediate()
@@ -1061,6 +1119,9 @@ class RoomModule(FileFormat):
                         reg.value = room_address.get_by_address(address) & 0xffff
                         reg.source = address
                         reg.instruction = i
+                case 'sltiu':
+                    # record some info in case we're about to do a switch statement via a jump table
+                    switch = (i, inst.getProcessedImmediate())
                 case _:
                     if (is_branch := inst.isBranch()) and inst.readsRt() and inst.readsRs():
                         # first, check if we're comparing to the game state's lastRoom field; that will identify if this
@@ -1088,7 +1149,7 @@ class RoomModule(FileFormat):
                         # we only care about forward branches because we don't want to revisit code we've already seen
                         if dest > i:
                             in_delay_slot = True
-                            jump_address = dest
+                            jump_addresses = {dest}
                             restore_regs = True
                             do_return = inst.isUnconditionalBranch()
                             continue
@@ -1142,6 +1203,11 @@ class RoomModule(FileFormat):
                             arg_inst = rabbitizer.Instruction(arg_word, instruction)
                             can_update = cls.can_update_instruction(arg_inst)
                         arg_values.append(FunctionArgument(instruction, value, can_update))
+                        # if the arg is a function in this module, inspect it
+                        if arg_type == ArgumentType.GAME_CALLBACK and (value or 0) in module_space:
+                            new_regs = cls.get_default_regs(room_address.game_state)
+                            cls.parse_function(data, value, module_space, new_regs, room_address, known_functions,
+                                               function_calls, value, parsed_addresses, allow_invalid_arguments)
                     else:
                         # we didn't find any invalid arguments
                         call = FunctionCall(i - 4, function_name, arg_values)
@@ -1157,13 +1223,14 @@ class RoomModule(FileFormat):
                         raise ValueError('Found call to SetRoomLayout but a2 was undefined')
                     grab_room_layout_ptr = False
 
-                if jump_address is not None:
+                if jump_addresses:
                     regs_to_restore = [replace(reg) for reg in regs]
-                    cls.parse_function(data, jump_address, module_space, regs, room_address, known_functions,
-                                       function_calls, jump_address if jump_is_call else function_address,
-                                       parsed_addresses, allow_invalid_arguments)
+                    for jump_address in jump_addresses:
+                        cls.parse_function(data, jump_address, module_space, regs, room_address, known_functions,
+                                           function_calls, jump_address if jump_is_call else function_address,
+                                           parsed_addresses, allow_invalid_arguments)
 
-                    jump_address = None
+                    jump_addresses.clear()
                     jump_is_call = False
                     if restore_regs:
                         regs = regs_to_restore
@@ -1190,6 +1257,13 @@ class RoomModule(FileFormat):
                             can_update = cls.can_update_instruction(arg_inst)
                             function.return_value = FunctionArgument(reg.instruction, reg.value, can_update)
                     return
+
+    @staticmethod
+    def get_default_regs(game_state: int | Undefined = UNDEFINED) -> list[Register]:
+        regs = [Register() for _ in range(32)]
+        regs[0].value = 0
+        regs[rabbitizer.RegGprO32.a0.value].value = game_state
+        return regs
 
     @classmethod
     def parse_with_addresses(cls, data: bytes, load_address: int, room_addresses: RoomAddresses,
@@ -1234,9 +1308,7 @@ class RoomModule(FileFormat):
             for callback in filter(None, [trigger.enabled_callback, trigger.trigger_callback]):
                 if callback in functions or callback not in module_space:
                     continue
-                regs = [Register() for _ in range(32)]
-                regs[0].value = 0
-                regs[rabbitizer.RegGprO32.a0.value].value = room_addresses.game_state
+                regs = cls.get_default_regs(room_addresses.game_state)
                 cls.parse_function(data, callback, module_space, regs, room_addresses, known_functions, functions,
                                    callback)
 
@@ -1263,9 +1335,7 @@ class RoomModule(FileFormat):
 
         functions = {}
         game_state = addresses['GameState']
-        regs = [Register() for _ in range(32)]
-        regs[0].value = 0
-        regs[rabbitizer.RegGprO32.a0.value].value = game_state
+        regs = cls.get_default_regs(game_state)
         room_addresses = RoomAddresses(game_state, addresses['SetRoomLayout'])
         cls.parse_function(data, entry_point, range(load_address, load_address + len(data)), regs, room_addresses,
                            known_functions, functions, entry_point)
@@ -1527,8 +1597,7 @@ def dump_calls(version: str | None, module_type: int | None, module_path: str, e
 
     module_space = range(load_address, load_address + len(data))
     for address in entry_points:
-        regs = [Register() for _ in range(32)]
-        regs[0].value = 0
+        regs = RoomModule.get_default_regs()
         RoomModule.parse_function(data, address, module_space, regs, room_addresses, known_functions, functions,
                                   address, parsed_addresses, True)
 

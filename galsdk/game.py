@@ -75,12 +75,15 @@ class ArgumentType(Enum):
     MOVIE = auto()
     ADDRESS = auto()
     ITEMTIM = auto()
+    GAME_CALLBACK = auto()
+    ACTOR = auto()
 
 
 @dataclass
 class Function:
     arguments: list[ArgumentType]
     returns_value: bool = False
+    can_be_pseudo: bool = False
 
 
 KNOWN_FUNCTIONS = {
@@ -120,17 +123,17 @@ KNOWN_FUNCTIONS = {
         ArgumentType.KEY_ITEM,
         ArgumentType.MESSAGE,
         ArgumentType.INTEGER,
-        # there's actually a 5th argument which is some pointer, but we don't currently support stack arguments and I
-        # also don't know enough about what it points to to edit it
+        # there's actually a 5th argument which is a pointer to a struct with sound and animation info for the pickup,
+        # but we don't currently support stack arguments
     ]),
     'PickUpMedItem': Function([
         ArgumentType.GAME_STATE,
         ArgumentType.MED_ITEM,
         ArgumentType.INTEGER,
-    ], True),
+    ], True, True),  # can be pseudo only in the Japanese demo
     'SetMessageId': Function([
         ArgumentType.MESSAGE,
-    ]),
+    ], can_be_pseudo=True),
     'ChangeStage': Function([
         ArgumentType.GAME_STATE,
         ArgumentType.STAGE,
@@ -162,11 +165,11 @@ KNOWN_FUNCTIONS = {
         ArgumentType.INTEGER,
     ]),
     'InstallActorAiRoutine': Function([
-        ArgumentType.ADDRESS,
-        ArgumentType.ADDRESS,
+        ArgumentType.ACTOR,
+        ArgumentType.GAME_CALLBACK,
     ]),
     'AttackPlayerRanged': Function([
-        ArgumentType.ADDRESS,
+        ArgumentType.ACTOR,
         ArgumentType.INTEGER,
         ArgumentType.INTEGER,
         ArgumentType.ADDRESS,
@@ -177,7 +180,7 @@ KNOWN_FUNCTIONS = {
         ArgumentType.ADDRESS,
     ]),
     'StartMeleeAttack': Function([
-        ArgumentType.ADDRESS,
+        ArgumentType.ACTOR,
         ArgumentType.INTEGER,
     ]),
     'XaPlay': Function([
@@ -191,6 +194,15 @@ KNOWN_FUNCTIONS = {
         ArgumentType.GAME_STATE,
         ArgumentType.ITEMTIM,
         ArgumentType.MESSAGE,
+        ArgumentType.INTEGER,
+    ]),
+    'SetTempActorAiRoutine': Function([
+        ArgumentType.ACTOR,
+        ArgumentType.GAME_CALLBACK,
+    ]),
+    'SetRoomRoutine': Function([
+        ArgumentType.GAME_STATE,
+        ArgumentType.GAME_CALLBACK,
         ArgumentType.INTEGER,
     ]),
 }
@@ -349,6 +361,10 @@ class GameVersion:
     def is_japanese_demo(self) -> bool:
         return self.id == 'SLPM-80289'
 
+    @property
+    def addresses(self) -> dict[str, int | list[int]]:
+        return ADDRESSES[self.id]
+
 
 VERSIONS = [
     GameVersion('SLUS-00986', Region.NTSC_U, 'en-US', 1),
@@ -413,6 +429,7 @@ REGION_ADDRESSES = {
         'OptionMenuStop': 0x80191714,
         'MenuXScale': 0x801917A4,
         'GameState': 0x801AF308,
+        'Actors': [0x801C1778, 0x801C3038, 0x801C48F8, 0x801C61B8],
         'Movies': 0x80191F78,
         'DefaultActorInstanceHealth': 0x80193E40,
         'SetRoomLayout': 0x8012E980,
@@ -431,9 +448,12 @@ REGION_ADDRESSES = {
         'PickUpKeyItem': 0x8011E7C4,
         'PlayMovie': 0x8011FE44,
         'ShowItemTim': 0x8015EA7C,
+        'ShowTimAndMessage': 0x8011F9A8,
         'SaveMenu': 0x80125928,
         'XaPlay': 0x8012AF18,
         'XXaPlay': 0x8016560C,
+        'InstallActorAiRoutine': 0x8013B5BC,
+        'SetTempActorAiRoutine': 0x8013B7B4,
     },
     'ja': {
         'FontPages': 0x8019144C,
@@ -450,6 +470,7 @@ REGION_ADDRESSES = {
         'XaDef3': 0x801938D0,
         'XaDefEnd': 0x8019392C,
         'GameState': 0x801AF910,
+        'Actors': [0x801C02F0, 0x801C1BB0, 0x801C3470, 0x801C4D30],
         'Movies': 0x80191C9C,
         'SetRoomLayout': 0x8012F400,
         'SetCollisionObjects': 0x80123A70,
@@ -466,6 +487,7 @@ REGION_ADDRESSES = {
         'PickUpMedItem': 0x80120EE4,
         'PlayMovie': 0x801225F4,
         'ShowItemTim': 0x8015FAA8,
+        'ShowTimAndMessage': 0x80122120,
         'SaveMenu': 0x80128174,
         'LoadAiModule': 0x8013C708,
         'InstallActorAiRoutine': 0x8013C770,
@@ -473,6 +495,7 @@ REGION_ADDRESSES = {
         'LoadModuleEntry': 0x8011F7D0,
         'StartMeleeAttack': 0x80144F48,
         'XaPlay': 0x801670D0,
+        'SetTempActorAiRoutine': 0x8013C968,
     },
     'de': {
         'FontMetrics': 0x80194178,
@@ -563,6 +586,7 @@ ADDRESSES['SLPM-80289'] = {
     'MapModules': 0x8017ED90,
     'ModuleLoadAddresses': [0x801CB068, 0x801CFD74, 0x801CFFF8],
     'GameState': 0x8019AAA0,
+    'Actors': [0x801A24A0, 0x801A39F0, 0x801A4F40, 0x801A6490],
     'Movies': 0x8017EEEC,
     'SetRoomLayout': 0x8013D654,
     'SetCollisionObjects': 0x80135684,
@@ -570,10 +594,13 @@ ADDRESSES['SLPM-80289'] = {
     'SetStateFlag': 0x80139540,
     'ClearStateFlag': 0x801396AC,
     'GoToRoom': 0x80134B10,
+    'ChangeStage': 0x80134AC0,
     'PickUpFile': 0x80148090,
     'PickUpKeyItem': 0x80133904,
     # med items appear to be added to the inventory manually, not by calling a function
     'PlayMovie': 0x80134778,
     'ShowItemTim': 0x8015763C,
     'ShowTimAndMessage': 0x80134538,
+    'SetTempActorAiRoutine': 0x8014C214,  # this actually appears to be the only means of setting the AI routine
+    'SetRoomRoutine': 0x80137D64,
 }

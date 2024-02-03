@@ -34,6 +34,7 @@ class TriggerEditor(ttk.Frame):
         self.arg_vars = {}
         self.arg_tracers = set()
         self.map_room_links = []
+        self.actor_addresses = self.version.addresses.get('Actors')
 
         self.validator = (self.register(validate_int), '%P')
         self.hex_validator = (self.register(lambda s: validate_int(s, 16)), '%P')
@@ -193,16 +194,32 @@ class TriggerEditor(ttk.Frame):
             row += 1
 
             last_map_var = None
+            if self.actor_addresses:
+                actor_address_names = [f'{address:08X} ({i})' for i, address in enumerate(self.actor_addresses)]
+            else:
+                actor_address_names = []
             for j, (arg_type, (arg_addr, arg_value, can_update)) in enumerate(zip(function.arguments, call.arguments)):
                 var = self.arg_vars.get(arg_addr)
 
                 match arg_type:
                     case ArgumentType.INTEGER | ArgumentType.ITEMTIM:
-                        var, label, select = self.make_int_entry(arg_value, frame, var)
+                        name = 'Item TIM' if arg_type == ArgumentType.ITEMTIM else 'Integer'
+                        var, label, select = self.make_int_entry(arg_value, frame, var, name)
                         getter = self.int_value_getter(var)
-                    case ArgumentType.ADDRESS:
-                        var, label, select = self.make_int_entry(arg_value, frame, var, 'Address', True)
+                    case ArgumentType.ADDRESS | ArgumentType.GAME_CALLBACK:
+                        name = 'Function' if arg_type == ArgumentType.GAME_CALLBACK else 'Address'
+                        var, label, select = self.make_int_entry(arg_value, frame, var, name, True)
                         getter = self.int_value_getter(var, 16)
+                    case ArgumentType.ACTOR:
+                        # if we have actor addresses, use them; otherwise, treat this like a generic address
+                        if self.actor_addresses and arg_value in self.actor_addresses:
+                            index = self.actor_addresses.index(arg_value)
+                            var, label, select = self.make_option_select(index, 'Actor', actor_address_names,
+                                                                         frame, var)
+                            getter = self.actor_value_getter(var)
+                        else:
+                            var, label, select = self.make_int_entry(arg_value, frame, var, 'Actor', True)
+                            getter = self.int_value_getter(var, 16)
                     case ArgumentType.MAP:
                         var, label, select = self.make_option_select(arg_value, 'Map', MAP_NAMES, frame, var)
                         getter = self.string_value_getter(var, MAP_NAMES)
@@ -270,6 +287,11 @@ class TriggerEditor(ttk.Frame):
                 can_update = call.arguments[index][2]
                 call.arguments[index] = FunctionArgument(addr, value, can_update)
         return updater
+
+    def actor_value_getter(self, var: tk.StringVar) -> Callable[[], int]:
+        def getter() -> int:
+            return self.actor_addresses[int(var.get())]
+        return getter
 
     def msg_value_getter(self, var: tk.StringVar) -> Callable[[], int]:
         def getter() -> int:
