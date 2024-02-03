@@ -618,15 +618,15 @@ class RoomModule(FileFormat):
         opcode = instruction.getOpcodeName()
         if not self.can_update_instruction(instruction):
             raise NotImplementedError(f'Attempted to update unsupported instruction {instruction} at {inst_addr:08X}')
-        if value > 0xffff:
-            raise ValueError(f'Value {value} is too large to encode as an immediate')
+        if value > 0xffff or value < -0x8000:
+            raise ValueError(f'Value {value} is outside the range of an immediate operand')
         target_reg = (instruction.rd if opcode == 'addu' else instruction.rt).value
         if value == 0:
             # addu target,$zero,$zero
             new_inst = (target_reg << 11) | 0x00000021
         else:
             # addiu target,$zero,imm
-            new_inst = 0x24000000 | (target_reg << 16) | value
+            new_inst = 0x24000000 | (target_reg << 16) | (value & 0xffff)
         f.seek(offset)
         f.write(new_inst.to_bytes(4, 'little'))
 
