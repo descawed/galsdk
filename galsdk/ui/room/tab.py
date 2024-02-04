@@ -164,7 +164,7 @@ class RoomViewport(Viewport):
         if index not in self.anim_dbs:
             anim_set = self.anim_manifest[index]
             with anim_set.path.open('rb') as f:
-                self.anim_dbs[index] = AnimationDb.read(f)
+                self.anim_dbs[index] = AnimationDb.read(f, differential=not self.project.version.is_japanese_demo)
 
         return self.anim_dbs[index]
 

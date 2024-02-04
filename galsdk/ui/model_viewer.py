@@ -149,7 +149,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         if anim_set != 'None':
             mf = self.animations[anim_set]
             with mf.path.open('rb') as f:
-                self.animation_set = AnimationDb.read(f)
+                self.animation_set = AnimationDb.read(f, differential=not self.project.version.is_japanese_demo)
             values = ['None']
             values.extend(str(i) for i, animation in enumerate(self.animation_set) if animation)
             self.anim_select.configure(values=values, state='readonly')
@@ -188,7 +188,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
             did_set_animations = True
             mf = self.animations[model.anim_index]
             with mf.path.open('rb') as f:
-                animation_set = AnimationDb.read(f)
+                animation_set = AnimationDb.read(f, differential=not self.project.version.is_japanese_demo)
             model.set_animations(animation_set)
 
         if filename := tkfile.asksaveasfilename(filetypes=[('3D models', '*.ply *.obj *.bam *.gltf *.glb'),

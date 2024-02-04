@@ -997,7 +997,7 @@ class ItemModel(Model):
         return cls(name, list(attributes), segments, tim, use_transparency)
 
 
-def export(model_path: str, target_path: str, animation_path: str | None, actor_id: int | None):
+def export(model_path: str, target_path: str, animation_path: str | None, actor_id: int | None, differential: bool):
     model_path = Path(model_path)
     target_path = Path(target_path)
     with model_path.open('rb') as f:
@@ -1007,7 +1007,7 @@ def export(model_path: str, target_path: str, animation_path: str | None, actor_
             model = ActorModel.read(f, actor=ACTORS[actor_id])
     if animation_path:
         with open(animation_path, 'rb') as f:
-            db = AnimationDb.read(f)
+            db = AnimationDb.read(f, differential=differential)
         model.set_animations(db)
     model.export(target_path, target_path.suffix)
 
@@ -1020,10 +1020,13 @@ if __name__ == '__main__':
                         'be the ID of the actor the model belongs to.')
     parser.add_argument('-m', '--animation', help='Path to an animation database to include in the export. Ignored '
                         'if not exporting as gltf or glb.')
+    parser.add_argument('-u', '--uncompressed', help="The provided animation database doesn't use differential "
+                        'compression. Only use this with animations from the ASCII Zanmai demo disc.',
+                        action='store_true')
     parser.add_argument('model', help='The model file to be exported')
     parser.add_argument('target', help='The path to export the model to. The format will be detected from the file '
                         'extension. Supported extensions are ply, obj, gltf, glb, bam, and tim (in which case only the '
                         'texture will be exported).')
 
     args = parser.parse_args()
-    export(args.model, args.target, args.animation, args.actor)
+    export(args.model, args.target, args.animation, args.actor, args.uncompressed)

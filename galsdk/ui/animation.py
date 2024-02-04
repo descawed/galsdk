@@ -80,7 +80,7 @@ class AnimationTab(Tab):
 
         for i, mf in enumerate(self.manifest):
             with mf.path.open('rb') as f:
-                db = AnimationDb.read(f)
+                db = AnimationDb.read(f, differential=not self.project.version.is_japanese_demo)
 
             self.animation_dbs.append(db)
             db_iid = str(i)

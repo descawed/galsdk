@@ -1107,7 +1107,7 @@ class RoomModule(FileFormat):
                 case 'sh':
                     address = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     value_reg = regs[inst.rt.value]
-                    value = value_reg.value
+                    value = value_reg.value & 0xffff
 
                     if address is not UNDEFINED and value is not UNDEFINED:
                         room_address.set_by_address(address, value)
