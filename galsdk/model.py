@@ -1029,4 +1029,4 @@ if __name__ == '__main__':
                         'texture will be exported).')
 
     args = parser.parse_args()
-    export(args.model, args.target, args.animation, args.actor, args.uncompressed)
+    export(args.model, args.target, args.animation, args.actor, not args.uncompressed)

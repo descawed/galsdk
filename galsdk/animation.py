@@ -393,7 +393,7 @@ if __name__ == '__main__':
     pack_parser.add_argument('db', help='Animation database to be created')
     pack_parser.add_argument('files', nargs='*', help='Files to be added to the database. If any paths are directories '
                              'they will be included recursively')
-    pack_parser.set_defaults(action=lambda a: pack(Path(a.db), (Path(p) for p in a.files), a.uncompressed))
+    pack_parser.set_defaults(action=lambda a: pack(Path(a.db), (Path(p) for p in a.files), not a.uncompressed))
 
     unpack_parser = subparsers.add_parser('unpack', help='Unpack files from an animation database')
     unpack_parser.add_argument('-a', '--all', help='Create a file for all indexes in the database, even ones which '
@@ -404,7 +404,7 @@ if __name__ == '__main__':
                                'for animations from the ASCII Zanmai demo disc.')
     unpack_parser.add_argument('db', help='Animation database to be unpacked')
     unpack_parser.add_argument('dir', help='Directory the files will be extracted to')
-    unpack_parser.set_defaults(action=lambda a: unpack(Path(a.db), Path(a.dir), a.all, a.uncompressed))
+    unpack_parser.set_defaults(action=lambda a: unpack(Path(a.db), Path(a.dir), a.all, not a.uncompressed))
 
     args = parser.parse_args()
     args.action(args)
