@@ -377,6 +377,7 @@ class RoomAddresses:
     room_layout: set[int] = field(default_factory=set)
     entrances: set[int] = field(default_factory=set)
     num_entrances: int = 0
+    num_triggers: int = None
 
     @property
     def is_valid(self) -> bool:
@@ -393,6 +394,8 @@ class RoomAddresses:
             self.backgrounds.add(value)
         elif address == self.game_state + GameStateOffsets.TRIGGERS:
             self.triggers.add(value)
+        elif address == self.game_state + GameStateOffsets.NUM_TRIGGERS:
+            self.num_triggers = value
 
     def get_by_address(self, address: int) -> int | Undefined:
         if address == self.game_state + GameStateOffsets.ACTOR_LAYOUTS:
@@ -401,6 +404,8 @@ class RoomAddresses:
             return next(iter(self.backgrounds))
         elif address == self.game_state + GameStateOffsets.TRIGGERS:
             return next(iter(self.triggers))
+        elif address == self.game_state + GameStateOffsets.NUM_TRIGGERS:
+            return UNDEFINED if self.num_triggers is None else self.num_triggers
 
         return UNDEFINED
 
@@ -1070,7 +1075,6 @@ class RoomModule(FileFormat):
                             jump_addresses.add(case_address)
                         else:
                             # if we didn't break, this is a valid jump table
-                            jump_is_call = False
                             # exit this code path; we'll continue parsing the function through the cases
                             do_return = True
 
@@ -1101,10 +1105,15 @@ class RoomModule(FileFormat):
                         reg.source = address
                         reg.instruction = i
                 case 'sh':
+                    address = regs[inst.rs.value].value + inst.getProcessedImmediate()
+                    value_reg = regs[inst.rt.value]
+                    value = value_reg.value
+
+                    if address is not UNDEFINED and value is not UNDEFINED:
+                        room_address.set_by_address(address, value)
+
                     # hacky way to detect med item pickups in the Japanese demo
                     if inst.getProcessedImmediate() == 0x426:
-                        value_reg = regs[inst.rt.value]
-                        value = value_reg.value
                         if value is not UNDEFINED:
                             # fake a call to PickUpMedItem
                             if value_reg.instruction is UNDEFINED:
@@ -1238,11 +1247,16 @@ class RoomModule(FileFormat):
                                            function_calls, jump_address if jump_is_call else function_address,
                                            parsed_addresses, allow_invalid_arguments)
 
-                    jump_addresses.clear()
-                    jump_is_call = False
                     if restore_regs:
                         regs = regs_to_restore
                         restore_regs = False
+                    elif jump_is_call:
+                        # only restore save registers
+                        for j in range(rabbitizer.RegGprO32.s0.value, rabbitizer.RegGprO32.s7.value + 1):
+                            regs[j] = regs_to_restore[j]
+
+                    jump_addresses.clear()
+                    jump_is_call = False
                 elif not do_return:
                     # clobber registers
                     for j in range(1, len(regs)):
@@ -1304,7 +1318,8 @@ class RoomModule(FileFormat):
             raise ValueError('Unexpected number of trigger sets')
 
         offset = room_addresses.triggers.pop() - load_address
-        triggers = cls.parse_triggers(data, offset, len(room_layout.interactables), True)
+        num_triggers = room_addresses.num_triggers or len(room_layout.interactables)
+        triggers = cls.parse_triggers(data, offset, num_triggers, True)
 
         entrance_sets = []
         for address in room_addresses.entrances:

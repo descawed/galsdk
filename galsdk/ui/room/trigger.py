@@ -39,25 +39,37 @@ class TriggerEditor(ttk.Frame):
         self.validator = (self.register(validate_int), '%P')
         self.hex_validator = (self.register(lambda s: validate_int(s, 16)), '%P')
 
-        self.id_var = tk.StringVar(self, str(self.trigger.id))
+        if self.trigger.has_interactable:
+            interactable_state = tk.NORMAL
+            interactable_id = self.trigger.id
+        else:
+            interactable_state = tk.DISABLED
+            interactable_id = ''
+
+        self.id_var = tk.StringVar(self, interactable_id)
         id_label = ttk.Label(self, text='ID:', anchor=tk.W)
-        id_input = ttk.Entry(self, textvariable=self.id_var, validate='all', validatecommand=self.validator)
+        id_input = ttk.Entry(self, textvariable=self.id_var, validate='all', validatecommand=self.validator,
+                             state=interactable_state)
 
         self.x_var = StringVar(self, str(self.trigger.x_pos.game_units))
         x_label = ttk.Label(self, text='X:', anchor=tk.W)
-        x_input = ttk.Entry(self, textvariable=self.x_var, validate='all', validatecommand=self.validator)
+        x_input = ttk.Entry(self, textvariable=self.x_var, validate='all', validatecommand=self.validator,
+                            state=interactable_state)
 
         self.z_var = StringVar(self, str(self.trigger.z_pos.game_units))
         z_label = ttk.Label(self, text='Z:', anchor=tk.W)
-        z_input = ttk.Entry(self, textvariable=self.z_var, validate='all', validatecommand=self.validator)
+        z_input = ttk.Entry(self, textvariable=self.z_var, validate='all', validatecommand=self.validator,
+                            state=interactable_state)
 
         self.width_var = StringVar(self, str(self.trigger.width.game_units))
         self.height_var = StringVar(self, str(self.trigger.height.game_units))
 
         width_label = ttk.Label(self, text='W:', anchor=tk.W)
-        width_input = ttk.Entry(self, textvariable=self.width_var, validate='all', validatecommand=self.validator)
+        width_input = ttk.Entry(self, textvariable=self.width_var, validate='all', validatecommand=self.validator,
+                                state=interactable_state)
         height_label = ttk.Label(self, text='H:', anchor=tk.W)
-        height_input = ttk.Entry(self, textvariable=self.height_var, validate='all', validatecommand=self.validator)
+        height_input = ttk.Entry(self, textvariable=self.height_var, validate='all', validatecommand=self.validator,
+                                 state=interactable_state)
 
         if self.trigger.trigger:
             state = tk.NORMAL

@@ -27,6 +27,7 @@ class Stage(str, Enum):
 class GameStateOffsets(IntEnum):
     LAST_ROOM = 0xE
     BACKGROUNDS = 0x18
+    NUM_TRIGGERS = 0x24
     ACTOR_LAYOUTS = 0x2C
     TRIGGERS = 0x30
     MESSAGE_ID = 0x44
@@ -264,7 +265,7 @@ class GameVersion:
                 'Two-Headed Eagle',
                 "Dr. Lem's Notes",
                 "Lilia's image data",
-                'Unknown #25',  # some kind of disk
+                'Materials Disk',  # not sure about this translation; 資料ディスク
                 'Control Room Key',
                 'Two-Headed Monkey',
                 'Research Lab Key',
@@ -352,7 +353,7 @@ class GameVersion:
                 'Recovery Agent',
                 # other items are mentioned in the message text, such as melatropin and appollinar, but the code only
                 # recognizes 9 item codes, and the last two are empty vials. additionally, the message text tied to
-                # these items in the code is all placeholders.
+                # the below items in the code is all placeholders.
                 'Unknown #7',
                 'Unknown #8',
                 'Unknown #9',

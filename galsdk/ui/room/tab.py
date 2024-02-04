@@ -414,12 +414,7 @@ class RoomViewport(Viewport):
             collider_object.add_to_scene(self.collider_node)
             self.colliders.append(collider_object)
 
-        # I used to have strict=True here, but there's one room (D1003) that has interaction regions defined, but, as
-        # far as I can tell, no triggers. it appears to be a copy of D0101 with the triggers removed. still, I should
-        # check the code to see if I'm missing something.
         for interactable, trigger in zip_longest(module.layout.interactables, module.triggers.triggers):
-            if interactable is None:
-                break  # we can handle an interactable without a trigger, but not a trigger without an interactable
             object_name = f'trigger_{len(self.triggers)}_{room_id}'
             trigger_object = TriggerObject(object_name, interactable, trigger)
             trigger_object.position.game_y += 3
@@ -1061,10 +1056,10 @@ class RoomTab(Tab):
                 for i, trigger in enumerate(self.viewport.triggers):
                     interactable, raw_trigger = trigger.as_interactable()
                     trigger_changed = False
-                    if room.layout.interactables[i] != interactable:
+                    if i < len(room.layout.interactables) and room.layout.interactables[i] != interactable:
                         trigger_changed = True
                         room.layout.interactables[i] = interactable
-                    if raw_trigger is not None and room.triggers.triggers[i] != raw_trigger:
+                    if i < len(room.triggers.triggers) and room.triggers.triggers[i] != raw_trigger:
                         trigger_changed = True
                         room.triggers.triggers[i] = raw_trigger
 
