@@ -15,10 +15,10 @@ class TriggerEditor(ttk.Frame):
         super().__init__(*args, **kwargs)
         self.trigger = trigger
         self.version = version
-        self.is_japanese_demo = self.version.is_japanese_demo
+        self.is_zanmai = self.version.is_zanmai
         self.conditions = ['Always', 'Not attacking', 'On activate', 'On scan (hard-coded item)', 'On scan',
                            'On scan with item', 'On use item']
-        if self.is_japanese_demo:
+        if self.is_zanmai:
             self.conditions.append('Disabled')
         self.messages = {}
         self.message_to_id = {}
@@ -122,7 +122,7 @@ class TriggerEditor(ttk.Frame):
                                                      state=flag_state)
 
         self.disabled_flag_var = tk.BooleanVar(self, has_disabled_flag)
-        if self.is_japanese_demo:
+        if self.is_zanmai:
             self.disabled_flag_checkbox = ttk.Checkbutton(self, text='Disabled', variable=self.disabled_flag_var,
                                                           state=state)
         else:
@@ -214,26 +214,24 @@ class TriggerEditor(ttk.Frame):
                 var = self.arg_vars.get(arg_addr)
 
                 match arg_type:
-                    case ArgumentType.INTEGER | ArgumentType.ITEMTIM:
-                        name = 'Item TIM' if arg_type == ArgumentType.ITEMTIM else 'Integer'
-                        var, label, select = self.make_int_entry(arg_value, frame, var, name)
+                    case ArgumentType.INTEGER | ArgumentType.ITEMTIM | ArgumentType.FLAG:
+                        var, label, select = self.make_int_entry(arg_value, frame, var, arg_type.value)
                         getter = self.int_value_getter(var)
                     case ArgumentType.ADDRESS | ArgumentType.GAME_CALLBACK:
-                        name = 'Function' if arg_type == ArgumentType.GAME_CALLBACK else 'Address'
-                        var, label, select = self.make_int_entry(arg_value, frame, var, name, True)
+                        var, label, select = self.make_int_entry(arg_value, frame, var, arg_type.value, True)
                         getter = self.int_value_getter(var, 16)
                     case ArgumentType.ACTOR:
                         # if we have actor addresses, use them; otherwise, treat this like a generic address
                         if self.actor_addresses and arg_value in self.actor_addresses:
                             index = self.actor_addresses.index(arg_value)
-                            var, label, select = self.make_option_select(index, 'Actor', actor_address_names,
+                            var, label, select = self.make_option_select(index, arg_type.value, actor_address_names,
                                                                          frame, var)
                             getter = self.actor_value_getter(var)
                         else:
-                            var, label, select = self.make_int_entry(arg_value, frame, var, 'Actor', True)
+                            var, label, select = self.make_int_entry(arg_value, frame, var, arg_type.value, True)
                             getter = self.int_value_getter(var, 16)
                     case ArgumentType.MAP:
-                        var, label, select = self.make_option_select(arg_value, 'Map', MAP_NAMES, frame, var)
+                        var, label, select = self.make_option_select(arg_value, arg_type.value, MAP_NAMES, frame, var)
                         getter = self.string_value_getter(var, MAP_NAMES)
                         last_map_var = var
                     case ArgumentType.ROOM:
@@ -243,18 +241,18 @@ class TriggerEditor(ttk.Frame):
                         var, label, select = self.make_msg_select(arg_value, frame)
                         getter = self.msg_value_getter(var)
                     case ArgumentType.KEY_ITEM:
-                        var, label, select = self.make_option_select(arg_value, 'Key Item',
+                        var, label, select = self.make_option_select(arg_value, arg_type.value,
                                                                      self.version.key_item_names, frame, var)
                         getter = self.string_value_getter(var, self.version.key_item_names)
                     case ArgumentType.MED_ITEM:
-                        var, label, select = self.make_option_select(arg_value, 'Medicine',
+                        var, label, select = self.make_option_select(arg_value, arg_type.value,
                                                                      self.version.med_item_names, frame, var)
                         getter = self.string_value_getter(var, self.version.med_item_names)
                     case ArgumentType.STAGE:
-                        var, label, select = self.make_option_select(arg_value, 'Stage', stages, frame, var)
+                        var, label, select = self.make_option_select(arg_value, arg_type.value, stages, frame, var)
                         getter = self.string_value_getter(var, stages)
                     case ArgumentType.MOVIE:
-                        var, label, select = self.make_option_select(arg_value, 'Movie', self.movies, frame, var)
+                        var, label, select = self.make_option_select(arg_value, arg_type.value, self.movies, frame, var)
                         getter = self.string_value_getter(var, self.movies)
                     case _:
                         continue  # don't care about these arguments
@@ -309,7 +307,7 @@ class TriggerEditor(ttk.Frame):
     def msg_value_getter(self, var: tk.StringVar) -> Callable[[], int]:
         def getter() -> int:
             msg_id = self.message_to_id[var.get()]
-            if self.is_japanese_demo:
+            if self.is_zanmai:
                 msg_id |= 0x4000
             return msg_id
         return getter
@@ -362,7 +360,7 @@ class TriggerEditor(ttk.Frame):
             -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
         if msg_var is None:
             try:
-                # for some reason, all message IDs in the Japanese demo have bit 0x4000 set
+                # for some reason, all message IDs in Zanmai have bit 0x4000 set
                 value = self.messages[default_msg & 0x3fff]
             except KeyError:
                 value = f'<Invalid: {default_msg}>'

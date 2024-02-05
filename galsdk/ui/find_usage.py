@@ -22,7 +22,7 @@ class FindUsageDialog(tk.Toplevel):
 
         type_label = ttk.Label(self, text='Type:', anchor=tk.W)
         type_select = ttk.Combobox(self, textvariable=self.type_var, state='readonly',
-                                   values=['Message', 'Item TIM', 'Item', 'Background', 'Actor', 'Function',
+                                   values=['Message', 'Item TIM', 'Item', 'Background', 'Actor', 'Function', 'Flag',
                                            'Empty Trigger'])
 
         self.unused_checkbox = ttk.Checkbutton(self, text='Find unused', variable=self.unused_var)
@@ -89,6 +89,10 @@ class FindUsageDialog(tk.Toplevel):
                 for name, function in KNOWN_FUNCTIONS.items():
                     if name in addresses or function.can_be_pseudo:
                         out[(None, name)] = name
+            case 'Flag':
+                for stage, num_flags in zip(Stage, self.project.version.flag_counts):
+                    for flag in range(num_flags):
+                        out[(stage, flag)] = f'{stage} {flag}'
             case _:
                 out[(None, 'N/A')] = 'N/A'
 
@@ -110,6 +114,8 @@ class FindUsageDialog(tk.Toplevel):
                 return ArgumentType.ITEMTIM
             case 'Item':
                 return ArgumentType.KEY_ITEM
+            case 'Flag':
+                return ArgumentType.FLAG
             case _:
                 return None
 
@@ -118,7 +124,7 @@ class FindUsageDialog(tk.Toplevel):
             return None, None
 
         object_selection = self.object_var.get()
-        if ':' not in object_selection:
+        if ':' not in object_selection and ' ' not in object_selection:
             return None, object_selection
 
         id_str = object_selection.split(':')[0]
@@ -145,7 +151,7 @@ class FindUsageDialog(tk.Toplevel):
         ids_seen = set()
         for module in modules:
             module_stage = Stage(module.name[0])
-            include_stage = object_type in ['Background', 'Message']
+            include_stage = object_type in ['Background', 'Message', 'Flag']
             match object_type:
                 case 'Item':
                     for i, trigger in enumerate(module.triggers.triggers):
@@ -182,16 +188,26 @@ class FindUsageDialog(tk.Toplevel):
                                 usages.add(f'{module.name}: function {address:08X} @ {call.call_address:08X}')
                             continue
 
+                        arg_stage = None
+                        arg_id = None
                         for argument, arg_type in zip(call.arguments, KNOWN_FUNCTIONS[call.name].arguments):
-                            if arg_type == expected_arg_type and argument.value is not None:
+                            if argument.value is None:
+                                continue
+
+                            if arg_type == ArgumentType.STAGE:
+                                arg_stage = Stage.from_int(argument.value)
+                            elif arg_type == expected_arg_type:
                                 arg_id = argument.value
                                 if expected_arg_type == ArgumentType.MESSAGE:
                                     arg_id &= 0x3fff
-                                ids_seen.add((module_stage if include_stage else None, arg_id))
-                                if arg_id == id_value:
-                                    usages.add(
-                                        f'{module.name}: function {address:08X} {call.name} @ {call.call_address:08X}'
-                                    )
+
+                        if arg_id is not None:
+                            id_stage = arg_stage if arg_stage is not None else module_stage
+                            ids_seen.add((id_stage if include_stage else None, arg_id))
+                            if arg_id == id_value:
+                                usages.add(
+                                    f'{module.name}: function {address:08X} {call.name} @ {call.call_address:08X}'
+                                )
 
         if id_value is None:
             # we're searching for unused IDs

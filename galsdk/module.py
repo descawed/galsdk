@@ -927,7 +927,7 @@ class RoomModule(FileFormat):
         for _ in range(num_triggers):
             try:
                 enabled_callback = int.from_bytes(data[offset:offset + 4], 'little')
-                # in the Japanese demo, this field seems to be some sort of flags or ID rather than an enabled callback,
+                # in the Zanmai demo, this field seems to be some sort of flags or ID rather than an enabled callback,
                 # so allow it if the value is low enough that it might plausibly be that.
                 # TODO: the module really needs to hold onto the game version the module is from so it can use it
                 #  during parsing
@@ -1151,7 +1151,7 @@ class RoomModule(FileFormat):
                     if address is not UNDEFINED and value is not UNDEFINED:
                         room_address.set_by_address(address, value)
 
-                    # hacky way to detect med item pickups in the Japanese demo
+                    # hacky way to detect med item pickups in Zanmai
                     if inst.getProcessedImmediate() == 0x426:
                         if value is not UNDEFINED:
                             # fake a call to PickUpMedItem

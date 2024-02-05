@@ -245,7 +245,7 @@ class Project:
             message_manifest.rename(0, 'Debug')
             message_manifest.save()
         else:
-            # FIXME: this file also exists in the Japanese demo
+            # FIXME: this file also exists in Zanmai
             ge_db_path = game_data / 'GE.CDB'  # debug strings only present in the US version
             if ge_db_path.exists():
                 with ge_db_path.open('rb') as f:
@@ -422,7 +422,7 @@ class Project:
             item_art_dir = menu_manifest[item_art_id].path
             item_art_manifest = Manifest.load_from(item_art_dir)
             with item_art_manifest:
-                if version.is_japanese_demo:
+                if version.is_zanmai:
                     item_art_manifest.rename(0, 'key_item_icons_a')
                     item_art_manifest.rename(1, 'key_item_icons_b')
                 else:
@@ -759,20 +759,20 @@ class Project:
         return movies
 
     def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel | None]:
-        is_japanese_demo = self.version.is_japanese_demo
+        is_zanmai = self.version.is_zanmai
         manifest = Manifest.load_from(self.project_dir / 'models')
         for actor in ACTORS:
             if actor.model_index is None:
                 graphics = self.actor_graphics[actor.id]
                 model_index = graphics.model_index
                 anim_index = graphics.anim_index
-            elif usable_only or is_japanese_demo:
+            elif usable_only or is_zanmai:
                 continue
             else:
                 model_index = actor.model_index
                 anim_index = None
 
-            if model_index == 0 and is_japanese_demo:
+            if model_index == 0 and is_zanmai:
                 yield None
             else:
                 model_file = manifest[model_index]
@@ -829,7 +829,7 @@ class Project:
             yield Item(entry['id'], name, model, entry['description'], is_key_item)
 
     def get_all_models(self) -> tuple[dict[int, ActorModel], dict[int, ItemModel], dict[int, ItemModel]]:
-        is_japanese_demo = self.version.is_japanese_demo
+        is_zanmai = self.version.is_zanmai
         model_manifest = Manifest.load_from(self.project_dir / 'models')
         json_path = self.project_dir / 'item.json'
         with json_path.open() as f:
@@ -841,10 +841,10 @@ class Project:
                 graphics = self.actor_graphics[actor.id]
                 model_index = graphics.model_index
                 anim_index = graphics.anim_index
-                if model_index == 0 and is_japanese_demo:
+                if model_index == 0 and is_zanmai:
                     continue
             else:
-                if is_japanese_demo:
+                if is_zanmai:
                     continue
                 model_index = actor.model_index
                 anim_index = None
@@ -871,8 +871,8 @@ class Project:
                     try:
                         other[i] = ActorModel.read(f) if model_file.format == '.G3A' else ItemModel.read(f, name=str(i))
                     except Exception:
-                        # swallow exceptions for the Japanese demo as we don't have all those models working yet
-                        if not is_japanese_demo:
+                        # swallow exceptions for Zanmai as we don't have all those models working yet
+                        if not is_zanmai:
                             raise
 
         return actors, items, other

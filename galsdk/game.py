@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum, IntEnum, auto
+from enum import Enum, IntEnum
 from typing import Self
 
 from psx.exe import Region
@@ -55,19 +55,20 @@ MODULE_ENTRY_SIZE = 8
 
 
 class ArgumentType(Enum):
-    INTEGER = auto()
-    KEY_ITEM = auto()
-    MESSAGE = auto()
-    MAP = auto()
-    ROOM = auto()
-    STAGE = auto()
-    MED_ITEM = auto()
-    GAME_STATE = auto()
-    MOVIE = auto()
-    ADDRESS = auto()
-    ITEMTIM = auto()
-    GAME_CALLBACK = auto()
-    ACTOR = auto()
+    INTEGER = 'Integer'
+    KEY_ITEM = 'Key Item'
+    MESSAGE = 'Message'
+    MAP = 'Map'
+    ROOM = 'Room'
+    STAGE = 'Stage'
+    MED_ITEM = 'Medicine'
+    GAME_STATE = 'Game'
+    MOVIE = 'Movie'
+    ADDRESS = 'Address'
+    ITEMTIM = 'Item TIM'
+    GAME_CALLBACK = 'Function'
+    ACTOR = 'Actor'
+    FLAG = 'Flag'
 
 
 @dataclass
@@ -80,29 +81,29 @@ class Function:
 KNOWN_FUNCTIONS = {
     'GetStateFlag': Function([
         ArgumentType.GAME_STATE,
-        ArgumentType.INTEGER,
+        ArgumentType.FLAG,
     ], True),
     'SetStateFlag': Function([
         ArgumentType.GAME_STATE,
-        ArgumentType.INTEGER,
+        ArgumentType.FLAG,
     ]),
     'ClearStateFlag': Function([
         ArgumentType.GAME_STATE,
-        ArgumentType.INTEGER,
+        ArgumentType.FLAG,
     ]),
     'GetStageStateFlag': Function([
         ArgumentType.GAME_STATE,
-        ArgumentType.INTEGER,
+        ArgumentType.FLAG,
         ArgumentType.STAGE,
     ], True),
     'SetStageStateFlag': Function([
         ArgumentType.GAME_STATE,
-        ArgumentType.INTEGER,
+        ArgumentType.FLAG,
         ArgumentType.STAGE,
     ]),
     'ClearStageStateFlag': Function([
         ArgumentType.GAME_STATE,
-        ArgumentType.INTEGER,
+        ArgumentType.FLAG,
         ArgumentType.STAGE,
     ]),
     'PickUpFile': Function([
@@ -127,7 +128,7 @@ KNOWN_FUNCTIONS = {
         ArgumentType.GAME_STATE,
         ArgumentType.MED_ITEM,
         ArgumentType.INTEGER,
-    ], True, True),  # can be pseudo only in the Japanese demo
+    ], True, True),  # can be pseudo only in Zanmai
     'SetMessageId': Function([
         ArgumentType.MESSAGE,
     ], can_be_pseudo=True),
@@ -227,7 +228,7 @@ class GameVersion:
 
     @property
     def key_item_tile_counts(self) -> list[int]:
-        if self.is_japanese_demo:
+        if self.is_zanmai:
             return [29, 22]
         return [self.num_key_items]
 
@@ -237,7 +238,7 @@ class GameVersion:
 
     @property
     def key_item_names(self) -> list[str]:
-        if self.is_japanese_demo:
+        if self.is_zanmai:
             # TODO: verify translation of cut item names
             return [
                 'Liquid Explosive',
@@ -342,7 +343,7 @@ class GameVersion:
 
     @property
     def med_item_names(self) -> list[str]:
-        if self.is_japanese_demo:
+        if self.is_zanmai:
             return [
                 'Nalcon',
                 'Red',
@@ -385,7 +386,7 @@ class GameVersion:
 
     @property
     def num_actor_instances(self) -> int:
-        if self.is_japanese_demo:
+        if self.is_zanmai:
             return 32
         return 138
 
@@ -398,12 +399,17 @@ class GameVersion:
         return 129
 
     @property
-    def is_japanese_demo(self) -> bool:
+    def is_zanmai(self) -> bool:
         return self.id == 'SLPM-80289'
 
     @property
     def addresses(self) -> dict[str, int | list[int]]:
         return ADDRESSES[self.id]
+
+    @property
+    def flag_counts(self) -> list[int]:
+        # TODO: update these counts for Zanmai
+        return [154, 112, 147, 83]
 
 
 VERSIONS = [
