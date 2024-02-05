@@ -835,6 +835,7 @@ class RoomTab(Tab):
 
         for room_id in room_ids:
             room = self.rooms[room_id]
+            # FIXME: need to re-build tree if this module has been expanded
             room.obj.reparse(room.file.path, self.project.version.id)
             if room_id == self.current_room:
                 self.set_detail_widget(None)

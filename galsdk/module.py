@@ -134,6 +134,31 @@ class Trigger:
     def encode(self) -> bytes:
         return struct.pack('<I2BH2I', *astuple(self))
 
+    @property
+    def description(self) -> str:
+        match self.type:
+            case TriggerType.ALWAYS:
+                s = 'always'
+            case TriggerType.NOT_ATTACKING:
+                s = 'not attacking'
+            case TriggerType.ON_ACTIVATE:
+                s = 'activate'
+            case TriggerType.ON_SCAN_WITH_LIQUID_EXPLOSIVE | TriggerType.ON_SCAN:
+                s = 'scan'
+            case TriggerType.ON_SCAN_WITH_ITEM:
+                s = f'scan with item {self.item_id}'
+            case TriggerType.ON_USE_ITEM:
+                s = f'use item {self.item_id}'
+            case TriggerType.DISABLED:
+                s = 'disabled'
+            case _:
+                s = 'unknown'
+
+        if self.flags & (TriggerFlag.ACTOR_1 | TriggerFlag.ACTOR_2 | TriggerFlag.ACTOR_3) and s != 'disabled':
+            s += ', actor'
+
+        return s
+
 
 @dataclass
 class TriggerSet:
@@ -669,6 +694,7 @@ class RoomModule(FileFormat):
             'triggers': self.triggers.address + self.load_address,
             'entrances': [entrance_set.address + self.load_address for entrance_set in self.entrances],
             'numEntrances': len(self.entrances[0].entrances) if self.entrances else 0,
+            'numTriggers': len(self.triggers.triggers),
             'functions': {f'{addr:08X}': asdict(callback) for addr, callback in self.functions.items()},
             'entryPoint': self.entry_point,
         }, f)
@@ -716,7 +742,8 @@ class RoomModule(FileFormat):
 
         room_addresses = RoomAddresses(game_state, 0, set(metadata['actorLayouts']), {metadata['triggers']},
                                        set(metadata['backgrounds']), {metadata['roomLayout']},
-                                       set(metadata['entrances']), metadata['numEntrances'])
+                                       set(metadata['entrances']), metadata['numEntrances'],
+                                       metadata.get('numTriggers'))
 
         data = path.read_bytes()
         return cls.parse_with_addresses(data, load_address, room_addresses, functions, known_functions, entry_point)
@@ -1013,6 +1040,14 @@ class RoomModule(FileFormat):
                     reg.value = regs[inst.rs.value].value + regs[inst.rt.value].value
                     reg.source = UNDEFINED
                     reg.instruction = i
+                case 'move':
+                    dest_reg = regs[inst.rd.value]
+                    source_reg = regs[inst.rs.value]
+                    dest_reg.value = source_reg.value
+                    dest_reg.source = source_reg.source
+                    # we keep the source reg's instruction because if we're going to be able to update this value, it
+                    # needs to be done at the point of origin
+                    dest_reg.instruction = source_reg.source
                 case 'sll':
                     reg = regs[inst.rd.value]
                     reg.value = (regs[inst.rt.value].value << inst.sa) & 0xffffffff
@@ -1098,12 +1133,16 @@ class RoomModule(FileFormat):
                             if call not in function.calls:
                                 function.calls.append(call)
                 case 'lw':
+                    reg = regs[inst.rt.value]
                     address = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     if address is not UNDEFINED:
-                        reg = regs[inst.rt.value]
                         reg.value = room_address.get_by_address(address)
                         reg.source = address
                         reg.instruction = i
+                    else:
+                        reg.value = UNDEFINED
+                        reg.source = UNDEFINED
+                        reg.instruction = UNDEFINED
                 case 'sh':
                     address = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     value_reg = regs[inst.rt.value]
@@ -1130,15 +1169,23 @@ class RoomModule(FileFormat):
                             if call not in function.calls:
                                 function.calls.append(call)
                 case 'lh':
+                    reg = regs[inst.rt.value]
                     address = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     if address is not UNDEFINED:
-                        reg = regs[inst.rt.value]
                         reg.value = room_address.get_by_address(address) & 0xffff
                         reg.source = address
                         reg.instruction = i
+                    else:
+                        reg.value = UNDEFINED
+                        reg.source = UNDEFINED
+                        reg.instruction = UNDEFINED
                 case 'sltiu':
                     # record some info in case we're about to do a switch statement via a jump table
                     switch = (i, inst.getProcessedImmediate())
+                    reg = regs[inst.rt.value]
+                    reg.value = UNDEFINED
+                    reg.source = UNDEFINED
+                    reg.instruction = UNDEFINED
                 case _:
                     if (is_branch := inst.isBranch()) and inst.readsRt() and inst.readsRs():
                         # first, check if we're comparing to the game state's lastRoom field; that will identify if this

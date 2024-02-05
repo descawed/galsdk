@@ -443,7 +443,7 @@ def unpack_db(db: TimDb, target: Path, convert_format: str = None, indexes: Cont
 
 
 def unpack(db_path: Path, target: Path, fmt: str, convert_format: str = None, indexes: Container[int] = None):
-    if convert_format[0] == '.':
+    if convert_format is not None and convert_format[0] == '.':
         convert_format = convert_format[1:]
     with db_path.open('rb') as f:
         if fmt == 'sniff':

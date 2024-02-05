@@ -152,7 +152,7 @@ class FindUsageDialog(tk.Toplevel):
                         if trigger.type.has_item:
                             ids_seen.add((None, trigger.item_id))
                             if trigger.item_id == id_value:
-                                usages.add(f'{module.name}: trigger {i}')
+                                usages.add(f'{module.name}: trigger {i} ({trigger.description})')
                 case 'Background':
                     for i, background_set in enumerate(module.backgrounds):
                         for j, background in enumerate(background_set.backgrounds):
@@ -171,7 +171,7 @@ class FindUsageDialog(tk.Toplevel):
                         callbacks = [('enabled', trigger.enabled_callback), ('action', trigger.trigger_callback)]
                         for name, callback in callbacks:
                             if callback in module.functions and not module.functions[callback].calls:
-                                usages.add(f'{module.name}: trigger {i} {name} callback')
+                                usages.add(f'{module.name}: trigger {i} ({trigger.description}) {name} callback')
 
             if expected_arg_type is not None or object_type == 'Function':
                 for address, function in module.functions.items():
