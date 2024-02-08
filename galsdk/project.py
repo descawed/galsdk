@@ -19,7 +19,7 @@ from galsdk.font import Font, LatinFont, JapaneseFont
 from galsdk.game import Stage, NUM_MAPS, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS, ADDRESSES
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
-from galsdk.model import ACTORS, ActorModel, ItemModel
+from galsdk.model import ACTORS, ZANMAI_ACTORS, ActorModel, ItemModel
 from galsdk.module import RoomModule
 from galsdk.movie import Movie
 from galsdk.string import StringDb, LatinStringDb, JapaneseStringDb
@@ -313,7 +313,9 @@ class Project:
             model_db = Database.read(f)
         Manifest.from_archive(model_dir, 'MODEL', model_db, sniff=[ActorModel, ItemModel], original_path=model_db_path)
         # only actors without a manually-assigned model index are in the list
-        num_actors = sum(1 if actor.model_index is None else 0 for actor in ACTORS)
+        actors = ZANMAI_ACTORS if version.is_zanmai else ACTORS
+        actors_by_id = {actor.id: actor for actor in actors}
+        num_actors = max(actor.id if actor.model_index is None else -1 for actor in actors) + 1
         actor_models = list(
             struct.unpack(f'<{num_actors}h', exe[addresses['ActorModels']:addresses['ActorModels'] + 2 * num_actors])
         )
@@ -333,9 +335,9 @@ class Project:
                                    original_path=anim_db_path) as anim_manifest:
             renamed_indexes = set()
             for i, anim_index in enumerate(actor_animations):
-                if anim_index not in renamed_indexes:
+                if anim_index not in renamed_indexes and (actor := actors_by_id.get(i)):
                     # we don't rename the file on disk because the actor names can contain special characters
-                    anim_manifest.rename(anim_index, ACTORS[i].name, False)
+                    anim_manifest.rename(anim_index, actor.name, False)
                     renamed_indexes.add(anim_index)
 
         module_dir = project_path / 'modules'
@@ -505,6 +507,14 @@ class Project:
         project.save()
         return project
 
+    @property
+    def actors(self) -> list[ACTORS]:
+        return ZANMAI_ACTORS if self.version.is_zanmai else ACTORS
+
+    @property
+    def num_actors(self) -> int:
+        return max(actor.id if actor.model_index is None else -1 for actor in self.actors) + 1
+
     @staticmethod
     def _get_maps(module_set_addr: int, exe: Exe) -> list[list[dict[str, int]]]:
         module_set_addrs = struct.unpack(f'<{NUM_MAPS}I',
@@ -545,7 +555,7 @@ class Project:
     @property
     def all_actor_models(self) -> set[int]:
         all_actor_models = set(actor.model_index for actor in self.actor_graphics)
-        for actor in ACTORS:
+        for actor in self.actors:
             if actor.model_index is not None:
                 all_actor_models.add(actor.model_index)
         return all_actor_models
@@ -761,7 +771,7 @@ class Project:
     def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel | None]:
         is_zanmai = self.version.is_zanmai
         manifest = Manifest.load_from(self.project_dir / 'models')
-        for actor in ACTORS:
+        for actor in self.actors:
             if actor.model_index is None:
                 graphics = self.actor_graphics[actor.id]
                 model_index = graphics.model_index
@@ -836,7 +846,7 @@ class Project:
             item_info = json.load(f)
 
         actor_models = {}
-        for actor in ACTORS:
+        for actor in self.actors:
             if actor.model_index is None:
                 graphics = self.actor_graphics[actor.id]
                 model_index = graphics.model_index
@@ -844,8 +854,6 @@ class Project:
                 if model_index == 0 and is_zanmai:
                     continue
             else:
-                if is_zanmai:
-                    continue
                 model_index = actor.model_index
                 anim_index = None
             if model_index not in actor_models:

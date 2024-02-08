@@ -8,7 +8,7 @@ from galsdk.ui.util import validate_int, validate_float, StringVar
 
 
 class ActorEditor(ttk.Frame):
-    def __init__(self, actor: ActorObject, actor_models: list[ActorModel | None],
+    def __init__(self, actor: ActorObject, actor_models: dict[int, ActorModel],
                  actor_instance_health: list[tuple[int, int]], on_update_type: Callable[[ActorObject], None],
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -16,7 +16,12 @@ class ActorEditor(ttk.Frame):
         self.actor_models = actor_models
         self.actor_instance_health = actor_instance_health
         self.actor_names = ['None']
-        self.actor_names.extend('<Invalid>' if model is None else model.name for model in self.actor_models)
+        num_actors = max(self.actor_models) + 1
+        for i in range(num_actors):
+            if i in self.actor_models:
+                self.actor_names.append(self.actor_models[i].name)
+            else:
+                self.actor_names.append(f'<Invalid: {i}>')
         self.on_update_type = on_update_type
 
         validator = (self.register(validate_int), '%P')
@@ -113,7 +118,7 @@ class ActorEditor(ttk.Frame):
         type_id = self.actor_names.index(name) - 1
         if type_id != self.actor.type:
             self.actor.type = type_id
-            self.actor.model = None if type_id < 0 else self.actor_models[type_id]
+            self.actor.model = None if type_id < 0 else self.actor_models.get(type_id)
             self.actor.update_model()
             self.actor.update_texture()
             self.on_update_type(self.actor)

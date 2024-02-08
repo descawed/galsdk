@@ -13,7 +13,7 @@ import rabbitizer
 
 from galsdk.format import FileFormat
 from galsdk.game import ADDRESSES, KNOWN_FUNCTIONS, MAP_NAMES, VERSIONS_BY_ID, ArgumentType, GameStateOffsets, Stage
-from galsdk.model import ACTORS
+from galsdk.model import ACTORS, ZANMAI_ACTORS
 
 
 FunctionArgument = namedtuple('FunctionArgument', ['address', 'value', 'can_update'])
@@ -1495,12 +1495,13 @@ class RoomModule(FileFormat):
 
 def dump_info(module_path: str, version: str | None, force: bool, json_path: str | None, entry_point: int = None):
     guessed = ''
+    version_info = VERSIONS_BY_ID[version]
     with open(module_path, 'rb') as f:
         if version is None:
             module = RoomModule.sniff(f)
             guessed = ' (guessed)'
         elif entry_point is None:
-            module = RoomModule.load(f, ADDRESSES[version]['ModuleLoadAddresses'][0])
+            module = RoomModule.load(f, version_info.addresses['ModuleLoadAddresses'][0])
         else:
             module = RoomModule.parse(f, version, entry_point)
 
@@ -1509,7 +1510,7 @@ def dump_info(module_path: str, version: str | None, force: bool, json_path: str
         return
 
     version = 'unknown'
-    for addr_version, addresses in ADDRESSES.items():
+    for addr_version, addresses in version_info.addresses.items():
         if addresses['ModuleLoadAddresses'][0] == module.load_address:
             version = addr_version
             break
@@ -1517,6 +1518,9 @@ def dump_info(module_path: str, version: str | None, force: bool, json_path: str
     if json_path is not None:
         with open(json_path, 'w') as f:
             module.save_metadata(f)
+
+    actors = ZANMAI_ACTORS if version_info.is_zanmai else ACTORS
+    actors_by_id = {actor.id: actor for actor in actors}
 
     print(f'Name: {module.name}')
     print(f'Load address{guessed}: {module.load_address:08X} ({version})')
@@ -1629,8 +1633,8 @@ def dump_info(module_path: str, version: str | None, force: bool, json_path: str
         for j, layout in enumerate(layout_set.layouts):
             print(f'\t\tLayout {j}')
             for k, actor in enumerate(layout.actors):
-                if 0 <= actor.type < len(ACTORS):
-                    actor_name = ACTORS[actor.type].name
+                if 0 <= actor.type < len(ACTORS) and (actor := actors_by_id.get(actor.type)):
+                    actor_name = actor.name
                 else:
                     actor_name = 'unknown'
                 print(f'\t\t\tActor {k}')

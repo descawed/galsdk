@@ -114,7 +114,7 @@ class RoomViewport(Viewport):
         for stage in Stage:
             stage: Stage
             self.stage_backgrounds[stage] = self.project.get_stage_backgrounds(stage)
-        self.actor_models = list(self.project.get_actor_models(True))
+        self.actor_models = {actor.id: actor for actor in self.project.get_actor_models(True)}
         self.actor_animations = []
         self.anim_manifest = self.project.get_animations()
         self.anim_dbs = {}
@@ -321,7 +321,7 @@ class RoomViewport(Viewport):
 
     def start_actor_animation(self, instance: ActorInstance) -> tuple[ActorModel | None, ActiveAnimation | None]:
         if instance.type >= 0:
-            model = self.actor_models[instance.type]
+            model = self.actor_models.get(instance.type)
             if model is not None and model.anim_index is not None:
                 anim_set = self.get_anim_db(model.anim_index)
                 # FIXME: this is a hack because it relies on the fact that get_panda3d_model caches its result, so
@@ -1193,7 +1193,7 @@ class RoomTab(Tab):
                             if actor_instance.type < 0:
                                 name = 'None'
                             else:
-                                model = self.viewport.actor_models[actor_instance.type]
+                                model = self.viewport.actor_models.get(actor_instance.type)
                                 if model is None:
                                     model_name = 'Unknown'
                                 else:
