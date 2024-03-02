@@ -296,7 +296,7 @@ RABBIT_KNIFE = Actor('Rabbit (knife)', 19, {
 RABBIT_TRENCH_COAT = Actor('Rabbit (trench coat)', 20, BIRDMAN.skeleton)
 ARABESQUE_BIPED = Actor('Arabesque (biped)', 21, BIRDMAN.skeleton)
 HOTEL_KNOCK_GUY = Actor('Hotel knock guy', 22, JOULE.skeleton)
-DANCER = Actor('Dancer', 23, {
+DANCER = Actor('Suzan', 23, {
     0: {
         1: {
             2: {15: {}},

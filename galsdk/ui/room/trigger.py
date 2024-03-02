@@ -340,6 +340,8 @@ class TriggerEditor(ttk.Frame):
         if parent is None:
             parent = self
         if item_var is None:
+            while len(names) <= default_item:
+                names.append(f'Unknown: {len(names)}')
             value = names[default_item]
             item_var = tk.StringVar(self, value)
         item_label = ttk.Label(parent, text=f'{label}:', anchor=tk.W)

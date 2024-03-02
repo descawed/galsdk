@@ -768,7 +768,7 @@ class Project:
             movies.append(unpacked[0].rstrip(b'\0').decode())
         return movies
 
-    def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel | None]:
+    def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
         is_zanmai = self.version.is_zanmai
         manifest = Manifest.load_from(self.project_dir / 'models')
         for actor in self.actors:
@@ -782,12 +782,9 @@ class Project:
                 model_index = actor.model_index
                 anim_index = None
 
-            if model_index == 0 and is_zanmai:
-                yield None
-            else:
-                model_file = manifest[model_index]
-                with model_file.path.open('rb') as f:
-                    yield ActorModel.read(f, actor=actor, anim_index=anim_index)
+            model_file = manifest[model_index]
+            with model_file.path.open('rb') as f:
+                yield ActorModel.read(f, actor=actor, anim_index=anim_index)
 
     @functools.cache
     def get_animations(self) -> Manifest:

@@ -82,8 +82,13 @@ class FindUsageDialog(tk.Toplevel):
                     for i, mf in enumerate(self.project.get_stage_backgrounds(stage)):
                         out[(stage, i)] = f'{stage} {i}: {mf.name}'
             case 'Actor':
-                for actor in self.project.get_actor_models(True):
-                    out[(None, actor.id)] = f'{actor.id}: {actor.name}'
+                actors = list(self.project.get_actor_models(True))
+                actors_by_id = {actor.id: actor for actor in actors}
+                num_actors = max(actor.id for actor in actors)
+                for i in range(num_actors):
+                    actor = actors_by_id.get(i)
+                    name = actor.name if actor else 'Unknown'
+                    out[(None, i)] = f'{i}: {name}'
             case 'Function':
                 addresses = self.project.version.addresses
                 for name, function in KNOWN_FUNCTIONS.items():

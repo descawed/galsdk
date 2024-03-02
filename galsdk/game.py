@@ -481,7 +481,7 @@ REGION_ADDRESSES = {
         'SetRoomLayout': 0x8012E980,
         'SetCollisionObjects': 0x80121194,
         'GetStateFlag': 0x80128600,
-        'GetStageStateFlag': 801284E8,
+        'GetStageStateFlag': 0x801284E8,
         'SetStateFlag': 0x80128380,
         'SetStageStateFlag': 0x80128220,
         'ClearStateFlag': 0x801280A0,
