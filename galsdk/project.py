@@ -16,12 +16,10 @@ from galsdk import file
 from galsdk.db import Database
 from galsdk.credits import Credits
 from galsdk.font import Font, LatinFont, JapaneseFont
-from galsdk.game import (Stage, KEY_ITEM_NAMES, MED_ITEM_NAMES, NUM_ACTOR_INSTANCES, NUM_KEY_ITEMS, NUM_MED_ITEMS,
-                         NUM_MAPS, NUM_MOVIES, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS,
-                         ADDRESSES)
+from galsdk.game import Stage, NUM_MAPS, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS, ADDRESSES
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
-from galsdk.model import ACTORS, ActorModel, ItemModel
+from galsdk.model import ACTORS, ZANMAI_ACTORS, ActorModel, ItemModel
 from galsdk.module import RoomModule
 from galsdk.movie import Movie
 from galsdk.string import StringDb, LatinStringDb, JapaneseStringDb
@@ -29,7 +27,6 @@ from galsdk.tim import TimDb, TimFormat
 from galsdk.vab import VabDb
 from galsdk.xa import XaAudio, XaDatabase, XaRegion
 from psx.cd import Patch, PsxCd
-from psx.config import Config
 from psx.exe import Exe, Region
 
 
@@ -85,8 +82,8 @@ class Project:
                  create_date: datetime.datetime = None):
         self.project_dir = project_dir
         self.version = version
-        self.create_date = create_date or datetime.datetime.now(datetime.timezone.utc)
-        self.last_export_date = last_export_date or datetime.datetime.now(datetime.timezone.utc)
+        self.create_date = create_date or datetime.datetime.now(datetime.UTC)
+        self.last_export_date = last_export_date or datetime.datetime.now(datetime.UTC)
         self.actor_graphics = actor_graphics or []
         self.module_sets = module_sets or []
         self.x_scales = x_scales or []
@@ -129,7 +126,7 @@ class Project:
     @classmethod
     def detect_cd_version(cls, cd_path: str) -> GameVersion:
         with open(cd_path, 'rb') as f:
-            cd = PsxCd(f)
+            cd = PsxCd(f, ignore_invalid=True)
         with io.BytesIO() as buf:
             cd.extract(r'\SYSTEM.CNF;1', buf)
             return cls._detect_version(buf.getvalue().decode())
@@ -145,7 +142,7 @@ class Project:
         :return: The new project
         """
         with open(cd_path, 'rb') as f:
-            cd = PsxCd(f)
+            cd = PsxCd(f, ignore_invalid=True)
         with tempfile.TemporaryDirectory() as d:
             cls._extract_dir('\\', Path(d), cd)
             return cls.create_from_directory(d, cd_path, project_dir)
@@ -171,18 +168,15 @@ class Project:
 
         # determine game version
         version = cls.detect_files_version(game_dir)
-        if version.language == 'fr' or version.is_demo:
-            raise NotImplementedError('Demos and the French version are not currently supported')
+        if version.language == 'fr' or (version.is_demo and not version.is_zanmai):
+            raise NotImplementedError('The French version and Western demos are not currently supported')
 
         addresses = ADDRESSES[version.id]
         # locate files we're interested in
         config_path = game_path / 'SYSTEM.CNF'
         game_data = game_path / 'T4'
 
-        with config_path.open() as f:
-            config = Config.read(f)
-        boot_path = config.boot.split(':\\')[1].rsplit(';')[0].replace('\\', '/')
-        exe_path = game_path / boot_path
+        exe_path = (game_data if version.is_demo or version.region == Region.NTSC_J else game_path) / version.exe_name
         with exe_path.open('rb') as f:
             exe = Exe.read(f)
 
@@ -251,6 +245,7 @@ class Project:
             message_manifest.rename(0, 'Debug')
             message_manifest.save()
         else:
+            # FIXME: this file also exists in Zanmai
             ge_db_path = game_data / 'GE.CDB'  # debug strings only present in the US version
             if ge_db_path.exists():
                 with ge_db_path.open('rb') as f:
@@ -270,7 +265,8 @@ class Project:
                 kanji_path = font_manifest[page].path
                 page_mapping.append({'image': str(kanji_path.relative_to(project_path)), 'index': page})
 
-            font = {'image': str(font_manifest[2].path.relative_to(project_path)), 'kanji': page_mapping}
+            basic_font = 5 if version.is_demo else 2
+            font = {'image': str(font_manifest[basic_font].path.relative_to(project_path)), 'kanji': page_mapping}
             with font_path.open('w') as f:
                 json.dump(font, f)
         else:
@@ -317,7 +313,9 @@ class Project:
             model_db = Database.read(f)
         Manifest.from_archive(model_dir, 'MODEL', model_db, sniff=[ActorModel, ItemModel], original_path=model_db_path)
         # only actors without a manually-assigned model index are in the list
-        num_actors = sum(1 if actor.model_index is None else 0 for actor in ACTORS)
+        actors = ZANMAI_ACTORS if version.is_zanmai else ACTORS
+        actors_by_id = {actor.id: actor for actor in actors}
+        num_actors = max(actor.id if actor.model_index is None else -1 for actor in actors) + 1
         actor_models = list(
             struct.unpack(f'<{num_actors}h', exe[addresses['ActorModels']:addresses['ActorModels'] + 2 * num_actors])
         )
@@ -337,9 +335,9 @@ class Project:
                                    original_path=anim_db_path) as anim_manifest:
             renamed_indexes = set()
             for i, anim_index in enumerate(actor_animations):
-                if anim_index not in renamed_indexes:
+                if anim_index not in renamed_indexes and (actor := actors_by_id.get(i)):
                     # we don't rename the file on disk because the actor names can contain special characters
-                    anim_manifest.rename(anim_index, ACTORS[i].name, False)
+                    anim_manifest.rename(anim_index, actor.name, False)
                     renamed_indexes.add(anim_index)
 
         module_dir = project_path / 'modules'
@@ -357,7 +355,7 @@ class Project:
         module_metadata = None
         if (candidate := all_modules_path / version.id).exists():
             module_metadata = candidate
-        elif (candidate := all_modules_path / version.language).exists():
+        elif (candidate := all_modules_path / version.language).exists() and not version.is_demo:
             module_metadata = candidate
 
         if module_metadata is not None:
@@ -375,10 +373,10 @@ class Project:
                     module_file = module_manifest[index]
                     metadata_path = module_file.path.with_suffix('.json')
                     if metadata_path.exists():
-                        module = RoomModule.load_with_metadata(module_file.path, version.language)
+                        module = RoomModule.load_with_metadata(module_file.path, version.id)
                     else:
                         with module_file.path.open('rb') as f:
-                            module = RoomModule.parse(f, version.language, module_entry['entry_point'])
+                            module = RoomModule.parse(f, version.id, module_entry['entry_point'])
                     if not module.is_empty:
                         try:
                             module_manifest.rename(index, module.name, ext=module.suggested_extension)
@@ -426,23 +424,33 @@ class Project:
             item_art_dir = menu_manifest[item_art_id].path
             item_art_manifest = Manifest.load_from(item_art_dir)
             with item_art_manifest:
-                item_art_manifest.rename(36, 'medicine_icons')
-                item_art_manifest.rename(37, 'key_item_icons')
-                item_art_manifest.rename(41, 'ability_icons')
+                if version.is_zanmai:
+                    item_art_manifest.rename(0, 'key_item_icons_a')
+                    item_art_manifest.rename(1, 'key_item_icons_b')
+                else:
+                    item_art_manifest.rename(36, 'medicine_icons')
+                    item_art_manifest.rename(37, 'key_item_icons')
+                    item_art_manifest.rename(41, 'ability_icons')
 
-        raw_item_art = struct.unpack(f'<{4 * NUM_KEY_ITEMS}I',
-                                     exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * NUM_KEY_ITEMS])
+        num_key_items = version.num_key_items
+        num_med_items = version.num_med_items
+        raw_item_art = struct.unpack(f'<{4 * num_key_items}I',
+                                     exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * num_key_items])
         item_art = [(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
                     for i in range(0, len(raw_item_art), 4)]
 
         key_item_descriptions = list(
-            struct.unpack(f'<{NUM_KEY_ITEMS}I',
-                          exe[addresses['KeyItemDescriptions']:addresses['KeyItemDescriptions'] + 4 * NUM_KEY_ITEMS])
+            struct.unpack(f'<{num_key_items}I',
+                          exe[addresses['KeyItemDescriptions']:addresses['KeyItemDescriptions'] + 4 * num_key_items])
         )
-        med_item_descriptions = list(
-            struct.unpack(f'<{NUM_MED_ITEMS}I',
-                          exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * NUM_MED_ITEMS])
-        )
+        if 'MedItemDescriptions' in addresses:
+            med_item_descriptions = list(
+                struct.unpack(f'<{num_med_items}I',
+                              exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * num_med_items]
+                              )
+            )
+        else:
+            med_item_descriptions = []
         if version.region == Region.NTSC_J:
             # the Japanese version uses offsets instead of indexes, so we need to convert
             menu_db_path = game_data / 'MENU.CDB'
@@ -457,10 +465,10 @@ class Project:
 
         item_path = project_path / 'item.json'
         items = []
-        for i in range(NUM_KEY_ITEMS):
+        for i in range(len(item_art)):
             items.append({'id': i, 'model': item_art[i][0], 'flags': item_art[i][3],
                           'description': key_item_descriptions[i]})
-        for i in range(NUM_MED_ITEMS):
+        for i in range(len(med_item_descriptions)):
             items.append({'id': i, 'model': None, 'flags': 0, 'description': med_item_descriptions[i]})
         with item_path.open('w') as f:
             json.dump(items, f)
@@ -475,13 +483,15 @@ class Project:
         voice_dir = project_path / 'voice'
         voice_dir.mkdir(exist_ok=True)
 
-        if version.region == Region.NTSC_J:
-            xa_dir = game_data / 'XA'
-            for xa_bin in xa_dir.iterdir():
-                if xa_bin.suffix == '.BIN':
-                    shutil.copy(xa_bin, voice_dir)
-        else:
-            shutil.copy(game_data / 'XA.MXA', voice_dir)
+        # demos have no XA audio
+        if not version.is_demo:
+            if version.region == Region.NTSC_J:
+                xa_dir = game_data / 'XA'
+                for xa_bin in xa_dir.iterdir():
+                    if xa_bin.suffix == '.BIN':
+                        shutil.copy(xa_bin, voice_dir)
+            else:
+                shutil.copy(game_data / 'XA.MXA', voice_dir)
         Manifest.from_directory(voice_dir, 'XA')
 
         # prepare export directory
@@ -496,6 +506,14 @@ class Project:
         project = cls(project_path, version, actor_graphics, maps, x_scales, option_menu)
         project.save()
         return project
+
+    @property
+    def actors(self) -> list[ACTORS]:
+        return ZANMAI_ACTORS if self.version.is_zanmai else ACTORS
+
+    @property
+    def num_actors(self) -> int:
+        return max(actor.id if actor.model_index is None else -1 for actor in self.actors) + 1
 
     @staticmethod
     def _get_maps(module_set_addr: int, exe: Exe) -> list[list[dict[str, int]]]:
@@ -537,7 +555,7 @@ class Project:
     @property
     def all_actor_models(self) -> set[int]:
         all_actor_models = set(actor.model_index for actor in self.actor_graphics)
-        for actor in ACTORS:
+        for actor in self.actors:
             if actor.model_index is not None:
                 all_actor_models.add(actor.model_index)
         return all_actor_models
@@ -575,6 +593,9 @@ class Project:
             yield Movie(path)
 
     def get_xa_databases(self) -> list[XaDatabase]:
+        if self.version.is_demo:
+            return []
+
         voice_dir = self.project_dir / 'voice'
         voice_manifest = Manifest.load_from(voice_dir)
 
@@ -677,16 +698,29 @@ class Project:
                 databases.append(messages.load_file(entry.name, JapaneseStringDb))
         return databases
 
+    @property
+    def exe(self) -> Exe:
+        exe_path = self.project_dir / 'boot' / self.version.exe_name
+        with exe_path.open('rb') as f:
+            return Exe.read(f)
+
     def get_stage_rooms(self, stage: Stage) -> Iterable[FromManifest[RoomModule]]:
         manifest = Manifest.load_from(self.project_dir / 'modules')
         indexes_seen = set()
         maps = self.get_maps()
-        loader = functools.partial(RoomModule.load_with_metadata, language=self.version.language)
+        loader = functools.partial(RoomModule.load_with_metadata, version=self.version.id)
         for map_index in STAGE_MAPS[stage]:
             for room in maps[map_index].rooms:
                 if room.module_index in indexes_seen:
                     continue
-                yield manifest.load_file(room.module_index, loader)
+                module = manifest.load_file(room.module_index, loader)
+                # check if the module has been changed since its metadata last was. if so, reparse.
+                module_mtime = module.file.path.stat().st_mtime
+                metadata_path = module.file.path.with_suffix('.json')
+                metadata_mtime = metadata_path.stat().st_mtime
+                if module_mtime > metadata_mtime:
+                    module.obj.reparse(module.file.path, self.version.id)
+                yield module
                 indexes_seen.add(room.module_index)
 
     def get_modules(self) -> Manifest:
@@ -694,11 +728,7 @@ class Project:
 
     @functools.cache
     def get_maps(self) -> list[Map]:
-        exe_path = self.project_dir / 'boot' / self.version.exe_name
-        with exe_path.open('rb') as f:
-            exe = Exe.read(f)
-
-        maps = self._get_maps(self.addresses['MapModules'], exe)
+        maps = self._get_maps(self.addresses['MapModules'], self.exe)
         out = []
         for i, map_ in enumerate(maps):
             rooms = [MapRoom(j, room['index'], room['entry_point']) for j, room in enumerate(map_)]
@@ -722,13 +752,10 @@ class Project:
             exe.write(f)
 
     def get_movie_list(self) -> list[str]:
-        exe_path = self.project_dir / 'boot' / self.version.exe_name
-        with exe_path.open('rb') as f:
-            exe = Exe.read(f)
+        exe = self.exe
 
-        num_movies = NUM_MOVIES
+        num_movies = self.version.num_movies
         if self.version.region != Region.NTSC_J:
-            num_movies += 1  # +1 for the Crave logo
             layout = '<28s3I'
         else:
             layout = '<28s4I'
@@ -742,17 +769,19 @@ class Project:
         return movies
 
     def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
+        is_zanmai = self.version.is_zanmai
         manifest = Manifest.load_from(self.project_dir / 'models')
-        for actor in ACTORS:
+        for actor in self.actors:
             if actor.model_index is None:
                 graphics = self.actor_graphics[actor.id]
                 model_index = graphics.model_index
                 anim_index = graphics.anim_index
-            elif usable_only:
+            elif usable_only or is_zanmai:
                 continue
             else:
                 model_index = actor.model_index
                 anim_index = None
+
             model_file = manifest[model_index]
             with model_file.path.open('rb') as f:
                 yield ActorModel.read(f, actor=actor, anim_index=anim_index)
@@ -768,37 +797,59 @@ class Project:
         for path in sorted((self.project_dir / 'art').iterdir()):
             yield Manifest.load_from(path)
 
-    def get_items(self, key_items: bool | None = None) -> Iterable[Item]:
-        model_manifest = Manifest.load_from(self.project_dir / 'models')
+    def get_item_info(self) -> list[dict[str, int | None]]:
+        # FIXME: we can only partially reload the info from the exe because we have no way to get back to the offsets
+        #  after unpacking the TIM DB
+        num_key_items = self.version.num_key_items
+        addresses = self.addresses
+        raw_item_art = struct.unpack(f'<{4 * num_key_items}I',
+                                     self.exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * num_key_items])
+        item_art = [(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
+                    for i in range(0, len(raw_item_art), 4)]
+
         json_path = self.project_dir / 'item.json'
         with json_path.open() as f:
             info = json.load(f)
+        for entry in info:
+            if entry['model'] is not None:
+                entry['model'] = item_art[entry['id']][0]
+                entry['flags'] = item_art[entry['id']][3]
+        with json_path.open('w') as f:
+            json.dump(info, f)
+        return info
+
+    def get_items(self, key_items: bool | None = None) -> Iterable[Item]:
+        model_manifest = Manifest.load_from(self.project_dir / 'models')
+        info = self.get_item_info()
         for entry in info:
             is_key_item = entry['model'] is not None
             if key_items is not None and is_key_item != key_items:
                 continue
             if is_key_item:
-                name = KEY_ITEM_NAMES[entry['id']]
+                name = self.version.key_item_names[entry['id']]
                 model_file = model_manifest[entry['model']]
                 with model_file.path.open('rb') as f:
                     model = ItemModel.read(f, name=name, use_transparency=entry['flags'] & 1 == 0)
             else:
-                name = MED_ITEM_NAMES[entry['id']]
+                name = self.version.med_item_names[entry['id']]
                 model = None
             yield Item(entry['id'], name, model, entry['description'], is_key_item)
 
     def get_all_models(self) -> tuple[dict[int, ActorModel], dict[int, ItemModel], dict[int, ItemModel]]:
+        is_zanmai = self.version.is_zanmai
         model_manifest = Manifest.load_from(self.project_dir / 'models')
         json_path = self.project_dir / 'item.json'
         with json_path.open() as f:
             item_info = json.load(f)
 
         actor_models = {}
-        for actor in ACTORS:
+        for actor in self.actors:
             if actor.model_index is None:
                 graphics = self.actor_graphics[actor.id]
                 model_index = graphics.model_index
                 anim_index = graphics.anim_index
+                if model_index == 0 and is_zanmai:
+                    continue
             else:
                 model_index = actor.model_index
                 anim_index = None
@@ -808,7 +859,7 @@ class Project:
         item_models = {}
         for entry in item_info:
             if entry['model'] is not None and entry['model'] not in item_models:
-                item_models[entry['model']] = (KEY_ITEM_NAMES[entry['id']], entry['flags'] & 1 == 0)
+                item_models[entry['model']] = (self.version.key_item_names[entry['id']], entry['flags'] & 1 == 0)
 
         actors = {}
         items = {}
@@ -822,7 +873,12 @@ class Project:
                     name, use_transparency = item_models[i]
                     items[i] = ItemModel.read(f, name=name, use_transparency=use_transparency)
                 else:
-                    other[i] = ItemModel.read(f, name=str(i))
+                    try:
+                        other[i] = ActorModel.read(f) if model_file.format == '.G3A' else ItemModel.read(f, name=str(i))
+                    except Exception:
+                        # swallow exceptions for Zanmai as we don't have all those models working yet
+                        if not is_zanmai:
+                            raise
 
         return actors, items, other
 
@@ -845,10 +901,10 @@ class Project:
 
     @functools.cache
     def get_actor_instance_health(self) -> list[tuple[int, int]]:
-        num_bytes = NUM_ACTOR_INSTANCES * 4
+        num_bytes = self.version.num_actor_instances * 4
         if self.version.region == Region.NTSC_J:
             manifest = Manifest.load_from(self.project_dir / 'modules')
-            with manifest[129].path.open('rb') as f:
+            with manifest[self.version.health_module_index].path.open('rb') as f:
                 f.seek(0x40)
                 data = f.read()
         else:
@@ -965,7 +1021,7 @@ class Project:
         exe_path = boot_dir / self.version.exe_name
         if exe_path.stat().st_mtime > mtime:
             data = exe_path.read_bytes()
-            if self.version.region == Region.NTSC_J:
+            if self.version.region == Region.NTSC_J or self.version.is_demo:
                 patches.append(Patch(rf'\T4\{exe_path.name};1', data))
             else:
                 patches.append(Patch(rf'\{exe_path.name};1', data))
@@ -1018,5 +1074,5 @@ class Project:
             cd_data = f.getvalue()
         output_image.write_bytes(cd_data)
 
-        self.last_export_date = datetime.datetime.utcnow()
+        self.last_export_date = datetime.datetime.now(datetime.UTC)
         self.save()

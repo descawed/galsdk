@@ -12,9 +12,8 @@ from typing import Any, BinaryIO, Self, TextIO
 import rabbitizer
 
 from galsdk.format import FileFormat
-from galsdk.game import (REGION_ADDRESSES, KEY_ITEM_NAMES, KNOWN_FUNCTIONS, MAP_NAMES, MED_ITEM_NAMES, ArgumentType,
-                         GameStateOffsets, Stage)
-from galsdk.model import ACTORS
+from galsdk.game import ADDRESSES, KNOWN_FUNCTIONS, MAP_NAMES, VERSIONS_BY_ID, ArgumentType, GameStateOffsets, Stage
+from galsdk.model import ACTORS, ZANMAI_ACTORS
 
 
 FunctionArgument = namedtuple('FunctionArgument', ['address', 'value', 'can_update'])
@@ -39,6 +38,11 @@ class TriggerType(IntEnum):
     ON_SCAN = 4
     ON_SCAN_WITH_ITEM = 5
     ON_USE_ITEM = 6
+    DISABLED = 16  # used in the demo
+
+    @property
+    def has_item(self) -> bool:
+        return self in [TriggerType.ON_SCAN_WITH_ITEM, TriggerType.ON_USE_ITEM]
 
 
 class TriggerFlag(IntFlag):
@@ -46,6 +50,7 @@ class TriggerFlag(IntFlag):
     ACTOR_2 = 2
     ACTOR_3 = 4
     ALLOW_LIVING_ACTOR = 8
+    DISABLED = 32  # used in the demo
 
 
 @dataclass
@@ -128,6 +133,31 @@ class Trigger:
 
     def encode(self) -> bytes:
         return struct.pack('<I2BH2I', *astuple(self))
+
+    @property
+    def description(self) -> str:
+        match self.type:
+            case TriggerType.ALWAYS:
+                s = 'always'
+            case TriggerType.NOT_ATTACKING:
+                s = 'not attacking'
+            case TriggerType.ON_ACTIVATE:
+                s = 'activate'
+            case TriggerType.ON_SCAN_WITH_LIQUID_EXPLOSIVE | TriggerType.ON_SCAN:
+                s = 'scan'
+            case TriggerType.ON_SCAN_WITH_ITEM:
+                s = f'scan with item {self.item_id}'
+            case TriggerType.ON_USE_ITEM:
+                s = f'use item {self.item_id}'
+            case TriggerType.DISABLED:
+                s = 'disabled'
+            case _:
+                s = 'unknown'
+
+        if self.flags & (TriggerFlag.ACTOR_1 | TriggerFlag.ACTOR_2 | TriggerFlag.ACTOR_3) and s != 'disabled':
+            s += ', actor'
+
+        return s
 
 
 @dataclass
@@ -372,6 +402,7 @@ class RoomAddresses:
     room_layout: set[int] = field(default_factory=set)
     entrances: set[int] = field(default_factory=set)
     num_entrances: int = 0
+    num_triggers: int = None
 
     @property
     def is_valid(self) -> bool:
@@ -388,6 +419,8 @@ class RoomAddresses:
             self.backgrounds.add(value)
         elif address == self.game_state + GameStateOffsets.TRIGGERS:
             self.triggers.add(value)
+        elif address == self.game_state + GameStateOffsets.NUM_TRIGGERS:
+            self.num_triggers = value
 
     def get_by_address(self, address: int) -> int | Undefined:
         if address == self.game_state + GameStateOffsets.ACTOR_LAYOUTS:
@@ -396,6 +429,8 @@ class RoomAddresses:
             return next(iter(self.backgrounds))
         elif address == self.game_state + GameStateOffsets.TRIGGERS:
             return next(iter(self.triggers))
+        elif address == self.game_state + GameStateOffsets.NUM_TRIGGERS:
+            return UNDEFINED if self.num_triggers is None else self.num_triggers
 
         return UNDEFINED
 
@@ -475,7 +510,7 @@ class RoomModule(FileFormat):
 
     @classmethod
     def sniff(cls, f: BinaryIO) -> Self | None:
-        for addresses in REGION_ADDRESSES.values():
+        for addresses in ADDRESSES.values():
             f.seek(0)
             try:
                 module = cls.load(f, addresses['ModuleLoadAddresses'][0])
@@ -486,18 +521,18 @@ class RoomModule(FileFormat):
         return None
 
     @classmethod
-    def read(cls, f: BinaryIO, *, language: str = None, entry_point: int = None, **kwargs) -> Self:
-        if language is None:
+    def read(cls, f: BinaryIO, *, version: str = None, entry_point: int = None, **kwargs) -> Self:
+        if version is None:
             # we'll just have to guess what the address is
             module = cls.sniff(f)
             if module is None:
                 raise ValueError('Provided file does not appear to be a room module')
             return None
         if entry_point is None:
-            return cls.load(f, REGION_ADDRESSES[language]['ModuleLoadAddresses'][0])
-        return cls.parse(f, language, entry_point)
+            return cls.load(f, ADDRESSES[version]['ModuleLoadAddresses'][0])
+        return cls.parse(f, version, entry_point)
 
-    def write(self, f: BinaryIO, *, language: str = None, **kwargs):
+    def write(self, f: BinaryIO, *, version: str = None, **kwargs):
         self.validate_for_write()
 
         f.write(self.raw_data)
@@ -567,8 +602,8 @@ class RoomModule(FileFormat):
             f.write(self.triggers.encode())
 
         addresses = None
-        if language is not None:
-            addresses = REGION_ADDRESSES[language]
+        if version is not None:
+            addresses = ADDRESSES[version]
         for address, callback in self.functions.items():
             for call in callback.calls:
                 offset = call.call_address - self.load_address
@@ -612,15 +647,15 @@ class RoomModule(FileFormat):
         opcode = instruction.getOpcodeName()
         if not self.can_update_instruction(instruction):
             raise NotImplementedError(f'Attempted to update unsupported instruction {instruction} at {inst_addr:08X}')
-        if value > 0xffff:
-            raise ValueError(f'Value {value} is too large to encode as an immediate')
+        if value > 0xffff or value < -0x8000:
+            raise ValueError(f'Value {value} is outside the range of an immediate operand')
         target_reg = (instruction.rd if opcode == 'addu' else instruction.rt).value
         if value == 0:
             # addu target,$zero,$zero
             new_inst = (target_reg << 11) | 0x00000021
         else:
             # addiu target,$zero,imm
-            new_inst = 0x24000000 | (target_reg << 16) | value
+            new_inst = 0x24000000 | (target_reg << 16) | (value & 0xffff)
         f.seek(offset)
         f.write(new_inst.to_bytes(4, 'little'))
 
@@ -659,12 +694,22 @@ class RoomModule(FileFormat):
             'triggers': self.triggers.address + self.load_address,
             'entrances': [entrance_set.address + self.load_address for entrance_set in self.entrances],
             'numEntrances': len(self.entrances[0].entrances) if self.entrances else 0,
+            'numTriggers': len(self.triggers.triggers),
             'functions': {f'{addr:08X}': asdict(callback) for addr, callback in self.functions.items()},
             'entryPoint': self.entry_point,
         }, f)
 
+    def reparse(self, path: Path, version: str):
+        with path.open('rb') as f:
+            new_module = RoomModule.parse(f, version, self.entry_point)
+        self.__init__(new_module.module_id, new_module.layout, new_module.backgrounds, new_module.actor_layouts,
+                      new_module.triggers, new_module.entrances, new_module.load_address, new_module.raw_data,
+                      new_module.functions, new_module.entry_point)
+        with path.with_suffix('.json').open('w') as f:
+            self.save_metadata(f)
+
     @classmethod
-    def load_with_metadata(cls, path: Path, language: str = None) -> RoomModule:
+    def load_with_metadata(cls, path: Path, version: str = None) -> RoomModule:
         meta_path = path.with_suffix('.json')
         with meta_path.open() as f:
             metadata = json.load(f)
@@ -673,11 +718,18 @@ class RoomModule(FileFormat):
         entry_point = metadata.get('entryPoint', 0)
         functions = {}
         for hex_addr, callback in metadata.get('functions', {}).items():
-            functions[int(hex_addr, 16)] = CallbackFunction([FunctionCall(**call) for call in callback['calls']],
-                                                            FunctionArgument(*callback['return_value']))
+            functions[int(hex_addr, 16)] = CallbackFunction(
+                [FunctionCall(
+                    call['call_address'],
+                    call['name'],
+                    [FunctionArgument(*argument) for argument in call['arguments']],
+                    call['is_enabled'],
+                ) for call in callback['calls']],
+                FunctionArgument(*callback['return_value']),
+            )
 
-        if language is not None:
-            addresses = REGION_ADDRESSES[language]
+        if version is not None:
+            addresses = ADDRESSES[version]
             game_state = addresses['GameState']
 
             known_functions = {}
@@ -690,7 +742,8 @@ class RoomModule(FileFormat):
 
         room_addresses = RoomAddresses(game_state, 0, set(metadata['actorLayouts']), {metadata['triggers']},
                                        set(metadata['backgrounds']), {metadata['roomLayout']},
-                                       set(metadata['entrances']), metadata['numEntrances'])
+                                       set(metadata['entrances']), metadata['numEntrances'],
+                                       metadata.get('numTriggers'))
 
         data = path.read_bytes()
         return cls.parse_with_addresses(data, load_address, room_addresses, functions, known_functions, entry_point)
@@ -874,7 +927,11 @@ class RoomModule(FileFormat):
         for _ in range(num_triggers):
             try:
                 enabled_callback = int.from_bytes(data[offset:offset + 4], 'little')
-                if not cls._is_ptr(enabled_callback):
+                # in the Zanmai demo, this field seems to be some sort of flags or ID rather than an enabled callback,
+                # so allow it if the value is low enough that it might plausibly be that.
+                # TODO: the module really needs to hold onto the game version the module is from so it can use it
+                #  during parsing
+                if not cls._is_ptr(enabled_callback) and (not known_good or enabled_callback > 10):
                     raise ValueError
                 trigger_type = TriggerType(data[offset + 4])
                 flags = TriggerFlag(data[offset + 5])
@@ -910,28 +967,48 @@ class RoomModule(FileFormat):
             if inst.getOpcodeName() == 'slti':
                 return inst.getProcessedImmediate()
 
+    @staticmethod
+    def make_call_identifier(regs: list[Register], call_address: int) -> bytes:
+        # first, flags for which registers are undefined
+        undefined_flags = 0
+        for i, reg in enumerate(regs):
+            if reg.value is UNDEFINED:
+                undefined_flags |= (1 << i)
+        out = undefined_flags.to_bytes(4, 'little')
+        for reg in regs:
+            value = reg.value
+            if value is UNDEFINED:
+                value = 0
+            out += (value & 0xffffffff).to_bytes(4, 'little')
+        out += call_address.to_bytes(4, 'little')
+        return out
+
     @classmethod
     def parse_function(cls, data: bytes, start_address: int, module_space: range, regs: list[Register],
                        room_address: RoomAddresses, known_functions: dict[int, str],
                        function_calls: dict[int, CallbackFunction], function_address: int,
-                       parsed_addresses: set = None, allow_invalid_arguments: bool = False):
+                       parsed_addresses: set[bytes] = None, allow_invalid_arguments: bool = False):
         in_delay_slot = False
         jump_is_call = False
-        jump_address = None
+        jump_addresses = set()
         do_return = False
         restore_regs = False
         grab_room_layout_ptr = False
         found_entrance_array = False
         ever_branched = False
         function_name = None
+        switch = (None, None)
+        jump_table = (None, None)
         arg_regs = [rabbitizer.RegGprO32.a0.value, rabbitizer.RegGprO32.a1.value, rabbitizer.RegGprO32.a2.value,
                     rabbitizer.RegGprO32.a3.value]
         if parsed_addresses is None:
             parsed_addresses = set()
-        if start_address in parsed_addresses:
-            # we've visited this code before
+        # don't parse the same code multiple times when we're in the same state
+        call_id = cls.make_call_identifier(regs, start_address)
+        if call_id in parsed_addresses:
+            # we've visited this function before
             return
-        parsed_addresses.add(start_address)
+        parsed_addresses.add(call_id)
 
         function = function_calls.setdefault(function_address,
                                              CallbackFunction([], FunctionArgument(None, None, False)))
@@ -954,11 +1031,23 @@ class RoomModule(FileFormat):
                     reg.value = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     reg.source = UNDEFINED
                     reg.instruction = i
+
+                    # check if we could possibly be loading a jump table address
+                    if reg.value is not UNDEFINED and reg.value in module_space:
+                        jump_table = (i, reg.value)
                 case 'addu':
                     reg = regs[inst.rd.value]
                     reg.value = regs[inst.rs.value].value + regs[inst.rt.value].value
                     reg.source = UNDEFINED
                     reg.instruction = i
+                case 'move':
+                    dest_reg = regs[inst.rd.value]
+                    source_reg = regs[inst.rs.value]
+                    dest_reg.value = source_reg.value
+                    dest_reg.source = source_reg.source
+                    # we keep the source reg's instruction because if we're going to be able to update this value, it
+                    # needs to be done at the point of origin
+                    dest_reg.instruction = source_reg.source
                 case 'sll':
                     reg = regs[inst.rd.value]
                     reg.value = (regs[inst.rt.value].value << inst.sa) & 0xffffffff
@@ -982,7 +1071,7 @@ class RoomModule(FileFormat):
                     dest = inst.getInstrIndexAsVram()
                     in_delay_slot = True
                     if dest in module_space:
-                        jump_address = dest
+                        jump_addresses = {dest}
                         jump_is_call = True
                     if dest == room_address.set_room_layout:
                         grab_room_layout_ptr = True
@@ -993,6 +1082,39 @@ class RoomModule(FileFormat):
                 case 'jr':
                     in_delay_slot = True
                     do_return = inst.isJrRa()
+                    if not do_return:
+                        # this could be a switch statement through a jump table. let's see if saw a count of cases and
+                        # a potential jump table.
+                        sltiu_address, num_cases = switch
+                        # we'll somewhat arbitrarily choose 20 instructions as the threshold. if the sltiu was further
+                        # away than that, it's probably unrelated to this instruction.
+                        if sltiu_address is None or abs(i - sltiu_address) >= 80:
+                            switch = (None, None)
+                            jump_table = (None, None)
+                            continue
+
+                        li_address, jump_table_address = jump_table
+                        if li_address is None or abs(i - li_address) >= 80:
+                            switch = (None, None)
+                            jump_table = (None, None)
+                            continue
+
+                        # next, let's examine the potential jump table and see if everything checks out
+                        jpt_offset = jump_table_address - module_space.start
+                        for j in range(num_cases):
+                            case_offset = jpt_offset + j * 4
+                            case_address = int.from_bytes(data[case_offset:case_offset + 4], 'little')
+                            if case_address not in module_space:
+                                jump_addresses.clear()
+                                break  # not a jump table
+                            jump_addresses.add(case_address)
+                        else:
+                            # if we didn't break, this is a valid jump table
+                            # exit this code path; we'll continue parsing the function through the cases
+                            do_return = True
+
+                        switch = (None, None)
+                        jump_table = (None, None)
                     continue
                 case 'sw':
                     address = regs[inst.rs.value].value + inst.getProcessedImmediate()
@@ -1011,19 +1133,59 @@ class RoomModule(FileFormat):
                             if call not in function.calls:
                                 function.calls.append(call)
                 case 'lw':
+                    reg = regs[inst.rt.value]
                     address = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     if address is not UNDEFINED:
-                        reg = regs[inst.rt.value]
                         reg.value = room_address.get_by_address(address)
                         reg.source = address
                         reg.instruction = i
+                    else:
+                        reg.value = UNDEFINED
+                        reg.source = UNDEFINED
+                        reg.instruction = UNDEFINED
+                case 'sh':
+                    address = regs[inst.rs.value].value + inst.getProcessedImmediate()
+                    value_reg = regs[inst.rt.value]
+                    value = value_reg.value & 0xffff
+
+                    if address is not UNDEFINED and value is not UNDEFINED:
+                        room_address.set_by_address(address, value)
+
+                    # hacky way to detect med item pickups in Zanmai
+                    if inst.getProcessedImmediate() == 0x426:
+                        if value is not UNDEFINED:
+                            # fake a call to PickUpMedItem
+                            if value_reg.instruction is UNDEFINED:
+                                instruction = None
+                                can_update = False
+                            else:
+                                instruction = value_reg.instruction
+                                can_update = True
+                            call = FunctionCall(i, 'PickUpMedItem', [
+                                FunctionArgument(None, None, False),
+                                FunctionArgument(instruction, value, can_update),
+                                FunctionArgument(None, 0, False),
+                            ], None)
+                            if call not in function.calls:
+                                function.calls.append(call)
                 case 'lh':
+                    reg = regs[inst.rt.value]
                     address = regs[inst.rs.value].value + inst.getProcessedImmediate()
                     if address is not UNDEFINED:
-                        reg = regs[inst.rt.value]
                         reg.value = room_address.get_by_address(address) & 0xffff
                         reg.source = address
                         reg.instruction = i
+                    else:
+                        reg.value = UNDEFINED
+                        reg.source = UNDEFINED
+                        reg.instruction = UNDEFINED
+                case 'sltiu':
+                    # record some info in case we're about to do a switch statement via a jump table
+                    switch = (i, inst.getProcessedImmediate())
+                    reg = regs[inst.rt.value]
+                    reg.value = UNDEFINED
+                    reg.source = UNDEFINED
+                    reg.instruction = UNDEFINED
                 case _:
                     if (is_branch := inst.isBranch()) and inst.readsRt() and inst.readsRs():
                         # first, check if we're comparing to the game state's lastRoom field; that will identify if this
@@ -1051,7 +1213,7 @@ class RoomModule(FileFormat):
                         # we only care about forward branches because we don't want to revisit code we've already seen
                         if dest > i:
                             in_delay_slot = True
-                            jump_address = dest
+                            jump_addresses = {dest}
                             restore_regs = True
                             do_return = inst.isUnconditionalBranch()
                             continue
@@ -1105,6 +1267,11 @@ class RoomModule(FileFormat):
                             arg_inst = rabbitizer.Instruction(arg_word, instruction)
                             can_update = cls.can_update_instruction(arg_inst)
                         arg_values.append(FunctionArgument(instruction, value, can_update))
+                        # if the arg is a function in this module, inspect it
+                        if arg_type == ArgumentType.GAME_CALLBACK and (value or 0) in module_space:
+                            new_regs = cls.get_default_regs(room_address.game_state)
+                            cls.parse_function(data, value, module_space, new_regs, room_address, known_functions,
+                                               function_calls, value, parsed_addresses, allow_invalid_arguments)
                     else:
                         # we didn't find any invalid arguments
                         call = FunctionCall(i - 4, function_name, arg_values)
@@ -1120,17 +1287,23 @@ class RoomModule(FileFormat):
                         raise ValueError('Found call to SetRoomLayout but a2 was undefined')
                     grab_room_layout_ptr = False
 
-                if jump_address is not None:
+                if jump_addresses:
                     regs_to_restore = [replace(reg) for reg in regs]
-                    cls.parse_function(data, jump_address, module_space, regs, room_address, known_functions,
-                                       function_calls, jump_address if jump_is_call else function_address,
-                                       parsed_addresses, allow_invalid_arguments)
+                    for jump_address in jump_addresses:
+                        cls.parse_function(data, jump_address, module_space, regs, room_address, known_functions,
+                                           function_calls, jump_address if jump_is_call else function_address,
+                                           parsed_addresses, allow_invalid_arguments)
 
-                    jump_address = None
-                    jump_is_call = False
                     if restore_regs:
                         regs = regs_to_restore
                         restore_regs = False
+                    elif jump_is_call:
+                        # only restore save registers
+                        for j in range(rabbitizer.RegGprO32.s0.value, rabbitizer.RegGprO32.s7.value + 1):
+                            regs[j] = regs_to_restore[j]
+
+                    jump_addresses.clear()
+                    jump_is_call = False
                 elif not do_return:
                     # clobber registers
                     for j in range(1, len(regs)):
@@ -1153,6 +1326,13 @@ class RoomModule(FileFormat):
                             can_update = cls.can_update_instruction(arg_inst)
                             function.return_value = FunctionArgument(reg.instruction, reg.value, can_update)
                     return
+
+    @staticmethod
+    def get_default_regs(game_state: int | Undefined = UNDEFINED) -> list[Register]:
+        regs = [Register() for _ in range(32)]
+        regs[0].value = 0
+        regs[rabbitizer.RegGprO32.a0.value].value = game_state
+        return regs
 
     @classmethod
     def parse_with_addresses(cls, data: bytes, load_address: int, room_addresses: RoomAddresses,
@@ -1185,32 +1365,32 @@ class RoomModule(FileFormat):
             raise ValueError('Unexpected number of trigger sets')
 
         offset = room_addresses.triggers.pop() - load_address
-        triggers = cls.parse_triggers(data, offset, len(room_layout.interactables), True)
+        num_triggers = room_addresses.num_triggers or len(room_layout.interactables)
+        triggers = cls.parse_triggers(data, offset, num_triggers, True)
 
         entrance_sets = []
         for address in room_addresses.entrances:
             offset = address - load_address
             entrance_sets.append(cls.parse_entrances(data, offset, room_addresses.num_entrances, room_addresses))
 
+        module_space = range(load_address, load_address + len(data))
         for trigger in triggers.triggers:
             for callback in filter(None, [trigger.enabled_callback, trigger.trigger_callback]):
-                if callback in functions:
+                if callback in functions or callback not in module_space:
                     continue
-                regs = [Register() for _ in range(32)]
-                regs[0].value = 0
-                regs[rabbitizer.RegGprO32.a0.value].value = room_addresses.game_state
-                cls.parse_function(data, callback, range(load_address, load_address + len(data)), regs,
-                                   room_addresses, known_functions, functions, callback)
+                regs = cls.get_default_regs(room_addresses.game_state)
+                cls.parse_function(data, callback, module_space, regs, room_addresses, known_functions, functions,
+                                   callback)
 
         return cls(module_id, room_layout, backgrounds, actor_layouts, triggers, entrance_sets, load_address, data,
                    functions, entry_point)
 
     @classmethod
-    def parse(cls, f: BinaryIO, language: str, entry_point: int) -> RoomModule:
+    def parse(cls, f: BinaryIO, version: str, entry_point: int) -> RoomModule:
         data = f.read()
         module_id = int.from_bytes(data[:4], 'little')
 
-        addresses = REGION_ADDRESSES[language]
+        addresses = ADDRESSES[version]
         load_address = addresses['ModuleLoadAddresses'][0]
 
         if (entry_point - load_address) >= len(data):
@@ -1225,9 +1405,7 @@ class RoomModule(FileFormat):
 
         functions = {}
         game_state = addresses['GameState']
-        regs = [Register() for _ in range(32)]
-        regs[0].value = 0
-        regs[rabbitizer.RegGprO32.a0.value].value = game_state
+        regs = cls.get_default_regs(game_state)
         room_addresses = RoomAddresses(game_state, addresses['SetRoomLayout'])
         cls.parse_function(data, entry_point, range(load_address, load_address + len(data)), regs, room_addresses,
                            known_functions, functions, entry_point)
@@ -1315,33 +1493,37 @@ class RoomModule(FileFormat):
                    data, {}, 0)
 
 
-def dump_info(module_path: str, language: str | None, force: bool, json_path: str | None, entry_point: int = None):
+def dump_info(module_path: str, version: str | None, force: bool, json_path: str | None, entry_point: int = None):
     guessed = ''
+    version_info = VERSIONS_BY_ID[version]
     with open(module_path, 'rb') as f:
-        if language is None:
+        if version is None:
             module = RoomModule.sniff(f)
             guessed = ' (guessed)'
         elif entry_point is None:
-            module = RoomModule.load(f, REGION_ADDRESSES[language]['ModuleLoadAddresses'][0])
+            module = RoomModule.load(f, version_info.addresses['ModuleLoadAddresses'][0])
         else:
-            module = RoomModule.parse(f, language, entry_point)
+            module = RoomModule.parse(f, version, entry_point)
 
     if module is None or not (force or module.is_valid):
         print(f'{module_path} does not appear to be a Galerians room module')
         return
 
-    language = 'unknown'
-    for addr_lang, addresses in REGION_ADDRESSES.items():
+    version = 'unknown'
+    for addr_version, addresses in version_info.addresses.items():
         if addresses['ModuleLoadAddresses'][0] == module.load_address:
-            language = addr_lang
+            version = addr_version
             break
 
     if json_path is not None:
         with open(json_path, 'w') as f:
             module.save_metadata(f)
 
+    actors = ZANMAI_ACTORS if version_info.is_zanmai else ACTORS
+    actors_by_id = {actor.id: actor for actor in actors}
+
     print(f'Name: {module.name}')
-    print(f'Load address{guessed}: {module.load_address:08X} ({language})')
+    print(f'Load address{guessed}: {module.load_address:08X} ({version})')
 
     print(f'Room layout: {module.layout.address:08X}')
     print('\tColliders:')
@@ -1451,8 +1633,8 @@ def dump_info(module_path: str, language: str | None, force: bool, json_path: st
         for j, layout in enumerate(layout_set.layouts):
             print(f'\t\tLayout {j}')
             for k, actor in enumerate(layout.actors):
-                if 0 <= actor.type < len(ACTORS):
-                    actor_name = ACTORS[actor.type].name
+                if 0 <= actor.type < len(ACTORS) and (actor := actors_by_id.get(actor.type)):
+                    actor_name = actor.name
                 else:
                     actor_name = 'unknown'
                 print(f'\t\t\tActor {k}')
@@ -1466,8 +1648,9 @@ def dump_info(module_path: str, language: str | None, force: bool, json_path: st
                 print(f'\t\t\t\tUnknown 2: {actor.unknown2:04X}')
 
 
-def dump_calls(language: str | None, module_type: int | None, module_path: str, entry_points: list[int]):
-    addresses = REGION_ADDRESSES[language]
+def dump_calls(version: str | None, module_type: int | None, module_path: str, entry_points: list[int]):
+    addresses = ADDRESSES[version]
+    version_info = VERSIONS_BY_ID[version]
     load_address = addresses['ModuleLoadAddresses'][module_type]
 
     with open(module_path, 'rb') as f:
@@ -1488,8 +1671,7 @@ def dump_calls(language: str | None, module_type: int | None, module_path: str, 
 
     module_space = range(load_address, load_address + len(data))
     for address in entry_points:
-        regs = [Register() for _ in range(32)]
-        regs[0].value = 0
+        regs = RoomModule.get_default_regs()
         RoomModule.parse_function(data, address, module_space, regs, room_addresses, known_functions, functions,
                                   address, parsed_addresses, True)
 
@@ -1511,9 +1693,9 @@ def dump_calls(language: str | None, module_type: int | None, module_path: str, 
                         case ArgumentType.GAME_STATE:
                             arg_strs.append('Game')
                         case ArgumentType.KEY_ITEM:
-                            arg_strs.append(f'{KEY_ITEM_NAMES[arg_value.value]} [{arg_value.value}]')
+                            arg_strs.append(f'{version_info.key_item_names[arg_value.value]} [{arg_value.value}]')
                         case ArgumentType.MED_ITEM:
-                            arg_strs.append(f'{MED_ITEM_NAMES[arg_value.value]} [{arg_value.value}]')
+                            arg_strs.append(f'{version_info.med_item_names[arg_value.value]} [{arg_value.value}]')
                         case ArgumentType.MAP:
                             arg_strs.append(f'{MAP_NAMES[arg_value.value]} [{arg_value.value}]')
                         case ArgumentType.STAGE:
@@ -1533,9 +1715,9 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers()
 
     room_parser = subparsers.add_parser('room', help='Dump information about Galerians room modules')
-    room_parser.add_argument('-l', '--language', help='The language of the game version this room module is from. If '
-                                                      'not provided, we will attempt to guess.',
-                             choices=list(REGION_ADDRESSES))
+    room_parser.add_argument('-v', '--version', help='The ID of the game version this room module is from. If '
+                                                     'not provided, we will attempt to guess.',
+                             choices=list(ADDRESSES))
     room_parser.add_argument('-e', '--entry', help="Address in hexadecimal of the room's startup function. This will "
                                                    'help parse the module more accurately, but only for game versions '
                                                    'supported by the editor.', type=lambda e: int(e, 16))
@@ -1545,17 +1727,17 @@ if __name__ == '__main__':
                                                   "written if the module isn't valid unless the --force flag was "
                                                   'given.')
     room_parser.add_argument('module', help='Path to the room module to examine')
-    room_parser.set_defaults(action=lambda a: dump_info(a.module, a.language, a.force, a.json, a.entry))
+    room_parser.set_defaults(action=lambda a: dump_info(a.module, a.version, a.force, a.json, a.entry))
 
     call_parser = subparsers.add_parser('calls', help='Dump information about known function calls in a module')
-    call_parser.add_argument('language', help='The language of the game version this module is from. '
-                             'The type must be provided as well.', choices=list(REGION_ADDRESSES))
+    call_parser.add_argument('version', help='The ID of the game version this module is from. '
+                                             'The type must be provided as well.', choices=list(ADDRESSES))
     call_parser.add_argument('type', help='The module type, an integer between 0 and 3 or 4 depending on '
-                             'the game version. The language must be provided as well.', type=int)
+                             'the game version. The version must be provided as well.', type=int)
     call_parser.add_argument('module', help='Path to the module to examine')
     call_parser.add_argument('functions', nargs='+', help='One or more addresses, in hexadecimal, of functions '
                              'to start parsing from.', type=lambda e: int(e, 16))
-    call_parser.set_defaults(action=lambda a: dump_calls(a.language, a.type, a.module, a.functions))
+    call_parser.set_defaults(action=lambda a: dump_calls(a.version, a.type, a.module, a.functions))
 
     args = parser.parse_args()
     args.action(args)

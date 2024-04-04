@@ -5,7 +5,7 @@ import io
 import json
 import struct
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, BinaryIO, Iterable, Self
@@ -161,54 +161,203 @@ class Segment:
 class Actor:
     name: str
     id: int
+    skeleton: dict[int, dict[int, dict[int, dict[int, dict[int, dict[int, dict[int, dict[int, dict[int, int]]]]]]]]]
     model_index: int = None
 
 
-RION = Actor('Rion', 0)
-LILIA = Actor('Lilia', 1)
-LEM = Actor('Lem', 2)
-BIRDMAN = Actor('Birdman', 3)
-RAINHEART = Actor('Rainheart', 4)
-RITA = Actor('Rita', 5)
-CAIN = Actor('Cain', 6)
-CROVIC = Actor('Crovic', 7)
-JOULE = Actor('Joule', 8)
-LEM_ROBOT = Actor('Robot Lem', 9)
-GUARD_HOSPITAL_SKINNY = Actor('Hospital Guard (skinny)', 10)
-GUARD_HOSPITAL_BURLY = Actor('Hospital Guard (burly)', 11)
-GUARD_HOSPITAL_GLASSES = Actor('Hospital Guard (sunglasses)', 12)
-GUARD_MECH_SUIT = Actor('Mech Suit Guard', 13)
-GUARD_HAZARD_SUIT = Actor('Hazard Suit Guard', 14)
-SNIPER = Actor('Sniper', 15)
-DOCTOR_BROWN_HAIR = Actor('Doctor (brown hair)', 16)
-DOCTOR_BLONDE = Actor('Doctor (blonde)', 17)
-DOCTOR_BALD = Actor('Doctor (bald)', 18)
-RABBIT_KNIFE = Actor('Rabbit (knife)', 19)
-RABBIT_TRENCH_COAT = Actor('Rabbit (trench coat)', 20)
-ARABESQUE_BIPED = Actor('Arabesque (biped)', 21)
-HOTEL_KNOCK_GUY = Actor('Hotel knock guy', 22)
-DANCER = Actor('Dancer', 23)
-HOTEL_RECEPTIONIST = Actor('Hotel Receptionist', 24)
-HOTEL_GUN_GUY = Actor('Hotel gun guy', 25)
-TERRORIST = Actor('Terrorist', 26)
-PRIEST = Actor('Priest', 27)
-RAINHEART_HAT = Actor('Rainheart (bellhop hat)', 28)
-MECH_SUIT_ALT = Actor('Mech Suit (unused?)', 29)
-RABBIT_UNARMED = Actor('Rabbit (unarmed)', 30)
-ARABESQUE_QUADRUPED = Actor('Arabesque (quadruped)', 31)
-HOTEL_KNOCK_GUY_2 = Actor('Hotel knock guy 2', 32)
-RAINHEART_SUMMON_ACTOR = Actor('Rainheart summon', 33)
-CROVIC_ALT = Actor('Crovic (holding something)', 34)
-DOROTHY_EYE = Actor("Dorothy's eye", 35)
-RION_PHONE = Actor('Rion (with phone)', 36)
-RION_ALT_1 = Actor('Rion (alternate #1)', 37)
-RION_ALT_2 = Actor('Rion (alternate #2)', 38)
+RION = Actor('Rion', 0, {
+    0: {
+        1: {
+            2: {15: {}},
+            3: {4: {5: {16: {}}}},
+            6: {7: {8: {}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+LILIA = Actor('Lilia', 1, {
+    0: {
+        15: {
+            1: {
+                2: {},
+                3: {4: {5: {}}},
+                6: {7: {8: {}}},
+            },
+            9: {10: {11: {}}},
+            12: {13: {14: {}}},
+        },
+    },
+})
+LEM = Actor('Lem', 2, {
+    0: {
+        15: {
+            1: {
+                2: {},
+                3: {4: {5: {}}},
+                6: {7: {8: {16: {}}}},
+            },
+            9: {10: {11: {}}},
+            12: {13: {14: {}}},
+        },
+    },
+})
+BIRDMAN = Actor('Birdman', 3, {
+    0: {
+        1: {
+            2: {},
+            3: {4: {5: {}}},
+            6: {7: {8: {}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+RAINHEART = Actor('Rainheart', 4, BIRDMAN.skeleton)
+RITA = Actor('Rita', 5, BIRDMAN.skeleton)
+CAIN = Actor('Cain', 6, {
+    0: {
+        1: {
+            2: {15: {}},
+            3: {4: {5: {}}},
+            6: {7: {8: {}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+CROVIC = Actor('Crovic', 7, {
+    0: {
+        1: {
+            2: {15: {16: {}}},
+            3: {4: {5: {}}},
+            6: {7: {8: {}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+JOULE = Actor('Joule', 8, {
+    0: {
+        1: {
+            15: {
+                2: {16: {17: {}}},
+                3: {4: {5: {}}},
+                6: {7: {8: {}}},
+            },
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+LEM_ROBOT = Actor('Robot Lem', 9, {
+    0: {
+        1: {
+            15: {
+                2: {17: {}},
+                3: {16: {4: {5: {}}}},
+                6: {7: {8: {}}},
+            },
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+GUARD_HOSPITAL_SKINNY = Actor('Hospital Guard (skinny)', 10, BIRDMAN.skeleton)
+GUARD_HOSPITAL_BURLY = Actor('Hospital Guard (burly)', 11, BIRDMAN.skeleton)
+GUARD_HOSPITAL_GLASSES = Actor('Hospital Guard (sunglasses)', 12, BIRDMAN.skeleton)
+GUARD_MECH_SUIT = Actor('Mech Suit Guard', 13, BIRDMAN.skeleton)
+GUARD_HAZARD_SUIT = Actor('Hazard Suit Guard', 14, {
+    0: {
+        1: {
+            2: {},
+            3: {4: {5: {15: {}}}},
+            6: {7: {8: {16: {17: {}}}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+SNIPER = Actor('Sniper', 15, BIRDMAN.skeleton)
+DOCTOR_BROWN_HAIR = Actor('Doctor (brown hair)', 16, BIRDMAN.skeleton)
+DOCTOR_BLONDE = Actor('Doctor (blonde)', 17, BIRDMAN.skeleton)
+DOCTOR_BALD = Actor('Doctor (bald)', 18, BIRDMAN.skeleton)
+RABBIT_KNIFE = Actor('Rabbit (knife)', 19, {
+    0: {
+        1: {
+            2: {},
+            3: {4: {5: {15: {}}}},
+            6: {7: {8: {}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+RABBIT_TRENCH_COAT = Actor('Rabbit (trench coat)', 20, BIRDMAN.skeleton)
+ARABESQUE_BIPED = Actor('Arabesque (biped)', 21, BIRDMAN.skeleton)
+HOTEL_KNOCK_GUY = Actor('Hotel knock guy', 22, JOULE.skeleton)
+DANCER = Actor('Suzan', 23, {
+    0: {
+        1: {
+            2: {15: {}},
+            3: {4: {5: {}}},
+            6: {7: {8: {}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+HOTEL_RECEPTIONIST = Actor('Hotel Receptionist', 24, JOULE.skeleton)
+HOTEL_GUN_GUY = Actor('Hotel gun guy', 25, {
+    0: {
+        1: {
+            2: {},
+            3: {4: {5: {15: {}}}},
+            6: {18: {7: {8: {}}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+TERRORIST = Actor('Terrorist', 26, CROVIC.skeleton)
+PRIEST = Actor('Priest', 27, CROVIC.skeleton)
+RAINHEART_HAT = Actor('Rainheart (bellhop hat)', 28, DANCER.skeleton)
+MECH_SUIT_ALT = Actor('Mech Suit (unused?)', 29, BIRDMAN.skeleton)
+RABBIT_UNARMED = Actor('Rabbit (unarmed)', 30, BIRDMAN.skeleton)
+ARABESQUE_QUADRUPED = Actor('Arabesque (quadruped)', 31, BIRDMAN.skeleton)
+HOTEL_KNOCK_GUY_2 = Actor('Hotel knock guy 2', 32, JOULE.skeleton)
+RAINHEART_SUMMON_ACTOR = Actor('Rainheart summon', 33, BIRDMAN.skeleton)
+CROVIC_ALT = Actor('Crovic (holding something)', 34, {
+    0: {
+        1: {
+            2: {15: {16: {}}},
+            3: {4: {5: {17: {}}}},
+            6: {7: {8: {}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
+DOROTHY_EYE = Actor("Dorothy's eye", 35, {0: {1: {2: {3: {4: {6: {5: {7: {}}}}}}}}})
+RION_PHONE = Actor('Rion (with phone)', 36, RION.skeleton)
+RION_ALT_1 = Actor('Rion (alternate #1)', 37, DANCER.skeleton)
+RION_ALT_2 = Actor('Rion (alternate #2)', 38, {
+    0: {
+        1: {
+            2: {15: {}},
+            3: {4: {5: {}}},
+            6: {7: {8: {16: {}}}},
+        },
+        9: {10: {11: {}}},
+        12: {13: {14: {}}},
+    },
+})
 
-RAINHEART_SUMMON_UNUSED = Actor('Rainheart summon (unused)', 39, 20)
-DOCTOR_UNUSED_1 = Actor('Doctor (unused #1)', 40, 38)
-DOCTOR_UNUSED_2 = Actor('Doctor (unused #2)', 41, 40)
-DOCTOR_UNUSED_3 = Actor('Doctor (unused #3)', 42, 42)
-RION_UNUSED = Actor('Rion (unused)', 43, 77)
+RAINHEART_SUMMON_UNUSED = Actor('Rainheart summon (unused)', 39, BIRDMAN.skeleton, 20)
+DOCTOR_UNUSED_1 = Actor('Doctor (unused #1)', 40, BIRDMAN.skeleton, 38)
+DOCTOR_UNUSED_2 = Actor('Doctor (unused #2)', 41, BIRDMAN.skeleton, 40)
+DOCTOR_UNUSED_3 = Actor('Doctor (unused #3)', 42, BIRDMAN.skeleton, 42)
+RION_UNUSED = Actor('Rion (unused)', 43, RION.skeleton, 77)
 
 ACTORS = [
     RION, LILIA, LEM, BIRDMAN, RAINHEART, RITA, CAIN, CROVIC, JOULE, LEM_ROBOT, GUARD_HOSPITAL_SKINNY,
@@ -217,6 +366,20 @@ ACTORS = [
     HOTEL_RECEPTIONIST, HOTEL_GUN_GUY, TERRORIST, PRIEST, RAINHEART_HAT, MECH_SUIT_ALT, RABBIT_UNARMED,
     ARABESQUE_QUADRUPED, HOTEL_KNOCK_GUY_2, RAINHEART_SUMMON_ACTOR, CROVIC_ALT, DOROTHY_EYE, RION_PHONE, RION_ALT_1,
     RION_ALT_2, RAINHEART_SUMMON_UNUSED, DOCTOR_UNUSED_1, DOCTOR_UNUSED_2, DOCTOR_UNUSED_3, RION_UNUSED,
+]
+
+ZANMAI_ACTORS = [
+    RION, LEM, RAINHEART, RITA, replace(GUARD_HOSPITAL_SKINNY, id=8), replace(GUARD_HOSPITAL_BURLY, id=9),
+    replace(GUARD_HOSPITAL_GLASSES, id=10), Actor('Doctor (brown hair) (18)', 18, BIRDMAN.skeleton),
+    Actor('Doctor (blonde) (19)', 19, BIRDMAN.skeleton), Actor('Doctor (bald) (20)', 20, BIRDMAN.skeleton),
+    Actor('Rabbit #1', 23, BIRDMAN.skeleton), Actor('Rabbit #2', 24, BIRDMAN.skeleton),
+    Actor('Doctor (brown hair) (27)', 27, BIRDMAN.skeleton), Actor('Doctor (blonde) (28)', 28, BIRDMAN.skeleton),
+    Actor('Doctor (bald) (29)', 29, BIRDMAN.skeleton),
+    # unused models
+    Actor('Birdman', 100, BIRDMAN.skeleton, 4), Actor('Crovic', 101, CROVIC.skeleton, 5),
+    Actor('Rainheart summon', 102, RAINHEART_SUMMON_ACTOR.skeleton, 6), Actor('Joule', 103, JOULE.skeleton, 23),
+    Actor('Lilia', 104, LILIA.skeleton, 33), Actor('Rion (unused)', 105, RION.skeleton, 50),
+    Actor('Robot Lem', 106, LEM_ROBOT.skeleton, 53),
 ]
 
 CLUT_WIDTH = 16
@@ -878,6 +1041,12 @@ class ActorModel(Model):
         return '.G3A'
 
     @classmethod
+    def add_segment(cls, root: Segment, segments: list[Segment], skeleton: dict[int, dict]):
+        for index, sub_skeleton in skeleton.items():
+            child = root.add_child(segments[index])
+            cls.add_segment(child, segments, sub_skeleton)
+
+    @classmethod
     def read(cls, f: BinaryIO, *, actor: Actor = None, anim_index: int = None, **kwargs) -> ActorModel:
         if actor is None:
             # this is probably wrong, but FileFormat needs some refactoring if we want to make it mandatory
@@ -898,59 +1067,15 @@ class ActorModel(Model):
                 offset = (0, 0, 0)
             segments[i] = cls._read_segment(f, i, attributes, offset)
 
-        # this is the exact game logic with some additions for unused models
         root = segments[0]
-        if actor.id in [LILIA.id, LEM.id]:
-            root = root.add_child(segments[15])
-        next_seg = root.add_child(segments[1])
+        cls.add_segment(root, segments, actor.skeleton[0])
         if actor.id == DOROTHY_EYE.id:
             # something special must be going on in the code for this model, because it just adds segments 0 through 7,
             # but here it doesn't seem to look right unless we put 5 after 6 and remove the vertical offset on 7
-            next_seg.add_child(segments[2]).add_child(segments[3]).add_child(segments[4]).add_child(segments[6])\
-                .add_child(segments[5]).add_child(segments[7])
             offset = segments[7].offset
             segments[7].offset = (offset[0], 0, offset[2])
-        else:
-            if actor.id in [HOTEL_KNOCK_GUY.id, HOTEL_KNOCK_GUY_2.id, HOTEL_RECEPTIONIST.id, LEM_ROBOT.id, JOULE.id]:
-                next_seg = next_seg.add_child(segments[15])
-            root2 = next_seg
-            next_seg = next_seg.add_child(segments[2])
-            if actor.id in [TERRORIST.id, PRIEST.id, CROVIC.id, CROVIC_ALT.id]:
-                next_seg.add_child(segments[15]).add_child(segments[16])
-            elif actor.id in [HOTEL_KNOCK_GUY.id, HOTEL_KNOCK_GUY_2.id, HOTEL_RECEPTIONIST.id, JOULE.id]:
-                next_seg.add_child(segments[16]).add_child(segments[17])
-            elif actor.id in [RION.id, RION_ALT_2.id, RION_PHONE.id, DANCER.id, CAIN.id, RION_ALT_1.id,
-                              RAINHEART_HAT.id, RION_UNUSED.id]:
-                next_seg.add_child(segments[15])
-            elif actor.id == LEM_ROBOT.id:
-                next_seg.add_child(segments[17])
 
-            next_seg = root2.add_child(segments[3])
-            if actor.id == LEM_ROBOT.id:
-                next_seg = next_seg.add_child(segments[16])
-            next_seg = next_seg.add_child(segments[4]).add_child(segments[5])
-            if actor.id in [RABBIT_KNIFE.id, HOTEL_GUN_GUY.id, GUARD_HAZARD_SUIT.id]:
-                next_seg.add_child(segments[15])
-            elif actor.id == CROVIC_ALT.id:
-                next_seg.add_child(segments[17])
-            elif actor.id in [RION.id, RION_PHONE.id, RION_UNUSED.id]:
-                next_seg.add_child(segments[16])
-
-            next_seg = root2.add_child(segments[6])
-            if actor.id == HOTEL_GUN_GUY.id:
-                next_seg = next_seg.add_child(segments[18])
-            next_seg = next_seg.add_child(segments[7]).add_child(segments[8])
-            if actor.id == GUARD_HAZARD_SUIT.id:
-                next_seg.add_child(segments[16]).add_child(segments[17])
-            elif actor.id == LEM.id:
-                next_seg.add_child(segments[16])
-            elif actor.id == RION_ALT_2.id:
-                next_seg.add_child(segments[16])
-
-            root.add_child(segments[9]).add_child(segments[10]).add_child(segments[11])
-            root.add_child(segments[12]).add_child(segments[13]).add_child(segments[14])
-
-        return cls(actor.name, actor.id, list(attributes), segments[0], segments, tim, anim_index)
+        return cls(actor.name, actor.id, list(attributes), root, segments, tim, anim_index)
 
 
 class ItemModel(Model):
@@ -997,17 +1122,19 @@ class ItemModel(Model):
         return cls(name, list(attributes), segments, tim, use_transparency)
 
 
-def export(model_path: str, target_path: str, animation_path: str | None, actor_id: int | None):
+def export(model_path: str, target_path: str, animation_path: str | None, actor_id: int | None, differential: bool):
     model_path = Path(model_path)
     target_path = Path(target_path)
     with model_path.open('rb') as f:
         if actor_id is None:
             model = ItemModel.read(f)
         else:
-            model = ActorModel.read(f, actor=ACTORS[actor_id])
+            actors = ACTORS if differential else ZANMAI_ACTORS
+            actors_by_id = {actor.id: actor for actor in actors}
+            model = ActorModel.read(f, actor=actors_by_id.get(actor_id, actors[0]))
     if animation_path:
         with open(animation_path, 'rb') as f:
-            db = AnimationDb.read(f)
+            db = AnimationDb.read(f, differential=differential)
         model.set_animations(db)
     model.export(target_path, target_path.suffix)
 
@@ -1020,10 +1147,13 @@ if __name__ == '__main__':
                         'be the ID of the actor the model belongs to.')
     parser.add_argument('-m', '--animation', help='Path to an animation database to include in the export. Ignored '
                         'if not exporting as gltf or glb.')
+    parser.add_argument('-u', '--uncompressed', help="The provided animation database doesn't use differential "
+                        'compression. Only use this with animations from the ASCII Zanmai demo disc.',
+                        action='store_true')
     parser.add_argument('model', help='The model file to be exported')
     parser.add_argument('target', help='The path to export the model to. The format will be detected from the file '
                         'extension. Supported extensions are ply, obj, gltf, glb, bam, and tim (in which case only the '
                         'texture will be exported).')
 
     args = parser.parse_args()
-    export(args.model, args.target, args.animation, args.actor)
+    export(args.model, args.target, args.animation, args.actor, not args.uncompressed)

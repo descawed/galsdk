@@ -1,6 +1,7 @@
 import copy
 import math
 import tkinter as tk
+import tkinter.messagebox as tkmsg
 from enum import Enum, auto
 from itertools import zip_longest
 from pathlib import Path
@@ -113,7 +114,7 @@ class RoomViewport(Viewport):
         for stage in Stage:
             stage: Stage
             self.stage_backgrounds[stage] = self.project.get_stage_backgrounds(stage)
-        self.actor_models = list(self.project.get_actor_models(True))
+        self.actor_models = {actor.id: actor for actor in self.project.get_actor_models(True)}
         self.actor_animations = []
         self.anim_manifest = self.project.get_animations()
         self.anim_dbs = {}
@@ -163,7 +164,7 @@ class RoomViewport(Viewport):
         if index not in self.anim_dbs:
             anim_set = self.anim_manifest[index]
             with anim_set.path.open('rb') as f:
-                self.anim_dbs[index] = AnimationDb.read(f)
+                self.anim_dbs[index] = AnimationDb.read(f, differential=not self.project.version.is_zanmai)
 
         return self.anim_dbs[index]
 
@@ -320,8 +321,8 @@ class RoomViewport(Viewport):
 
     def start_actor_animation(self, instance: ActorInstance) -> tuple[ActorModel | None, ActiveAnimation | None]:
         if instance.type >= 0:
-            model = self.actor_models[instance.type]
-            if model.anim_index is not None:
+            model = self.actor_models.get(instance.type)
+            if model is not None and model.anim_index is not None:
                 anim_set = self.get_anim_db(model.anim_index)
                 # FIXME: this is a hack because it relies on the fact that get_panda3d_model caches its result, so
                 #  ActorObject will get the same NodePath
@@ -413,12 +414,7 @@ class RoomViewport(Viewport):
             collider_object.add_to_scene(self.collider_node)
             self.colliders.append(collider_object)
 
-        # I used to have strict=True here, but there's one room (D1003) that has interaction regions defined, but, as
-        # far as I can tell, no triggers. it appears to be a copy of D0101 with the triggers removed. still, I should
-        # check the code to see if I'm missing something.
         for interactable, trigger in zip_longest(module.layout.interactables, module.triggers.triggers):
-            if interactable is None:
-                break  # we can handle an interactable without a trigger, but not a trigger without an interactable
             object_name = f'trigger_{len(self.triggers)}_{room_id}'
             trigger_object = TriggerObject(object_name, interactable, trigger)
             trigger_object.position.game_y += 3
@@ -740,6 +736,9 @@ class RoomTab(Tab):
         self.group_menu = tk.Menu(self, tearoff=False)
         self.group_menu.add_command(label='Hide', command=self.toggle_current_group)
 
+        self.module_menu = tk.Menu(self, tearoff=False)
+        self.module_menu.add_command(label='Re-parse module', command=self.reparse_module)
+
         self.tree = ttk.Treeview(self, selectmode='browse', show='tree')
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')
         self.tree.configure(yscrollcommand=scroll.set)
@@ -817,6 +816,33 @@ class RoomTab(Tab):
         self.tree.insert(iid, tk.END, text='Cuts', iid=cut_iid)
         trigger_iid = f'triggers_{room_id}'
         self.tree.insert(iid, tk.END, text='Triggers', iid=trigger_iid)
+
+    def reparse_module(self, *_):
+        if not self.menu_item:
+            return
+
+        if self.has_unsaved_changes:
+            confirm = tkmsg.askyesno('Unsaved changes',
+                                     'You have unsaved changes. If you re-parse, any unsaved changes to this module '
+                                     'will be lost. Do you want to continue without saving?')
+            if not confirm:
+                return
+
+        if self.menu_item in Stage:
+            room_ids = [int(iid.split('_')[1]) for iid in self.tree.get_children(self.menu_item)]
+        else:
+            room_ids = [int(self.menu_item.split('_')[1])]
+
+        for room_id in room_ids:
+            room = self.rooms[room_id]
+            # FIXME: need to re-build tree if this module has been expanded
+            room.obj.reparse(room.file.path, self.project.version.id)
+            if room_id == self.current_room:
+                self.set_detail_widget(None)
+                self.current_room = None
+                self.set_room(room_id)
+
+        tkmsg.showinfo('Complete', f'Completed re-parsing of {len(room_ids)} module{"s" if len(room_ids) > 1 else ""}')
 
     def edit_maps(self, *_):
         # make a copy of the maps which the map editor can edit before changes are confirmed
@@ -1031,10 +1057,10 @@ class RoomTab(Tab):
                 for i, trigger in enumerate(self.viewport.triggers):
                     interactable, raw_trigger = trigger.as_interactable()
                     trigger_changed = False
-                    if room.layout.interactables[i] != interactable:
+                    if i < len(room.layout.interactables) and room.layout.interactables[i] != interactable:
                         trigger_changed = True
                         room.layout.interactables[i] = interactable
-                    if raw_trigger is not None and room.triggers.triggers[i] != raw_trigger:
+                    if i < len(room.triggers.triggers) and room.triggers.triggers[i] != raw_trigger:
                         trigger_changed = True
                         room.triggers.triggers[i] = raw_trigger
 
@@ -1094,23 +1120,26 @@ class RoomTab(Tab):
                     break
 
     def handle_right_click(self, event: tk.Event):
+        self.group_menu.unpost()
+        self.menu_item = None
+        self.module_menu.unpost()
+
         iid = self.tree.identify_row(event.y)
         for group in self.visibility:
             if iid.startswith(f'{group}_'):
                 if self.menu_item == iid:
-                    self.menu_item = None
-                    self.group_menu.unpost()
-                    break
+                    return
                 room_id = int(iid.split('_')[1])
                 if self.current_room != room_id:
                     self.tree.selection_set(iid)
                 self.group_menu.entryconfigure(1, label='Hide' if self.visibility[group] else 'Show')
                 self.group_menu.post(event.x_root, event.y_root)
                 self.menu_item = iid
-                break
-        else:
-            self.menu_item = None
-            self.group_menu.unpost()
+                return
+
+        if iid.startswith('room_') or iid in Stage:
+            self.menu_item = iid
+            self.module_menu.post(event.x_root, event.y_root)
 
     def set_detail_widget(self, widget: ttk.Frame | None):
         if self.detail_widget:
@@ -1128,6 +1157,7 @@ class RoomTab(Tab):
 
     def select_item(self, _=None):
         self.group_menu.unpost()
+        self.module_menu.unpost()
         selection = self.tree.selection()
         if not selection:
             return
@@ -1163,7 +1193,11 @@ class RoomTab(Tab):
                             if actor_instance.type < 0:
                                 name = 'None'
                             else:
-                                model_name = self.viewport.actor_models[actor_instance.type].name
+                                model = self.viewport.actor_models.get(actor_instance.type)
+                                if model is None:
+                                    model_name = 'Unknown'
+                                else:
+                                    model_name = model.name
                                 name = f'#{actor_instance.id}: {model_name}'
                             self.tree.insert(layout_iid, tk.END, text=name, iid=actor_iid)
             detail_widget = None
@@ -1187,7 +1221,7 @@ class RoomTab(Tab):
                     obj = self.viewport.triggers[object_id]
                     room = self.rooms[self.current_room].obj
                     editor = TriggerEditor(obj, dict(self.strings[room.name[0]].iter_ids()), self.room_names_by_map,
-                                           self.movies, self.viewport.functions, self)
+                                           self.movies, self.viewport.functions, self.project.version, self)
                 case 'cut':
                     obj = self.viewport.cuts[object_id]
                     editor = CameraCutEditor(obj, self)

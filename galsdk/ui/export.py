@@ -10,6 +10,7 @@ from galsdk.project import Project
 class ExportDialog(tk.Toplevel):
     def __init__(self, parent: tk.Tk, project: Project):
         super().__init__(parent)
+        self.transient(parent)
         self.project = project
         default_export_path = str(project.default_export_image)
         self.base_var = tk.StringVar(self, default_export_path)

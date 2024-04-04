@@ -54,3 +54,7 @@ class VoiceTab(Tab):
 
     def close(self):
         self.player.close()
+
+    @property
+    def should_appear(self) -> bool:
+        return not self.project.version.is_demo

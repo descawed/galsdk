@@ -18,7 +18,7 @@ class AnimationTab(Tab):
         self.base = base
         self.manifest = self.project.get_animations()
         self.animation_dbs = []
-        self.actors = {actor.name: actor for actor in self.project.get_actor_models()}
+        self.actors = {actor.name: actor for actor in self.project.get_actor_models() if actor is not None}
         self.selected_db_index = None
         self.selected_animation_index = None
         self.selected_element_index = None
@@ -80,7 +80,7 @@ class AnimationTab(Tab):
 
         for i, mf in enumerate(self.manifest):
             with mf.path.open('rb') as f:
-                db = AnimationDb.read(f)
+                db = AnimationDb.read(f, differential=not self.project.version.is_zanmai)
 
             self.animation_dbs.append(db)
             db_iid = str(i)

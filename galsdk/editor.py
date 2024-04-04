@@ -16,6 +16,7 @@ from galsdk.manifest import Manifest
 from galsdk.ui import (ActorTab, AnimationTab, ArtTab, ItemTab, MenuTab, ModelTab, MovieTab, RoomTab,
                        StringTab, Tab, VoiceTab)
 from galsdk.ui.export import ExportDialog
+from galsdk.ui.find_usage import FindUsageDialog
 
 
 MAX_RECENT_PROJECTS = 10
@@ -65,6 +66,7 @@ class Editor(ShowBase):
 
         self.tools_menu = tk.Menu(menu_bar, tearoff=False)
         self.tools_menu.add_command(label='Export XA.MXA', command=self.export_xa_mxa, state=tk.DISABLED)
+        self.tools_menu.add_command(label='Find usages...', command=self.find_usage, state=tk.DISABLED)
 
         menu_bar.add_cascade(label='File', menu=self.file_menu, underline=0)
         menu_bar.add_cascade(label='Tools', menu=self.tools_menu, underline=0)
@@ -160,6 +162,10 @@ class Editor(ShowBase):
             tkmsg.showerror('Error', str(e))
         else:
             tkmsg.showinfo('Success', 'XA.MXA and the XDB file have been created in the export directory')
+
+    def find_usage(self, *_):
+        dialog = FindUsageDialog(self.tkRoot, self.project)
+        dialog.grab_set()
 
     def set_title(self):
         if self.project is None:
@@ -290,7 +296,8 @@ class Editor(ShowBase):
 
         self.file_menu.entryconfigure(4, state=tk.NORMAL)
         self.file_menu.entryconfigure(5, state=tk.NORMAL)
-        self.tools_menu.entryconfigure(1, state=tk.NORMAL)
+        self.tools_menu.entryconfigure(1, state=tk.DISABLED if self.project.version.is_demo else tk.NORMAL)
+        self.tools_menu.entryconfigure(2, state=tk.NORMAL)
 
         self.project_open_complete = True
 

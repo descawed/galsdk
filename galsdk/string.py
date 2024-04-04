@@ -287,7 +287,7 @@ class JapaneseStringDb(StringDb):
         ' .\u2bc8\u300c\u300d()\uff62\uff63\u201c\u201d\u2bc6012345'
         '6789:\u3001\u3002\u201d!? ABCDEFG'
         'HIJKLMNOPQRSTUVWXY'
-        "Z[/]'\uff0d\u00b7abcdefghijk"
+        "Z[/]'ー\u00b7abcdefghijk"
         'lmnopqrstuvwxyzあいう'
         'えおかきくけこさしすせそたちつてとな'
         'にぬねのはひふへほまみむめもやゆよら'
