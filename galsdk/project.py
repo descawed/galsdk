@@ -168,8 +168,8 @@ class Project:
 
         # determine game version
         version = cls.detect_files_version(game_dir)
-        if version.language == 'fr' or (version.is_demo and version.region == Region.PAL):
-            raise NotImplementedError('The French version and the European demo are not currently supported')
+        if version.language == 'fr' or (version.is_demo and not version.is_zanmai):
+            raise NotImplementedError('The French version and Western demos are not currently supported')
 
         addresses = ADDRESSES[version.id]
         # locate files we're interested in
