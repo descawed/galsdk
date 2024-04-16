@@ -15,9 +15,9 @@ class PixelStorageFormat(IntEnum):
     PSMCT16S = 10
     PSMT8 = 19
     PSMT4 = 20
-    PSMT4HL = 26
     PSMT8H = 27
-    PSMT44HH = 44
+    PSMT4HL = 36
+    PSMT4HH = 44
     PSMZ32 = 48
     PSMZ24 = 49
     PSMZ16 = 50
