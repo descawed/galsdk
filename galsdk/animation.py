@@ -207,6 +207,7 @@ class Animation(FileFormat):
         return cls(frames, attack_data=attack_data)
 
     def write(self, f: BinaryIO, **kwargs):
+        # FIXME: add support for non-differential serialization
         for attack_data in self.attack_data:
             f.write(struct.pack(self.ATTACK_DATA_FORMAT, *astuple(attack_data)))
 

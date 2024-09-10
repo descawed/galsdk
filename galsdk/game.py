@@ -295,17 +295,17 @@ class GameVersion:
             ]
         else:
             return [
-                'Unknown #0',  # based on the demo, these are either maps or memory chips
+                'Memory Chip 15F',
                 'Security Card',
                 'Beeject',
                 'Freezer Room Key',
                 'PPEC Storage Key',
                 'Fuse',
                 'Liquid Explosive',
-                'Unknown #7',
+                'Memory Chip 14F',
                 'Security Card (reformatted)',
                 'Special PPEC Office Key',
-                'Unknown #10',
+                'Memory Chip 13F',
                 'Test Lab Key',
                 'Control Room Key',
                 'Research Lab Key',
@@ -313,7 +313,7 @@ class GameVersion:
                 'Two-Headed Monkey',
                 'Two-Headed Wolf',
                 'Two-Headed Eagle',
-                'Unused #18',
+                'Your House Memory Chip',
                 'Backdoor Key',
                 'Door Knob',
                 '9 Ball',
