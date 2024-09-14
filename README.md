@@ -143,12 +143,6 @@ them up based on the file modification timestamps.
   If you right-click on animation in the list, you can delete it or copy another animation in its place. If you
   right-click on an animation database, you can choose to copy all animations from another database over the animations
   of this database, or to copy only animations that are missing in this database.
-- **Background** - This tab shows the background images associated with each stage of the game. Each entry in the list
-  contains one or more images. The first image is always the background image itself. Subsequent images are overlaid
-  in front of the background depending on their 3D position defined by the camera angle being viewed. These are mainly
-  used for objects in the background that should appear in front of the player when you walk behind them, but also for
-  things like lights that change color when you activate something or items that disappear after you pick them up.
-  You can right-click on an image in the list to export.
 - **Item** - This tab displays the inventory icons and 3D models associated with each item in the game. When clicking
   on an item, the item's model will be displayed in the 3D view, its inventory description will appear in the bottom
   left, and its inventory icon will appear in the bottom right. Items are divided into key items and medicine (i.e.
@@ -157,11 +151,11 @@ them up based on the file modification timestamps.
   on previous tabs, as well as "Other" models which are either unused or appear as movable objects in the game world.
   You can right-click on a model in the list to export. See the documentation for the Actor tab for details on how
   animations work on this tab and how they affect exporting.
-- **Art** - This tab allows viewing and exporting of all known images in the game except for backgrounds and model
-  textures (which are available on other tabs). The exact organization of images on this tab varies depending on your
-  game version. You can right-click on an image in the list to export, or to import a replacement image. You can import
-  any common image format and it will be converted to TIM automatically, but only a single CLUT is supported. If you
-  need multiple palettes, use a tool like [TIMedit](https://github.com/Lameguy64/TIMedit) to create a TIM with the appropriate structure and import that.
+- **Art** - This tab allows viewing and exporting of all known images in the game except for model textures (which are
+  available on other tabs). The exact organization of images on this tab varies depending on your game version. You can
+  right-click on an image in the list to export, or to import a replacement image. You can import any common image
+  format and it will be converted to TIM automatically, but only a single CLUT is supported. If you need multiple
+  palettes, use a tool like [TIMedit](https://github.com/Lameguy64/TIMedit) to create a TIM with the appropriate structure and import that.
 - **Menu** - This tab displays images defined in menu files. These files don't exist in the Japanese version, so this
   tab won't appear for Japan-version projects. The other versions have two menu files, one for the option menu and
   one for the inventory. In addition to displaying the icons within each menu, the top-level entry for the option menu
