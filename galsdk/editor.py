@@ -10,6 +10,7 @@ from typing import Optional
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import getModelPath
 
+from galsdk.file import show_dir
 from galsdk.project import Project
 from galsdk.game import GameVersion
 from galsdk.manifest import Manifest
@@ -59,6 +60,7 @@ class Editor(ShowBase):
         self.file_menu.add_command(label='Open Project...', underline=0, command=self.ask_open_project)
         self.file_menu.add_cascade(label='Recent', menu=self.recent_menu, underline=0)
         self.file_menu.add_separator()
+        self.file_menu.add_command(label='Show Project Folder', underline=13, command=self.show_project_dir, state=tk.DISABLED)
         self.file_menu.add_command(label='Export...', underline=0, command=self.export_project, state=tk.DISABLED)
         self.file_menu.add_command(label='Save', underline=0, command=self.save_project, state=tk.DISABLED)
         self.file_menu.add_separator()
@@ -296,6 +298,7 @@ class Editor(ShowBase):
 
         self.file_menu.entryconfigure(4, state=tk.NORMAL)
         self.file_menu.entryconfigure(5, state=tk.NORMAL)
+        self.file_menu.entryconfigure(6, state=tk.NORMAL)
         self.tools_menu.entryconfigure(1, state=tk.DISABLED if self.project.version.is_demo else tk.NORMAL)
         self.tools_menu.entryconfigure(2, state=tk.NORMAL)
 
@@ -346,6 +349,12 @@ class Editor(ShowBase):
             return
 
         self.open_project(Project.open(str(path)))
+
+    def show_project_dir(self):
+        if not self.project:
+            return
+
+        show_dir(self.project.project_dir)
 
     def populate_recent(self):
         self.recent_menu.delete(0, 'end')

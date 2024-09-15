@@ -1,5 +1,7 @@
 import os
+import platform
 import shutil
+import subprocess
 from pathlib import Path
 from typing import BinaryIO, Literal, TextIO, overload
 
@@ -158,3 +160,16 @@ def panda_path(path: Path) -> str:
         return f'/{clean_drive}{path_str}'
     else:
         return str(path)
+
+
+def show_dir(path: Path):
+    if not path.is_dir():
+        raise NotADirectoryError(f'{path} is not a directory')
+
+    match platform.system():
+        case 'Windows':
+            os.startfile(path)
+        case 'Darwin':
+            subprocess.run(['open', path])
+        case _:
+            subprocess.run(['xdg-open', path])
