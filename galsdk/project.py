@@ -716,7 +716,7 @@ class Project:
                 module = manifest.load_file(room.module_index, loader)
                 # check if the module has been changed since its metadata last was. if so, reparse.
                 module_mtime = module.file.path.stat().st_mtime
-                metadata_path = module.file.path.with_suffix('.json')
+                metadata_path = RoomModule.get_metadata_path(module.file.path)
                 metadata_mtime = metadata_path.stat().st_mtime
                 if module_mtime > metadata_mtime:
                     module.obj.reparse(module.file.path, self.version.id)

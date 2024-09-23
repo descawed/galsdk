@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import struct
 from collections import namedtuple
@@ -9,7 +8,9 @@ from enum import IntEnum, IntFlag
 from pathlib import Path
 from typing import Any, BinaryIO, Self, TextIO
 
+import json5
 import rabbitizer
+from json5.dumper import DefaultDumper
 
 from galsdk.format import FileFormat
 from galsdk.game import ADDRESSES, KNOWN_FUNCTIONS, MAP_NAMES, VERSIONS_BY_ID, ArgumentType, GameStateOffsets, Stage
@@ -438,6 +439,32 @@ class RoomAddresses:
         return address == self.game_state + GameStateOffsets.LAST_ROOM
 
 
+class HexDumper(DefaultDumper):
+    """Custom JSON5 dumper to dump module addresses as hex"""
+
+    @staticmethod
+    def snake_to_camel(snake: dict[str, Any]) -> dict[str, Any]:
+        out = {}
+        for name in snake:
+            pieces = name.split('_')
+            for i in range(1, len(pieces)):
+                pieces[i] = pieces[i][0].upper() + pieces[i][1:]
+            out[''.join(pieces)] = snake[name]
+        return out
+
+    def dump(self, node):
+        match node:
+            case int() if 0x80000000 <= node < 0x80200000:
+                self.env.write(f'0x{node:08X}', indent=0)
+                return
+            case FunctionArgument():
+                node = self.snake_to_camel(node._asdict())
+            case FunctionCall() | CallbackFunction():
+                node = self.snake_to_camel(asdict(node))
+
+        return super().dump(node)
+
+
 class RoomModule(FileFormat):
     ACTOR_INSTANCE_SIZE = 16
     ACTOR_LAYOUT_SIZE = 100
@@ -686,7 +713,7 @@ class RoomModule(FileFormat):
                                      f' found {len(actor_layout.actors)}')
 
     def save_metadata(self, f: TextIO):
-        json.dump({
+        json5.dump({
             'loadAddress': self.load_address,
             'actorLayouts': [layout_set.address + self.load_address for layout_set in self.actor_layouts],
             'roomLayout': self.layout.address + self.load_address,
@@ -695,9 +722,26 @@ class RoomModule(FileFormat):
             'entrances': [entrance_set.address + self.load_address for entrance_set in self.entrances],
             'numEntrances': len(self.entrances[0].entrances) if self.entrances else 0,
             'numTriggers': len(self.triggers.triggers),
-            'functions': {f'{addr:08X}': asdict(callback) for addr, callback in self.functions.items()},
+            'functions': {f'{addr:08X}': callback for addr, callback in self.functions.items()},
             'entryPoint': self.entry_point,
-        }, f)
+        }, f, dumper=HexDumper())
+
+    def save_metadata_for_path(self, path: Path):
+        with path.with_suffix('.json5').open('w') as f:
+            self.save_metadata(f)
+
+        # get rid of any old JSON files
+        # do this last in case something fails
+        json_path = path.with_suffix('.json')
+        if json_path.exists():
+            json_path.unlink()
+
+    @staticmethod
+    def get_metadata_path(path: Path) -> Path:
+        meta_path = path.with_suffix('.json5')
+        if not meta_path.exists():
+            meta_path = meta_path.with_suffix('.json')
+        return meta_path
 
     def reparse(self, path: Path, version: str):
         with path.open('rb') as f:
@@ -705,14 +749,20 @@ class RoomModule(FileFormat):
         self.__init__(new_module.module_id, new_module.layout, new_module.backgrounds, new_module.actor_layouts,
                       new_module.triggers, new_module.entrances, new_module.load_address, new_module.raw_data,
                       new_module.functions, new_module.entry_point)
-        with path.with_suffix('.json').open('w') as f:
-            self.save_metadata(f)
+
+        self.save_metadata_for_path(path)
+
+    @staticmethod
+    def as_func_arg(value: list[int | bool] | dict[str, int | bool] | tuple[int, int, bool]) -> FunctionArgument:
+        if isinstance(value, dict):
+            return FunctionArgument(value['address'], value['value'], value.get('can_update', value.get('canUpdate')))
+        return FunctionArgument(*value)
 
     @classmethod
     def load_with_metadata(cls, path: Path, version: str = None) -> RoomModule:
-        meta_path = path.with_suffix('.json')
+        meta_path = cls.get_metadata_path(path)
         with meta_path.open() as f:
-            metadata = json.load(f)
+            metadata = json5.load(f)
 
         load_address = metadata['loadAddress']
         entry_point = metadata.get('entryPoint', 0)
@@ -720,12 +770,12 @@ class RoomModule(FileFormat):
         for hex_addr, callback in metadata.get('functions', {}).items():
             functions[int(hex_addr, 16)] = CallbackFunction(
                 [FunctionCall(
-                    call['call_address'],
+                    call.get('call_address', call.get('callAddress')),
                     call['name'],
-                    [FunctionArgument(*argument) for argument in call['arguments']],
-                    call['is_enabled'],
+                    [cls.as_func_arg(argument) for argument in call['arguments']],
+                    call.get('is_enabled', call.get('isEnabled')),
                 ) for call in callback['calls']],
-                FunctionArgument(*callback['return_value']),
+                cls.as_func_arg(callback.get('return_value', callback.get('returnValue'))),
             )
 
         if version is not None:

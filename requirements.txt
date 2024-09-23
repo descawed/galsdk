@@ -5,3 +5,4 @@ Pmw==2.1.*
 ffmpeg-python==0.2.*
 numpy==2.1.*
 rabbitizer==1.12.*
+json-five==1.1.*
