@@ -24,6 +24,9 @@ The editor is a GUI application for exploring the game's files. Run it from the 
 `python -m galsdk.editor`. At the moment, it supports editing rooms, strings, art textures, and some animation data.
 Support for editing other files will be added in the future.
 
+The editor supports Windows and Linux. Unfortunately, it doesn't work on Mac at the moment. I hope to correct this at
+some point. CLI tools should still work on Mac.
+
 ### Projects
 A project is a folder where the editor extracts game files and their metadata. Before you can view anything in the
 editor, you need to create a project by using File > New Project (or ctrl-N) and selecting a CD image to extract.
