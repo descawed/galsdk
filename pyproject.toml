@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "galsdk"
+version = "0.9.0"
+description = "Mod tools for the PSX game Galerians"
+authors = ["descawed <github@descawed.com>"]
+readme = "README.md"
+repository = "https://github.com/descawed/galsdk"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+panda3d = "^1.10.14"
+pillow = "^10.4.0"
+pmw = "^2.1.1"
+ffmpeg-python = "^0.2.0"
+numpy = "^2.1.1"
+rabbitizer = "^1.12.0"
+json-five = "^1.1.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

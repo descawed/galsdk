@@ -2,7 +2,9 @@
 Editor and utilities for the PSX game Galerians (1999). Requires Python 3.12.
 
 ## Setup
-In the future I may provide a packaged release, but for now, I recommend setting up a Python virtual environment.
+For those familiar with Python, the easiest way to use this application is with [Poetry](https://python-poetry.org/).
+If you're less familiar with Python, or just don't want to use Poetry, you can use the following instructions to set up
+a Python virtual environment:
 
 1. Install [Python 3.12](https://www.python.org/downloads/) if you don't have it.
 2. Clone down the repo: `git clone https://github.com/descawed/galsdk.git`
