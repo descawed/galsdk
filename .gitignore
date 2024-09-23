@@ -1,3 +1,7 @@
 .idea/
+build/
 venv/
 editor.json
+Pmw.py
+PmwBlt.py
+PmwColor.py

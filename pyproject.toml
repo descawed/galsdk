@@ -18,6 +18,33 @@ json-five = "^1.1.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
+pre-commit = "^3.8.0"
+
+[tool.poetry.group.build.dependencies]
+cx-freeze = "^7.2.2"
+
+[tool.cxfreeze]
+executables = [
+    {script = "galsdk/editor.py", base = "gui"},
+    "galsdk/animation.py",
+    "galsdk/db.py",
+    "galsdk/model.py",
+    "galsdk/module.py",
+    "galsdk/sniff.py",
+    "galsdk/string.py",
+    {script = "galsdk/tim.py", target_name = "timdb"},
+    {script = "galsdk/vab.py", target_name = "vabdb"},
+    "galsdk/xa.py",
+    {script = "psx/cd/__main__.py", target_name = "psxcd"},
+    "psx/exe.py",
+    "psx/tim.py",
+    {script = "ash/bd.py", target_name = "ash_bd"},
+    {script = "ash/tex.py", target_name = "ash_tex"},
+]
+
+[tool.cxfreeze.build_exe]
+includes = ["Pmw"]
+include_files = ["assets/", "data/", "sdk/"]
 
 [build-system]
 requires = ["poetry-core"]

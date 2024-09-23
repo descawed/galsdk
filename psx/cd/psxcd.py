@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 
 from dataclasses import dataclass
 from math import ceil
@@ -54,7 +55,6 @@ class PsxCd:
         self.system_area = SystemArea()
         self.regions = self.system_area.read(disc)
         self.regions.sort(key=lambda r: (r.start, r.end))
-        filesystem_end = max(r.end for r in self.regions)
         # while loop instead of for because len(self.regions) is changing in this loop
         i = 0
         while i+1 < len(self.regions):
@@ -484,4 +484,7 @@ def cli_main():
     validate_parser.set_defaults(action=lambda a: validate(a.cd, a.verbose))
 
     args = parser.parse_args()
+    if not hasattr(args, 'action'):
+        parser.print_help()
+        sys.exit(1)
     args.action(args)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import io
-import os.path
+import sys
 from enum import Enum, auto
 from pathlib import Path
 from typing import BinaryIO, Container, Iterable, Self
@@ -484,4 +484,7 @@ if __name__ == '__main__':
     unpack_parser.set_defaults(action=lambda a: unpack(Path(a.db), Path(a.target), a.format, a.convert, set(a.indexes)))
 
     args = parser.parse_args()
+    if not hasattr(args, 'action'):
+        parser.print_help()
+        sys.exit(1)
     args.action(args)

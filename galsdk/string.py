@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import struct
+import sys
 from abc import abstractmethod
 from pathlib import Path
 from typing import BinaryIO, Iterable, Self
@@ -714,4 +715,7 @@ if __name__ == '__main__':
     draw_parser.set_defaults(action=lambda a: draw(a.font, a.japanese, a.db, a.target, a.indexes, a.combine))
 
     args = parser.parse_args()
+    if not hasattr(args, 'action'):
+        parser.print_help()
+        sys.exit(1)
     args.action(args)

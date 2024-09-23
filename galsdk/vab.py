@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import BinaryIO, Iterable, Self
 
@@ -302,4 +303,7 @@ if __name__ == '__main__':
     unpack_parser.set_defaults(action=lambda a: unpack(a.db, a.target))
 
     args = parser.parse_args()
+    if not hasattr(args, 'action'):
+        parser.print_help()
+        sys.exit(1)
     args.action(args)
