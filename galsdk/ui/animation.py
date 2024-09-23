@@ -539,7 +539,7 @@ class AnimationTab(Tab):
             db = self.animation_dbs[db_index]
             mf = self.manifest[db_index]
             with mf.path.open('wb') as f:
-                db.write(f)
+                db.write(f, differential=self.project.version.is_zanmai)
 
         self.changed_dbs.clear()
         self.clear_change_markers()
