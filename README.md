@@ -1,10 +1,10 @@
 # galsdk
-Editor and utilities for the PSX game Galerians (1999). Requires Python 3.11 or 3.12.
+Editor and utilities for the PSX game Galerians (1999). Requires Python 3.12.
 
 ## Setup
 In the future I may provide a packaged release, but for now, I recommend setting up a Python virtual environment.
 
-1. Install [Python 3.12](https://www.python.org/downloads/) if you don't have it. 3.11 will also work.
+1. Install [Python 3.12](https://www.python.org/downloads/) if you don't have it.
 2. Clone down the repo: `git clone https://github.com/descawed/galsdk.git`
 3. cd to the repo directory: `cd /path/to/galsdk`.
 4. Create the virtual environment: `python -m venv ./venv`.

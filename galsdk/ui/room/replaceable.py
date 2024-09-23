@@ -1,10 +1,7 @@
-from typing import Callable, Generic, TypeVar
+from typing import Callable
 
 
-T = TypeVar('T')
-
-
-class Replaceable(Generic[T]):
+class Replaceable[T]:
     def __init__(self, obj: T, replace_callback: Callable[[T], None]):
         self._object = obj
         self._replace_callback = replace_callback
