@@ -1,9 +1,8 @@
 # SDK
 
 The SDK provides headers and symbols for building custom modules. Modules are found in MODULE.BIN and contain code for
-the game's rooms, AI, and certain menus. The contents of each directory are described below. This directory also
-contains [PSn00bSDK](https://github.com/Lameguy64/PSn00bSDK) as a git submodule which is used for building the example
-room. Finally, a tutorial for building the example room is provided at the end.
+the game's rooms, AI, and certain menus. The contents of each directory are described below. Finally, a tutorial for
+building the example room is provided at the end.
 
 ## include
 These headers provide an interface into the game EXE. galerians.h just includes everything in the galerians
@@ -13,7 +12,8 @@ bare-bones at the moment, mainly just what's needed for the example room. I hope
 There are a couple preprocessor symbols that you can define prior to including the headers. `GALERIANS_REGION_JAPAN`
 indicates that you're building a module for the Japanese version. This is necessary because there are a few layout and
 API differences between the Japanese version and other versions. `GALERIANS_USE_PSYQ` indicates that you want to build
-with the PSYQ SDK. By default, the code looks for PSn00bSDK. Note that both of these symbols are currently untested.
+with the PSYQ SDK. Otherwise, the types header will define the necessary SDK types itself. Note that both of these
+symbols are currently untested.
 
 ### types.h
 Types used in the game as well as flag and constant definitions. Each type has at least a brief description in the
@@ -48,10 +48,9 @@ the binary.
 
 ## examples
 Module example code. Currently, only an example room is provided, but I'd like to add an example AI module at some point
-as well. The Makefile in the sdk root directory will build all example modules (make sure you've pulled in the
-PSn00bSDK submodule). The Makefile is written for gcc; specifically, I've built it on Ubuntu with the tools from the
-`binutils-mipsel-linux-gnu` package. You may need to update the `CC` and `LD` variables to point to the appropriate
-compiler and linker on your platform.
+as well. The Makefile in the sdk root directory will build all example modules. The Makefile is written for gcc;
+specifically, I've built it on Ubuntu with the tools from the `binutils-mipsel-linux-gnu` package. You may need to
+update the `CC` and `LD` variables to point to the appropriate compiler and linker on your platform.
 
 ## Building and using the example room
 Let's see how to build the example room and patch it into the game. You'll need a copy of disc 1 of the North American
