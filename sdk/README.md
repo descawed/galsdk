@@ -142,5 +142,5 @@ scratch and don't have an existing editor project.
    - `modules/ASDKX.RMD`: The new room.
 10. If everything looks correct, click Export and wait for the export process to complete (this may take some time
     because we're adding new files, so the CD contents have to be shuffled around to make room). You should then be
-    able to load the output.bin file in any emulator (note that Beetle PSX requires a cue sheet, which is not provided).
-    Start a new game, scan the door to unlock it as usual, and you should find it now takes you to the example room.
+    able to load the output.bin file in any emulator. Start a new game, scan the door to unlock it as usual, and you
+    should find it now takes you to the example room.

@@ -1074,5 +1074,9 @@ class Project:
             cd_data = f.getvalue()
         output_image.write_bytes(cd_data)
 
+        # generate cue file
+        output_cue = output_image.with_suffix('.cue')
+        output_cue.write_text(f'FILE "{output_image.name}" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00')
+
         self.last_export_date = datetime.datetime.now(datetime.UTC)
         self.save()
