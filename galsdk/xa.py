@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, ByteString, Iterable, Self
@@ -380,7 +379,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Export Galerians XA audio')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     unpack_parser = subparsers.add_parser('unpack', help='Unpack individual audio tracks into a directory')
     unpack_parser.add_argument('-c', '--convert', help='Convert the audio to wav when exporting. If not given, the '
@@ -405,7 +404,4 @@ if __name__ == '__main__':
     mxa_parser.set_defaults(action=lambda a: export_mxa(a.exe, a.disc, a.target, a.packs, a.map))
 
     args = parser.parse_args()
-    if not hasattr(args, 'action'):
-        parser.print_help()
-        sys.exit(1)
     args.action(args)

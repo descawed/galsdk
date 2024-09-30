@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import struct
-import sys
 from collections import namedtuple
 from dataclasses import asdict, astuple, dataclass, field, replace
 from enum import IntEnum, IntFlag
@@ -1763,7 +1762,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Dump information about Galerians modules')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     room_parser = subparsers.add_parser('room', help='Dump information about Galerians room modules')
     room_parser.add_argument('-v', '--version', help='The ID of the game version this room module is from. If '
@@ -1791,7 +1790,4 @@ if __name__ == '__main__':
     call_parser.set_defaults(action=lambda a: dump_calls(a.version, a.type, a.module, a.functions))
 
     args = parser.parse_args()
-    if not hasattr(args, 'action'):
-        parser.print_help()
-        sys.exit(1)
     args.action(args)

@@ -1,7 +1,6 @@
 import math
 import os
 import os.path
-import sys
 from pathlib import Path
 from typing import BinaryIO, Container, Iterable, Self
 
@@ -207,7 +206,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Pack or unpack Galerians CDB files')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     pack_parser = subparsers.add_parser('pack', help='Create a CDB from a list of files')
     pack_parser.add_argument('-x', '--extended',
@@ -226,7 +225,4 @@ if __name__ == '__main__':
     unpack_parser.set_defaults(action=lambda a: unpack(a.cdb, a.target, set(a.indexes)))
 
     args = parser.parse_args()
-    if not hasattr(args, 'action'):
-        parser.print_help()
-        sys.exit(1)
     args.action(args)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import struct
-import sys
 from abc import abstractmethod
 from pathlib import Path
 from typing import BinaryIO, Iterable, Self
@@ -690,7 +689,7 @@ if __name__ == '__main__':
     parser.add_argument('-j', '--japanese', type=int,
                         help='The string database is in Japanese. The argument to this option should be the index of '
                              'the kanji set to use for the strings.')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     pack_parser = subparsers.add_parser('pack', help='Create a string database from a text file')
     pack_parser.add_argument('input', help='Text file to pack')
@@ -715,7 +714,4 @@ if __name__ == '__main__':
     draw_parser.set_defaults(action=lambda a: draw(a.font, a.japanese, a.db, a.target, a.indexes, a.combine))
 
     args = parser.parse_args()
-    if not hasattr(args, 'action'):
-        parser.print_help()
-        sys.exit(1)
     args.action(args)

@@ -4,7 +4,6 @@ import functools
 import io
 import os
 import struct
-import sys
 from dataclasses import astuple, dataclass
 from enum import IntFlag
 from io import BytesIO
@@ -397,7 +396,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Pack and unpack Galerians animation databases')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     pack_parser = subparsers.add_parser('pack', help='Create an animation database from a list of files')
     pack_parser.add_argument('-c', '--compression', choices=['input', 'output', 'both', 'neither'], default='both',
@@ -434,7 +433,4 @@ if __name__ == '__main__':
                                                        a.compression in ['output', 'both']))
 
     args = parser.parse_args()
-    if not hasattr(args, 'action'):
-        parser.print_help()
-        sys.exit(1)
     args.action(args)

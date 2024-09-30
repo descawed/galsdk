@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 
 from dataclasses import dataclass
 from math import ceil
@@ -484,7 +483,4 @@ def cli_main():
     validate_parser.set_defaults(action=lambda a: validate(a.cd, a.verbose))
 
     args = parser.parse_args()
-    if not hasattr(args, 'action'):
-        parser.print_help()
-        sys.exit(1)
     args.action(args)

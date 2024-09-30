@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import BinaryIO, Iterable, Self
 
@@ -288,7 +287,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Pack or unpack Galerians VAB databases')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     pack_parser = subparsers.add_parser('pack', help='Create a VAB DB from a list of files')
     pack_parser.add_argument('-a', '--alternate', help='Use the alternate format with no header')
@@ -303,7 +302,4 @@ if __name__ == '__main__':
     unpack_parser.set_defaults(action=lambda a: unpack(a.db, a.target))
 
     args = parser.parse_args()
-    if not hasattr(args, 'action'):
-        parser.print_help()
-        sys.exit(1)
     args.action(args)
