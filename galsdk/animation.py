@@ -8,7 +8,7 @@ from dataclasses import astuple, dataclass
 from enum import IntFlag
 from io import BytesIO
 from pathlib import Path
-from typing import BinaryIO, Iterable, Self, Sequence
+from typing import BinaryIO, Iterable, Iterator, Self, Sequence
 
 import numpy as np
 
@@ -268,7 +268,7 @@ class AnimationDb(Archive[Animation | None]):
     def __len__(self) -> int:
         return len(self.animations)
 
-    def __iter__(self) -> Iterable[Animation | None]:
+    def __iter__(self) -> Iterator[Animation | None]:
         yield from self.animations
 
     def append(self, item: Animation | None):

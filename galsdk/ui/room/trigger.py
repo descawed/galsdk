@@ -334,7 +334,7 @@ class TriggerEditor(ttk.Frame):
 
         return getter
 
-    def make_option_select(self, default_item: int, label: str, names: list[str], parent: tk.Widget = None,
+    def make_option_select(self, default_item: int, label: str, names: list[str], parent: tk.Widget | None = None,
                            item_var: tk.StringVar = None) -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
         assert default_item >= 0
         if parent is None:
@@ -348,8 +348,8 @@ class TriggerEditor(ttk.Frame):
         item_select = ttk.Combobox(parent, textvariable=item_var, values=names, state='readonly')
         return item_var, item_label, item_select
 
-    def make_int_entry(self, default_value: int, parent: tk.Widget, int_var: tk.StringVar = None, text: str = 'Integer',
-                       is_hex: bool = False) -> tuple[tk.StringVar, ttk.Label, ttk.Entry]:
+    def make_int_entry(self, default_value: int, parent: tk.Widget, int_var: tk.StringVar | None = None,
+                       text: str = 'Integer', is_hex: bool = False) -> tuple[tk.StringVar, ttk.Label, ttk.Entry]:
         if int_var is None:
             str_val = f'{default_value:08X}' if is_hex else str(default_value)
             int_var = tk.StringVar(self, str_val)
@@ -358,7 +358,7 @@ class TriggerEditor(ttk.Frame):
                           validatecommand=self.hex_validator if is_hex else self.validator)
         return int_var, label, entry
 
-    def make_msg_select(self, default_msg: int, parent: tk.Widget, msg_var: tk.StringVar = None)\
+    def make_msg_select(self, default_msg: int, parent: tk.Widget, msg_var: tk.StringVar | None = None)\
             -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
         if msg_var is None:
             try:
@@ -372,7 +372,7 @@ class TriggerEditor(ttk.Frame):
         return msg_var, msg_label, msg_select
 
     def make_room_select(self, default_room: int, map_var: tk.StringVar, parent: tk.Widget,
-                         room_var: tk.StringVar = None) -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
+                         room_var: tk.StringVar | None = None) -> tuple[tk.StringVar, ttk.Label, ttk.Combobox]:
         assert default_room >= 0
         map_index = MAP_NAMES.index(map_var.get())
         current_map = self.maps[map_index]

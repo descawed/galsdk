@@ -4,7 +4,7 @@ import struct
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from enum import IntEnum
-from typing import BinaryIO, ByteString, Iterable, Literal, Optional
+from typing import BinaryIO, ByteString, Iterator, Literal, Optional
 
 from psx.cd.disc import Disc, Sector
 
@@ -608,7 +608,7 @@ class Directory(CdRegion):
         return regions
 
     @property
-    def contents(self) -> Iterable[CdRegion]:
+    def contents(self) -> Iterator[CdRegion]:
         """An iterator over the contents of this directory, excluding the current (.) and parent (..) directories"""
         for _, __, region in self.name_map.values():
             if region is not None and region is not self:

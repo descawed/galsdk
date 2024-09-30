@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import BinaryIO, Iterable, Self
+from typing import BinaryIO, Iterable, Iterator, Self
 
 from galsdk.file import KeepReader
 
@@ -106,7 +106,7 @@ class Archive[T](FileFormat):
         pass
 
     @abstractmethod
-    def __iter__(self) -> Iterable[T | Self]:
+    def __iter__(self) -> Iterator[T | Self]:
         pass
 
     @abstractmethod
@@ -138,7 +138,7 @@ class Archive[T](FileFormat):
         except Exception:
             return None
 
-    def iter_flat(self) -> Iterable[T]:
+    def iter_flat(self) -> Iterator[T]:
         for item in self:
             if isinstance(item, Archive):
                 yield from item.iter_flat()

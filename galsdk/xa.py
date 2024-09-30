@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, ByteString, Iterable, Self
+from typing import BinaryIO, ByteString, Iterable, Iterator, Self
 
 try:
     import ffmpeg
@@ -85,7 +85,7 @@ class XaRegion:
         return -1, None
 
     @property
-    def own_sectors(self) -> Iterable[Sector]:
+    def own_sectors(self) -> Iterator[Sector]:
         for i in range(0, self.num_sectors * Sector.SIZE, Sector.SIZE):
             sector = Sector(self.data[i:i + Sector.SIZE])
             if sector.channel == self.channel and sector.sub_mode & SubMode.AUDIO:
@@ -172,7 +172,7 @@ class XaDatabase(Archive[bytes]):
     def __len__(self) -> int:
         return len(self.regions)
 
-    def __iter__(self) -> Iterable[bytes]:
+    def __iter__(self) -> Iterator[bytes]:
         for region in self.regions:
             yield region.data
 

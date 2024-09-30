@@ -116,7 +116,7 @@ class ArtTab(ImageViewerTab):
         index = self.tree.index(self.context_iid)
         return parent_iid, index
 
-    def show_tim_import_dialog(self, path: Path, reference: Tim = None) -> Tim | None:
+    def show_tim_import_dialog(self, path: Path, reference: Tim | None = None) -> Tim | None:
         image = Image.open(path)
         dialog = TimImportDialog(self.winfo_toplevel(), image, reference_tim=reference)
         return dialog.output_tim

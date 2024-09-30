@@ -4,7 +4,7 @@ import argparse
 import os.path
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import BinaryIO, ByteString, Iterable, Self
+from typing import BinaryIO, ByteString, Iterator, Self
 
 from PIL import Image
 
@@ -203,7 +203,7 @@ class Tim:
         """Number of palettes in the CLUT, if any"""
         return len(self.palettes)
 
-    def _get_clut_indexes(self) -> Iterable[int]:
+    def _get_clut_indexes(self) -> Iterator[int]:
         if self.bpp == BitsPerPixel.BPP_4:
             for b in self.image_data:
                 yield b & 0x0f

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import BinaryIO, Iterable, Self
+from typing import BinaryIO, Iterable, Iterator, Self
 
 from galsdk import file
 from galsdk.format import Archive
@@ -25,7 +25,7 @@ class VabDb(Archive[bytes]):
         return cls(use_alt_order=metadata['use_alt_order'])
 
     @property
-    def files_with_type(self) -> Iterable[tuple[str, Iterable[bytes]]]:
+    def files_with_type(self) -> Iterator[tuple[str, Iterator[bytes]]]:
         if self.use_alt_order:
             files_with_type = [('VH', self.vhs), ('SEQ', self.seqs), ('VB', self.vbs)]
         else:
@@ -144,7 +144,7 @@ class VabDb(Archive[bytes]):
     def __len__(self) -> int:
         return len(self.vhs) + len(self.vbs) + len(self.seqs)
 
-    def __iter__(self) -> Iterable[bytes]:
+    def __iter__(self) -> Iterator[bytes]:
         yield from self.vhs
         yield from self.vbs
         yield from self.seqs

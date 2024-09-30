@@ -4,7 +4,7 @@ from tkinter import ttk
 from direct.showbase.ShowBase import ShowBase
 from PIL import ImageTk
 
-from galsdk.project import Project
+from galsdk.project import Item, Project
 from galsdk.tile import TileSet
 from galsdk.ui.model_viewer import ModelViewer
 from galsdk.ui.tab import Tab
@@ -20,7 +20,7 @@ class ItemTab(Tab):
     def __init__(self, project: Project, base: ShowBase):
         super().__init__('Item', project)
         self.base = base
-        self.items = []
+        self.items: list[Item] = []
         self.item_art = self.project.get_item_art()
         self.key_item_icons = []
         self.med_item_icons = []
@@ -32,7 +32,7 @@ class ItemTab(Tab):
                 with self.item_art.get_first(mf.name).path.open('rb') as f:
                     self.med_item_icons.append(TileSet(Tim.read(f), self.ICON_WIDTH, self.ICON_HEIGHT))
         # pre-load description images
-        self.descriptions = []
+        self.descriptions: list[Tim | None] = []
         for description in self.item_art.iter_flat():
             if any(description.name.startswith(name) for name in ['key_item_icons', 'medicine_icons', 'ability_icons']):
                 self.descriptions.append(None)  # just to keep the indexes the same

@@ -4,7 +4,7 @@ import argparse
 import sys
 
 from pathlib import Path
-from typing import BinaryIO, Iterable
+from typing import BinaryIO, Iterator
 
 
 class Bd1Archive:
@@ -37,7 +37,7 @@ class Bd1Archive:
     def __len__(self) -> int:
         return len(self.entries)
 
-    def __iter__(self) -> Iterable[bytes]:
+    def __iter__(self) -> Iterator[bytes]:
         yield from self.entries
 
     def __getitem__(self, item: int) -> bytes:
@@ -65,7 +65,7 @@ class Bd2Archive:
     def __len__(self) -> int:
         return len(self.sub_archives)
 
-    def __iter__(self) -> Iterable[Bd1Archive]:
+    def __iter__(self) -> Iterator[Bd1Archive]:
         yield from self.sub_archives
 
     def __getitem__(self, item: int) -> Bd1Archive:

@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
-from typing import BinaryIO, ByteString, Iterable
+from typing import BinaryIO, ByteString, Iterator
 
 from psx.cd.region import CdRegion, SystemArea, Directory, Free
 from psx.cd.disc import Disc, Sector
@@ -265,7 +265,7 @@ class PsxCd:
         except FileNotFoundError:
             return False
 
-    def list_dir(self, path: str = None) -> Iterable[DirectoryEntry]:
+    def list_dir(self, path: str = None) -> Iterator[DirectoryEntry]:
         """
         List the contents of a directory on the primary volume of the CD
 

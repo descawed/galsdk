@@ -4,7 +4,7 @@ import struct
 from dataclasses import astuple, dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import BinaryIO, Self, Iterable
+from typing import BinaryIO, Self, Iterator
 
 from PIL import Image
 
@@ -140,7 +140,7 @@ class Menu(FileFormat):
         image = tim.to_image().crop((x, y, x + tile_info.width, y + tile_info.height))
         return image
 
-    def __iter__(self) -> Iterable[Image.Image]:
+    def __iter__(self) -> Iterator[Image.Image]:
         for i in range(len(self.tiles)):
             yield self[i]
 

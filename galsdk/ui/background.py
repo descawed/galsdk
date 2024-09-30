@@ -32,7 +32,7 @@ class BackgroundTab(ImageViewerTab):
                 # dummy item so we have the option to expand
                 self.tree.insert(bg_id, tk.END, text='Dummy')
 
-    def on_node_open(self, event: tk.Event = None):
+    def on_node_open(self, event: tk.Event | None = None):
         focused = self.tree.focus()
         if focused.startswith('db_'):
             index = int(focused[3:])

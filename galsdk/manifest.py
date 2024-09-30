@@ -6,7 +6,7 @@ import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterator
 from weakref import WeakValueDictionary
 
 from galsdk import file
@@ -302,7 +302,7 @@ class Manifest:
             obj = constructor(manifest_file.path)
         return FromManifest(self, key, manifest_file, obj)
 
-    def load_files[T: FileFormat](self, constructor: type[T] | Callable[[Path], T], **kwargs) -> Iterable[FromManifest[T]]:
+    def load_files[T: FileFormat](self, constructor: type[T] | Callable[[Path], T], **kwargs) -> Iterator[FromManifest[T]]:
         for i, mf in enumerate(self.files):
             if not mf.is_manifest or mf.flatten:
                 yield self.load_file(i, constructor, **kwargs)
@@ -354,7 +354,7 @@ class Manifest:
                 'original': str(self.original.relative_to(self.path)) if self.original is not None else None,
             }, f)
 
-    def undo(self, num_changes: int = None):
+    def undo(self, num_changes: int | None = None):
         if num_changes is None:
             num_changes = len(self.pending_changes)
 
@@ -438,7 +438,7 @@ class Manifest:
         else:
             return item < len(self.files)
 
-    def __iter__(self) -> Iterable[ManifestFile]:
+    def __iter__(self) -> Iterator[ManifestFile]:
         """Iterate over the files in the manifest"""
         for mf in self.files:
             if mf.is_manifest and mf.flatten:
@@ -485,7 +485,7 @@ class Manifest:
 
         return self.try_undelete(mf.name)
 
-    def add(self, path: Path, index: int = None, name: str = None, fmt: str = None) -> ManifestFile:
+    def add(self, path: Path, index: int | None = None, name: str | None = None, fmt: str | None = None) -> ManifestFile:
         new_path = self.path / path.name
         i = 0
         while new_path.exists():
@@ -504,7 +504,7 @@ class Manifest:
         self.pending_changes.append(AddFile(mf, undelete))
         return mf
 
-    def add_raw(self, data: bytes, index: int = None, name: str = None, fmt: str = None) -> ManifestFile:
+    def add_raw(self, data: bytes, index: int | None = None, name: str | None = None, fmt: str | None = None) -> ManifestFile:
         if index is None:
             index = len(self.files)
 
@@ -531,8 +531,8 @@ class Manifest:
         self.pending_changes.append(AddFile(mf, undelete))
         return mf
 
-    def add_manifest(self, sub_manifest: Manifest, index: int = None, name: str = None,
-                     fmt: str = None, flatten: bool = False) -> ManifestFile:
+    def add_manifest(self, sub_manifest: Manifest, index: int | None = None, name: str | None = None,
+                     fmt: str | None = None, flatten: bool = False) -> ManifestFile:
         if sub_manifest is self:
             raise ValueError('Cannot add a manifest to itself')
 
@@ -551,7 +551,7 @@ class Manifest:
             return self.expand_file(sub_manifest[0])
         return mf
 
-    def iter_flat(self) -> Iterable[ManifestFile]:
+    def iter_flat(self) -> Iterator[ManifestFile]:
         for item in self.files:
             if item.is_manifest:
                 sub_manifest = Manifest.load_from(item.path)
@@ -574,7 +574,7 @@ class Manifest:
             raise TypeError('The given key does not correspond to a manifest')
         return Manifest.load_from(mf.path)
 
-    def get_files_modified_since(self, mtime: float) -> Iterable[ManifestFile]:
+    def get_files_modified_since(self, mtime: float) -> Iterator[ManifestFile]:
         for mf in self.files:
             if mf.is_manifest:
                 sub_manifest = Manifest.load_from(mf.path)
@@ -592,7 +592,7 @@ class Manifest:
             return True
         return False
 
-    def rename(self, key: int | str, name: str, rename_file: bool = True, ext: str = None) -> ManifestFile:
+    def rename(self, key: int | str, name: str, rename_file: bool = True, ext: str | None = None) -> ManifestFile:
         """
         Rename a file in the manifest by index or name
 
@@ -659,7 +659,7 @@ class Manifest:
     @classmethod
     def from_archive(cls, manifest_path: Path, name: str, archive: Archive, extension: str = '',
                      sniff: bool | list[type[FileFormat]] = False, flatten: bool = False,
-                     recursive: bool = True, original_path: Path = None) -> Manifest:
+                     recursive: bool = True, original_path: Path | None = None) -> Manifest:
         """
         Create a new manifest at a given path from a given archive
 

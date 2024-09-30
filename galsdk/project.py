@@ -10,7 +10,7 @@ import struct
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePath
-from typing import Iterable
+from typing import Iterator
 
 from galsdk import file
 from galsdk.db import Database
@@ -588,7 +588,7 @@ class Project:
         # old project
         return Manifest.load_from(self.project_dir / 'stages' / stage / 'backgrounds')
 
-    def get_stage_movies(self, stage: Stage) -> Iterable[Movie]:
+    def get_stage_movies(self, stage: Stage) -> Iterator[Movie]:
         for path in sorted((self.project_dir / 'stages' / stage / 'movies').glob('*.STR')):
             yield Movie(path)
 
@@ -625,7 +625,7 @@ class Project:
 
         return xa_dbs
 
-    def get_voice_audio(self) -> Iterable[XaAudio]:
+    def get_voice_audio(self) -> Iterator[XaAudio]:
         extract_dir = self.project_dir / 'voice' / 'extract'
         shutil.rmtree(extract_dir, ignore_errors=True)
         extract_dir.mkdir(exist_ok=True)
@@ -704,7 +704,7 @@ class Project:
         with exe_path.open('rb') as f:
             return Exe.read(f)
 
-    def get_stage_rooms(self, stage: Stage) -> Iterable[FromManifest[RoomModule]]:
+    def get_stage_rooms(self, stage: Stage) -> Iterator[FromManifest[RoomModule]]:
         manifest = Manifest.load_from(self.project_dir / 'modules')
         indexes_seen = set()
         maps = self.get_maps()
@@ -768,7 +768,7 @@ class Project:
             movies.append(unpacked[0].rstrip(b'\0').decode())
         return movies
 
-    def get_actor_models(self, usable_only: bool = False) -> Iterable[ActorModel]:
+    def get_actor_models(self, usable_only: bool = False) -> Iterator[ActorModel]:
         is_zanmai = self.version.is_zanmai
         manifest = Manifest.load_from(self.project_dir / 'models')
         for actor in self.actors:
@@ -793,7 +793,7 @@ class Project:
     def get_item_art(self) -> Manifest:
         return Manifest.load_from(self.project_dir / 'art' / 'MENU').get_manifest('item_art')
 
-    def get_art_manifests(self) -> Iterable[Manifest]:
+    def get_art_manifests(self) -> Iterator[Manifest]:
         for path in sorted((self.project_dir / 'art').iterdir()):
             yield Manifest.load_from(path)
 
@@ -818,7 +818,7 @@ class Project:
             json.dump(info, f)
         return info
 
-    def get_items(self, key_items: bool | None = None) -> Iterable[Item]:
+    def get_items(self, key_items: bool | None = None) -> Iterator[Item]:
         model_manifest = Manifest.load_from(self.project_dir / 'models')
         info = self.get_item_info()
         for entry in info:
@@ -882,7 +882,7 @@ class Project:
 
         return actors, items, other
 
-    def get_menus(self) -> Iterable[tuple[str, Menu]]:
+    def get_menus(self) -> Iterator[tuple[str, Menu]]:
         display_manifest = Manifest.load_from(self.project_dir / 'art' / 'DISPLAY')
         # menu files only exist in Western versions
         if 'Option' in display_manifest:

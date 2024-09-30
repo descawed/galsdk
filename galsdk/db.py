@@ -2,7 +2,7 @@ import math
 import os
 import os.path
 from pathlib import Path
-from typing import BinaryIO, Container, Iterable, Self
+from typing import BinaryIO, Container, Iterable, Iterator, Self
 
 import galsdk.file as util
 from galsdk.format import Archive
@@ -132,7 +132,7 @@ class Database(Archive[bytes]):
             if bytes_over > 0:
                 f.write(b'\0' * (self.SECTOR_SIZE - bytes_over))
 
-    def __iter__(self) -> Iterable[bytes]:
+    def __iter__(self) -> Iterator[bytes]:
         """Iterate over the files in the database"""
         yield from self.files
 

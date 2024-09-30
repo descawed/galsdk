@@ -140,7 +140,7 @@ class AnimationTab(Tab):
         self.tree.item(self.context_menu_iid, text=f'* #{anim_index}')
         self.update_model()
 
-    def add_animation_children(self, animation: Animation, iid: str):
+    def add_animation_children(self, animation: Animation | None, iid: str):
         if animation is None:
             self.tree.delete(*self.tree.get_children(iid))
             return

@@ -4,7 +4,7 @@ import copy
 import io
 from enum import Enum, auto
 from pathlib import Path
-from typing import BinaryIO, Container, Iterable, Self
+from typing import BinaryIO, Container, Iterable, Iterator, Self
 
 from PIL import Image
 
@@ -246,7 +246,7 @@ class TimDb(Archive[Tim]):
     def __delitem__(self, key: int):
         del self.images[key]
 
-    def __iter__(self) -> Iterable[TimFormat | TimDb]:
+    def __iter__(self) -> Iterator[TimFormat | TimDb]:
         """Iterate over the contents of the database"""
         yield from self.images
 

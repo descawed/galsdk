@@ -8,7 +8,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, BinaryIO, Iterable, Self
+from typing import Any, BinaryIO, Iterator, Self
 
 import numpy as np
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
@@ -72,7 +72,7 @@ class Segment:
         return 1 + sum(len(child) for child in self.children)
 
     @property
-    def all_triangles(self) -> Iterable[tuple[int, int, int]]:
+    def all_triangles(self) -> Iterator[tuple[int, int, int]]:
         yield from self.triangles
         for q in self.quads:
             yield q[0], q[1], q[3]

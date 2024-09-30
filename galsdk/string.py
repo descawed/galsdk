@@ -3,7 +3,7 @@ from __future__ import annotations
 import struct
 from abc import abstractmethod
 from pathlib import Path
-from typing import BinaryIO, Iterable, Self
+from typing import BinaryIO, Iterator, Self
 
 from galsdk.format import FileFormat
 
@@ -32,7 +32,7 @@ class StringDb(FileFormat):
         """Change a string in the database"""
 
     @abstractmethod
-    def __iter__(self) -> Iterable[str]:
+    def __iter__(self) -> Iterator[str]:
         """Iterate over the strings in the database"""
 
     @abstractmethod
@@ -40,11 +40,11 @@ class StringDb(FileFormat):
         """Number of strings in the database"""
 
     @abstractmethod
-    def iter_raw(self) -> Iterable[bytes]:
+    def iter_raw(self) -> Iterator[bytes]:
         """Iterate over the strings as raw (un-decoded) bytes"""
 
     @abstractmethod
-    def iter_both(self) -> Iterable[tuple[bytes, str]]:
+    def iter_both(self) -> Iterator[tuple[bytes, str]]:
         """Iterate over the strings as both raw and decoded strings"""
 
     @abstractmethod
@@ -96,11 +96,11 @@ class StringDb(FileFormat):
         """Get a string's ID used by the game engine with its index in the database"""
 
     @abstractmethod
-    def iter_ids(self) -> Iterable[tuple[int, str]]:
+    def iter_ids(self) -> Iterator[tuple[int, str]]:
         """Iterate through the strings in the database as (ID, string) pairs"""
 
     @abstractmethod
-    def iter_both_ids(self) -> Iterable[tuple[int, tuple[bytes, str]]]:
+    def iter_both_ids(self) -> Iterator[tuple[int, tuple[bytes, str]]]:
         """Iterate over the strings as both raw and decoded strings with their IDs"""
 
 
@@ -213,7 +213,7 @@ class LatinStringDb(StringDb):
         """Change a string in the database"""
         self.strings[key] = value if isinstance(value, bytes) else value.encode(self.encoding)
 
-    def __iter__(self) -> Iterable[str]:
+    def __iter__(self) -> Iterator[str]:
         """Iterate over the strings in the database"""
         for string in self.strings:
             yield string.decode(self.encoding, 'replace')
@@ -231,11 +231,11 @@ class LatinStringDb(StringDb):
     def encode(self, string: str, stage_index: int) -> bytes:
         return string.encode(self.encoding)
 
-    def iter_raw(self) -> Iterable[bytes]:
+    def iter_raw(self) -> Iterator[bytes]:
         """Iterate over the strings as raw (un-decoded) bytes"""
         yield from self.strings
 
-    def iter_both(self) -> Iterable[tuple[bytes, str]]:
+    def iter_both(self) -> Iterator[tuple[bytes, str]]:
         """Iterate over the strings as both raw and decoded strings"""
         for string in self.strings:
             yield string, string.decode(self.encoding, 'replace')
@@ -275,10 +275,10 @@ class LatinStringDb(StringDb):
     def get_id_from_index(self, index: int) -> int:
         return index
 
-    def iter_ids(self) -> Iterable[tuple[int, str]]:
+    def iter_ids(self) -> Iterator[tuple[int, str]]:
         return enumerate(self)
 
-    def iter_both_ids(self) -> Iterable[tuple[int, tuple[bytes, str]]]:
+    def iter_both_ids(self) -> Iterator[tuple[int, tuple[bytes, str]]]:
         return enumerate(self.iter_both())
 
 
@@ -523,7 +523,7 @@ class JapaneseStringDb(StringDb):
         """Change a string in the database"""
         self.strings[key] = value if isinstance(value, bytes) else self._pack(value)
 
-    def __iter__(self) -> Iterable[str]:
+    def __iter__(self) -> Iterator[str]:
         """Iterate over the strings in the database"""
         for string in self.strings:
             yield self.decode(string, self.kanji_index or 0)
@@ -555,21 +555,21 @@ class JapaneseStringDb(StringDb):
         """Get a string from the database by its offset in the file"""
         return self[self.get_index_from_id(string_id)]
 
-    def iter_both_ids(self) -> Iterable[tuple[int, tuple[bytes, str]]]:
+    def iter_both_ids(self) -> Iterator[tuple[int, tuple[bytes, str]]]:
         current = 0
         for s in self.strings:
             yield current, (s, self.decode(s, self.kanji_index or 0))
             current += len(s) + 2  # +2 for the delimiter
 
-    def iter_ids(self) -> Iterable[tuple[int, str]]:
+    def iter_ids(self) -> Iterator[tuple[int, str]]:
         for i, (_, s) in self.iter_both_ids():
             yield i, s
 
-    def iter_raw(self) -> Iterable[bytes]:
+    def iter_raw(self) -> Iterator[bytes]:
         """Iterate over the strings as raw (un-decoded) bytes"""
         yield from self.strings
 
-    def iter_both(self) -> Iterable[tuple[bytes, str]]:
+    def iter_both(self) -> Iterator[tuple[bytes, str]]:
         """Iterate over the strings as both raw and decoded strings"""
         for string in self.strings:
             yield string, self.decode(string, self.kanji_index or 0)

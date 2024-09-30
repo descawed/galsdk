@@ -617,7 +617,7 @@ REGION_ADDRESSES = {
     },
 }
 
-ADDRESSES = {
+ADDRESSES: dict[str, dict[str, int | list[int]]] = {
     version.id: REGION_ADDRESSES[version.language]
     for version in VERSIONS if version.language in REGION_ADDRESSES and not version.is_demo
 }

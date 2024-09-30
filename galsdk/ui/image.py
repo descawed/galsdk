@@ -23,8 +23,8 @@ class ImageViewerTab(Tab, metaclass=ABCMeta):
                  show: Literal['tree', 'headings', 'tree headings', ''] = 'tree'):
         super().__init__(name, project)
 
-        self.context_ids = set()
-        self.context_iid = None
+        self.context_ids: set[str] = set()
+        self.context_iid: str | None = None
         self.tree = ttk.Treeview(self, selectmode=selectmode, show=show)
 
         scroll = ttk.Scrollbar(self, command=self.tree.yview, orient='vertical')

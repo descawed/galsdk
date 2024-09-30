@@ -65,7 +65,7 @@ class RoomViewport(Viewport):
 
     def __init__(self, base: ShowBase, width: int, height: int, project: Project, *args, **kwargs):
         super().__init__('room', base, width, height, *args, **kwargs)
-        self.name = None
+        self.name: str | None = None
         self.room_id = -1
 
         self.key_listener = None
@@ -126,7 +126,7 @@ class RoomViewport(Viewport):
         self.loaded_tims = {}
         self.actor_layouts = []
         self.current_layout = -1
-        self.camera_view = None
+        self.camera_view: CameraObject | None = None
         self.missing_bg = Image.open(Path.cwd() / 'assets' / 'missing_bg.png')
         self.target_icon = Image.open(Path.cwd() / 'assets' / 'target.png')
 

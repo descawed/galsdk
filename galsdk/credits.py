@@ -3,7 +3,7 @@ import io
 import struct
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import BinaryIO, Self, Iterable
+from typing import BinaryIO, Self, Iterable, Iterator
 
 from galsdk.format import Archive
 from galsdk.tim import TimFormat
@@ -87,7 +87,7 @@ class Credits(Archive[Tim]):
     def __delitem__(self, key: int):
         del self.images[key]
 
-    def __iter__(self) -> Iterable[Tim]:
+    def __iter__(self) -> Iterator[Tim]:
         yield from self.images
 
     def __len__(self) -> int:
