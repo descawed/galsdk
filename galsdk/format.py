@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import BinaryIO, Generic, Iterable, Self, TypeVar
+from typing import BinaryIO, Iterable, Self
 
 from galsdk.file import KeepReader
 
@@ -62,10 +62,7 @@ class FileFormat(ABC):
         pass
 
 
-T = TypeVar('T')
-
-
-class Archive(FileFormat, Generic[T]):
+class Archive[T](FileFormat):
     def __init__(self, raw_data: bytes = None):
         self.raw_data = raw_data
 

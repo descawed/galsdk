@@ -1290,8 +1290,7 @@ class RoomTab(Tab):
             room = self.rooms[room_id]
             room.save(language=self.project.version.language)
             # function info is saved in the metadata
-            with room.file.path.with_suffix('.json').open('w') as f:
-                room.obj.save_metadata(f)
+            room.obj.save_metadata_for_path(room.file.path)
         if self.maps_changed:
             self.project.save_maps()
             self.maps_changed = False

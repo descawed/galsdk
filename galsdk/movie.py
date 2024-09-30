@@ -1,3 +1,4 @@
+import platform
 from pathlib import Path
 
 import ffmpeg
@@ -24,7 +25,7 @@ class Movie(Media):
         """
         # FIXME: only on Windows, mp4 format causes the panda player to restart partway through the video. I looked into
         #  this a while back and it seemed to only happen with formats that contain B and P frames.
-        super().__init__(path, 'mp4')
+        super().__init__(path, 'avi' if platform.system() == 'Windows' else 'mp4')
 
     @property
     def name(self) -> str:
@@ -36,4 +37,9 @@ class Movie(Media):
         # streams shorter than the video stream and this causes panda to stop playing the video early
         in_video = ffmpeg.input(self.path)
         audio = in_video.audio.filter('apad')
-        ffmpeg.output(in_video.video, audio, str(playable_path), shortest=None).run()
+        kwargs = {}
+        if platform.system() == 'Windows':
+            # mjpeg is the only codec I've found so far that doesn't have playback issues on Windows
+            kwargs['vcodec'] = 'mjpeg'
+            kwargs['q:v'] = '2'
+        ffmpeg.output(in_video.video, audio, str(playable_path), shortest=None, **kwargs).run()

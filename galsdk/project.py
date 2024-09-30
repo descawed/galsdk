@@ -716,7 +716,7 @@ class Project:
                 module = manifest.load_file(room.module_index, loader)
                 # check if the module has been changed since its metadata last was. if so, reparse.
                 module_mtime = module.file.path.stat().st_mtime
-                metadata_path = module.file.path.with_suffix('.json')
+                metadata_path = RoomModule.get_metadata_path(module.file.path)
                 metadata_mtime = metadata_path.stat().st_mtime
                 if module_mtime > metadata_mtime:
                     module.obj.reparse(module.file.path, self.version.id)
@@ -1073,6 +1073,10 @@ class Project:
             cd.write(f)
             cd_data = f.getvalue()
         output_image.write_bytes(cd_data)
+
+        # generate cue file
+        output_cue = output_image.with_suffix('.cue')
+        output_cue.write_text(f'FILE "{output_image.name}" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00')
 
         self.last_export_date = datetime.datetime.now(datetime.UTC)
         self.save()

@@ -1,9 +1,8 @@
 # SDK
 
 The SDK provides headers and symbols for building custom modules. Modules are found in MODULE.BIN and contain code for
-the game's rooms, AI, and certain menus. The contents of each directory are described below. This directory also
-contains [PSn00bSDK](https://github.com/Lameguy64/PSn00bSDK) as a git submodule which is used for building the example
-room. Finally, a tutorial for building the example room is provided at the end.
+the game's rooms, AI, and certain menus. The contents of each directory are described below. Finally, a tutorial for
+building the example room is provided at the end.
 
 ## include
 These headers provide an interface into the game EXE. galerians.h just includes everything in the galerians
@@ -13,7 +12,8 @@ bare-bones at the moment, mainly just what's needed for the example room. I hope
 There are a couple preprocessor symbols that you can define prior to including the headers. `GALERIANS_REGION_JAPAN`
 indicates that you're building a module for the Japanese version. This is necessary because there are a few layout and
 API differences between the Japanese version and other versions. `GALERIANS_USE_PSYQ` indicates that you want to build
-with the PSYQ SDK. By default, the code looks for PSn00bSDK. Note that both of these symbols are currently untested.
+with the PSYQ SDK. Otherwise, the types header will define the necessary SDK types itself. Note that both of these
+symbols are currently untested.
 
 ### types.h
 Types used in the game as well as flag and constant definitions. Each type has at least a brief description in the
@@ -48,10 +48,9 @@ the binary.
 
 ## examples
 Module example code. Currently, only an example room is provided, but I'd like to add an example AI module at some point
-as well. The Makefile in the sdk root directory will build all example modules (make sure you've pulled in the
-PSn00bSDK submodule). The Makefile is written for gcc; specifically, I've built it on Ubuntu with the tools from the
-`binutils-mipsel-linux-gnu` package. You may need to update the `CC` and `LD` variables to point to the appropriate
-compiler and linker on your platform.
+as well. The Makefile in the sdk root directory will build all example modules. The Makefile is written for gcc;
+specifically, I've built it on Ubuntu with the tools from the `binutils-mipsel-linux-gnu` package. You may need to
+update the `CC` and `LD` variables to point to the appropriate compiler and linker on your platform.
 
 ## Building and using the example room
 Let's see how to build the example room and patch it into the game. You'll need a copy of disc 1 of the North American
@@ -83,13 +82,13 @@ the room. The game doesn't actually use these identifiers, so in practice they c
 problems if the first character isn't the stage letter, though, so we'll adhere to that convention here. RMD is an
 extension I just made up for "Room MoDule"; it's not actually significant.
 
-ASDKX.json is a JSON file describing where various room-related data structures can be found in the modules. This file
+ASDKX.json5 is a JSON5 file describing where various room-related data structures can be found in the module. This file
 is only necessary for the editor. When importing a module into the editor, it will automatically look for a file with
-the same name but a .json extension and use that if it's found. If not, it will prompt you for the module entry point
-address and then attempt to parse the relevant addresses out of the code. That's likely to fail, though, because the
-parse code is tuned for the formulaic way the game's own modules set up the room layout, so it's better to provide the
-JSON file. To support that, the Makefile has ld print out a listing of where everything ended up in memory which you can
-use to update the JSON file.
+the same name but a .json or .json5 extension and use that if it's found. If not, it will prompt you for the module
+entry point address and then attempt to parse the relevant addresses out of the code. That's likely to fail, though,
+because the parse code is tuned for the formulaic way the game's own modules set up the room layout, so it's better to
+provide the JSON file. To support that, the Makefile has ld print out a listing of where everything ended up in memory
+which you can use to update the JSON file. JSON5 is used so that we can keep the addresses in hexadecimal.
 
 ### Patching the game
 Once the room module has been built, it needs to be added to the game. If you're familiar with the game files, you can
@@ -120,7 +119,8 @@ scratch and don't have an existing editor project.
    those. If we open Hospital 14F, we can see that room A14RH is repeated in slots 14, 15, 16, and 17. We'll choose slot
    16 for our module, so click on that. On the right-hand side, click the "..." button next to the Module dropdown to
    browse for a new module to import. Choose the ASDKX.RMD module that we built. The Entry Point should be populated
-   automatically from the ASDKX.json file. Click OK. If you expand Stage A, you should see our new module at the bottom.
+   automatically from the ASDKX.json5 file. Click OK. If you expand Stage A, you should see our new module at the
+   bottom.
 7. Now that the module has been added, we need a way to get to it. For the purposes of this example, we'll change the
    first door you go through at the beginning of the game to go to this room instead. Still on the Room tab, open Stage
    A, open room A1501, open Triggers, and click on trigger #0, which is the activation trigger for the door. In the
@@ -135,12 +135,12 @@ scratch and don't have an existing editor project.
    created the project from) and saves the patched image back over export/output.bin. The "Project files" section on the
    left shows all the files that we've modified in the project, and the "Image files" section on the right shows the
    corresponding files on the CD that will be updated. As a sanity check, the modified project files should be:
-   - art/BGTIM_A/ASDKX/000.TIM: The background image.
-   - art/DISPLAY/005.SDB: The message file for Stage A.
-   - boot/SLUS_009.86: The EXE, where the maps are defined.
-   - modules/A1501.RMD: The first room in the game, where we changed the door.
-   - modules/ASDKX.RMD: The new room.
+   - `art/BGTIM_A/ASDKX/000.TIM`: The background image.
+   - `art/DISPLAY/005.SDB`: The message file for Stage A.
+   - `boot/SLUS_009.86`: The EXE, where the maps are defined.
+   - `modules/A1501.RMD`: The first room in the game, where we changed the door.
+   - `modules/ASDKX.RMD`: The new room.
 10. If everything looks correct, click Export and wait for the export process to complete (this may take some time
     because we're adding new files, so the CD contents have to be shuffled around to make room). You should then be
-    able to load the output.bin file in any emulator (note that Beetle PSX requires a cue sheet, which is not provided).
-    Start a new game, scan the door to unlock it as usual, and you should find it now takes you to the example room.
+    able to load the output.bin file in any emulator. Start a new game, scan the door to unlock it as usual, and you
+    should find it now takes you to the example room.

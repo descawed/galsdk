@@ -1,4 +1,6 @@
+import ctypes
 import json
+import platform
 import tkinter as tk
 import tkinter.filedialog as tkfile
 import tkinter.messagebox as tkmsg
@@ -32,6 +34,16 @@ class Editor(ShowBase):
         super().__init__(windowType='none')
         self.project = None
         self.project_open_complete = False
+
+        # disable DPI scaling on Windows, as it behaves badly with Panda3D
+        if platform.system() == 'Windows':
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            except AttributeError:
+                ctypes.windll.user32.SetProcessDPIAware()
+
+            style = ttk.Style()
+            style.configure('Treeview', rowheight=30)
 
         cwd = Path.cwd()
         getModelPath().appendDirectory(cwd / 'assets')

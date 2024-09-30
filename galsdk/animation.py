@@ -206,8 +206,7 @@ class Animation(FileFormat):
 
         return cls(frames, attack_data=attack_data)
 
-    def write(self, f: BinaryIO, **kwargs):
-        # FIXME: add support for non-differential serialization
+    def write(self, f: BinaryIO, *, differential: bool = True, **kwargs):
         for attack_data in self.attack_data:
             f.write(struct.pack(self.ATTACK_DATA_FORMAT, *astuple(attack_data)))
 
@@ -216,14 +215,17 @@ class Animation(FileFormat):
 
         for frame in self.frames[1:]:
             values = frame.to_raw()
-            for i, value in enumerate(values[:-1]):
-                diff = prev_values[i] - value
-                if -64 <= diff <= 63:
-                    f.write((diff << 1).to_bytes(1, 'little', signed=True))
-                else:
-                    f.write(((value << 1) | 0x100).to_bytes(2, 'big', signed=True))
-            f.write(values[-1].to_bytes(4, 'little'))
-            prev_values = values
+            if differential:
+                for i, value in enumerate(values[:-1]):
+                    diff = prev_values[i] - value
+                    if -64 <= diff <= 63:
+                        f.write((diff << 1).to_bytes(1, 'little', signed=True))
+                    else:
+                        f.write(((value << 1) | 0x100).to_bytes(2, 'big', signed=True))
+                f.write(values[-1].to_bytes(4, 'little'))
+                prev_values = values
+            else:
+                f.write(struct.pack('<48hI', *values))
 
         # pad length to multiple of 4
         offset = f.tell()
@@ -297,12 +299,15 @@ class AnimationDb(Archive[Animation | None]):
 
     def export(self, path: Path, fmt: str = None) -> Path:
         path.mkdir(exist_ok=True)
+        fmt_args = fmt.split('_') if fmt else []
+        export_all = 'all' in fmt_args
+        differential = 'diff' in fmt_args
         for i, animation in enumerate(self.animations):
             sub_path = (path / f'{i:03}')
             if animation:
                 with sub_path.open('wb') as f:
-                    animation.write(f)
-            elif fmt == 'all':
+                    animation.write(f, differential=differential)
+            elif export_all:
                 sub_path.write_bytes(b'')
         return path
 
@@ -335,7 +340,7 @@ class AnimationDb(Archive[Animation | None]):
             del animations[-1]
         return cls(animations)
 
-    def write(self, f: BinaryIO, **kwargs):
+    def write(self, f: BinaryIO, *, differential: bool = True, **kwargs):
         directory = []
         directory_offset = f.tell()
         f.write(bytes(self.SECTOR_SIZE + 4))
@@ -346,7 +351,7 @@ class AnimationDb(Archive[Animation | None]):
             else:
                 directory.append((offset, offset + animation.header_len))
                 start = f.tell()
-                animation.write(f)
+                animation.write(f, differential=differential)
                 offset += f.tell() - start
 
         end = f.tell()
@@ -368,44 +373,64 @@ def pack_db(db: AnimationDb, files: Iterable[Path], differential: bool):
                 db.append(Animation.read(f, differential=differential))
 
 
-def unpack(db_path: Path, out_path: Path, unpack_all: bool, differential: bool):
+def unpack(db_path: Path, out_path: Path, unpack_all: bool, differential_in: bool, differential_out: bool):
     with db_path.open('rb') as f:
-        db = AnimationDb.read(f, differential=differential)
-    db.export(out_path, 'all' if unpack_all else None)
+        db = AnimationDb.read(f, differential=differential_in)
+
+    export_args = []
+    if unpack_all:
+        export_args.append('all')
+    if differential_out:
+        export_args.append('diff')
+    db.export(out_path, '_'.join(export_args))
 
 
-def pack(db_path: Path, in_paths: Iterable[Path], differential: bool):
+def pack(db_path: Path, in_paths: Iterable[Path], differential_in: bool, differential_out: bool):
     db = AnimationDb()
-    pack_db(db, in_paths, differential)
+    pack_db(db, in_paths, differential_in)
     with db_path.open('wb') as f:
-        db.write(f)
+        db.write(f, differential=differential_out)
 
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Pack and unpack Galerians animation databases')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     pack_parser = subparsers.add_parser('pack', help='Create an animation database from a list of files')
-    pack_parser.add_argument('-u', '--uncompressed', action='store_true',
-                             help="Don't use differential compression for the animations. "
-                                  'Only use this with the ASCII Zanmai demo disc.')
+    pack_parser.add_argument('-c', '--compression', choices=['input', 'output', 'both', 'neither'], default='both',
+                             help="Whether the input and/or output files use differential compression. Only the "
+                                  "ASCII Zanmai demo disc uses uncompressed animations. The default is `both`, meaning the "
+                                  "input files use compression and the output database will also be compressed. `input` "
+                                  "means the input files use compression but the output database will be decompressed. "
+                                  "`output` means the input files are not compressed but the output database will be "
+                                  "compressed. `neither` means the input files are not compressed and the output database "
+                                  "will also not be compressed.")
     pack_parser.add_argument('db', help='Animation database to be created')
-    pack_parser.add_argument('files', nargs='*', help='Files to be added to the database. If any paths are directories '
+    pack_parser.add_argument('files', nargs='*', help='Files to be added to the database. If any paths are directories, '
                              'they will be included recursively')
-    pack_parser.set_defaults(action=lambda a: pack(Path(a.db), (Path(p) for p in a.files), not a.uncompressed))
+    pack_parser.set_defaults(action=lambda a: pack(Path(a.db), (Path(p) for p in a.files),
+                                                   a.compression in ['input', 'both'],
+                                                   a.compression in ['output', 'both']))
 
     unpack_parser = subparsers.add_parser('unpack', help='Unpack files from an animation database')
     unpack_parser.add_argument('-a', '--all', help='Create a file for all indexes in the database, even ones which '
                                'are not populated. This will make repacking the database more convenient.',
                                action='store_true')
-    unpack_parser.add_argument('-u', '--uncompressed', action='store_true',
-                               help="The animations in this database don't use differential compression. Only valid "
-                               'for animations from the ASCII Zanmai demo disc.')
+    unpack_parser.add_argument('-c', '--compression', choices=['input', 'output', 'both', 'neither'], default='both',
+                               help="Whether the input and/or output files use differential compression. Only the "
+                               "ASCII Zanmai demo disc uses uncompressed animations. The default is `both`, meaning the "
+                               "input database uses compression and the output files will also be compressed. `input` "
+                               "means the input databases uses compression but the output files will be decompressed. "
+                               "`output` means the input database is not compressed but the output files will be "
+                               "compressed. `neither` means the input database is not compressed and the output files "
+                               "will also not be compressed.")
     unpack_parser.add_argument('db', help='Animation database to be unpacked')
     unpack_parser.add_argument('dir', help='Directory the files will be extracted to')
-    unpack_parser.set_defaults(action=lambda a: unpack(Path(a.db), Path(a.dir), a.all, not a.uncompressed))
+    unpack_parser.set_defaults(action=lambda a: unpack(Path(a.db), Path(a.dir), a.all,
+                                                       a.compression in ['input', 'both'],
+                                                       a.compression in ['output', 'both']))
 
     args = parser.parse_args()
     args.action(args)

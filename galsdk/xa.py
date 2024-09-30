@@ -379,7 +379,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Export Galerians XA audio')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     unpack_parser = subparsers.add_parser('unpack', help='Unpack individual audio tracks into a directory')
     unpack_parser.add_argument('-c', '--convert', help='Convert the audio to wav when exporting. If not given, the '

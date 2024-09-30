@@ -6,7 +6,7 @@ import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Generic, Iterable, TypeAlias, TypeVar
+from typing import Callable, Iterable
 from weakref import WeakValueDictionary
 
 from galsdk import file
@@ -84,13 +84,12 @@ class AddManifest:
     undelete: tuple[float, ManifestFile] | None
 
 
-ManifestChange: TypeAlias = Delete | Rename | AddFile | AddManifest
-JsonType: TypeAlias = bool | int | float | str | list | tuple | dict | None
-T = TypeVar('T', bound=FileFormat)
+type ManifestChange = Delete | Rename | AddFile | AddManifest
+type JsonType = bool | int | float | str | list | tuple | dict | None
 
 
 @dataclass
-class FromManifest(Generic[T]):
+class FromManifest[T: FileFormat]:
     manifest: Manifest
     key: int | str
     file: ManifestFile

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import io
-import os.path
 from enum import Enum, auto
 from pathlib import Path
 from typing import BinaryIO, Container, Iterable, Self
@@ -461,7 +460,7 @@ if __name__ == '__main__':
     formats = [fmt.extension.lower()[1:] for fmt in TimDb.Format]
 
     parser = argparse.ArgumentParser(description='Pack or unpack Galerians TIM database files')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     pack_parser = subparsers.add_parser('pack', help='Create a TIM DB from a list of files')
     pack_parser.add_argument('-f', '--format', help='The format of the TIM DB to be created', default='tdb',
