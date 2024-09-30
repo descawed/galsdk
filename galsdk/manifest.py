@@ -289,7 +289,7 @@ class Manifest:
                 (deletion['timestamp'], ManifestFile(deletion['name'], self.path / deletion['path']))
             )
 
-    def load_file(self, key: int | str, constructor: type[T] | Callable[[Path], T], **kwargs) -> FromManifest[T]:
+    def load_file[T](self, key: int | str, constructor: type[T] | Callable[[Path], T], **kwargs) -> FromManifest[T]:
         """
         Create a FileFormat instance of the given type from the file identified by key, returning a FromManifest
         instance that tracks the file and manifest the object originated from.
@@ -302,7 +302,7 @@ class Manifest:
             obj = constructor(manifest_file.path)
         return FromManifest(self, key, manifest_file, obj)
 
-    def load_files(self, constructor: type[T] | Callable[[Path], T], **kwargs) -> Iterable[FromManifest[T]]:
+    def load_files[T](self, constructor: type[T] | Callable[[Path], T], **kwargs) -> Iterable[FromManifest[T]]:
         for i, mf in enumerate(self.files):
             if not mf.is_manifest or mf.flatten:
                 yield self.load_file(i, constructor, **kwargs)
