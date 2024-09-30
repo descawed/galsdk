@@ -44,7 +44,7 @@ executables = [
 
 [tool.cxfreeze.build_exe]
 includes = ["Pmw"]
-include_files = ["assets/", "data/", "sdk/"]
+include_files = ["assets/", "data/", "sdk/", "README.md"]
 
 [build-system]
 requires = ["poetry-core"]
