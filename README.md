@@ -2,7 +2,9 @@
 Editor and utilities for the PSX game Galerians (1999). Requires Python 3.12.
 
 ## Setup
-For those familiar with Python, the easiest way to use this application is with [Poetry](https://python-poetry.org/).
+Packaged releases for Windows are available on the [Releases](https://github.com/descawed/galsdk/releases) tab.
+Mac and Linux users, or those who want the latest changes, will need to clone the repo and run the scripts with Python
+directly. For those familiar with Python, the easiest way to use this application is with [Poetry](https://python-poetry.org/).
 If you're less familiar with Python, or just don't want to use Poetry, you can use the following instructions to set up
 a Python virtual environment:
 
@@ -22,9 +24,9 @@ implement the game's rooms, AI, and certain menus. See the README in the sdk dir
 building the sample room also provides some examples of how to use the editor.
 
 ## Editor
-The editor is a GUI application for exploring the game's files. Run it from the repo's root directory with
-`python -m galsdk.editor`. At the moment, it supports editing rooms, strings, art textures, and some animation data.
-Support for editing other files will be added in the future.
+The editor is a GUI application for exploring the game's files. If you're using a packaged release, run `editor.exe`.
+Others can run it from the repo's root directory with `python -m galsdk.editor`. At the moment, it supports editing
+rooms, strings, art textures, and some animation data. Support for editing other files will be added in the future.
 
 The editor supports Windows and Linux. Unfortunately, it doesn't work on Mac at the moment. I hope to correct this at
 some point. CLI tools should still work on Mac.
@@ -177,8 +179,12 @@ them up based on the file modification timestamps.
 ## CLI utilities
 galsdk also comes with a number of CLI tools for manipulating the game's files. Each tool can be run with
 `python -m <module name>` and has usage help available with the `-h` option. There are also a couple bonus scripts for
-working with Galerians: Ash files (no additional Ash support is planned at this time). The following modules have CLI
-interfaces:
+working with Galerians: Ash files (no additional Ash support is planned at this time). If you're using a packaged
+release, there are .exe files corresponding to each of these modules with the prefix removed (e.g., the .exe
+corresponding to `galsdk.animation` is `animation.exe`). The exception is the Galerians: Ash scripts, which start with
+`ash_`, so `ash_bd.exe` and `ash_tex.exe`.
+
+The following modules have CLI interfaces:
 - `galsdk.animation` - Pack and unpack animation databases from MOT.CDB. You usually want to use the `--all` switch when
   unpacking, because animation databases can have gaps. `--all` exports empty files for animations that aren't present.
   Without these empty files, the animations will likely be in the wrong order when repacked.
