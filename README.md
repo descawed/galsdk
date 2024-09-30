@@ -167,9 +167,10 @@ them up based on the file modification timestamps.
   can also display a preview of the full menu rendered together. This is not currently supported for the inventory menu.
   You can right-click on an image in the list to export.
 - **Movie** - On this tab you can view the game's FMVs. There's no export option in the UI, but if you watch a video
-  in the editor, you can find a copy of it in .mp4 format in \<project dir>/stages/\<stage letter>/movies. Which stage's
-  FMVs are available to view depends on which disc you created the project from, although you can manually copy the
-  FMVs from other discs into the appropriate directory in the project if you want to have them all available.
+  in the editor, you can find a copy of it in .avi (Windows) or .mp4 (other platforms) format in
+  \<project dir>/stages/\<stage letter>/movies. Which stage's FMVs are available to view depends on which disc you
+  created the project from, although you can manually copy the FMVs from other discs into the appropriate directory in
+  the project if you want to have them all available.
 - **Voice** - This tab allows you to listen to the game's spoken dialogue. Like the Movie tab, there is no export option
   in the UI, but playing a voice recording will create a copy in .wav format in \<project dir>/voice.
 
