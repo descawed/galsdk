@@ -25,8 +25,9 @@
 import functools
 import math
 import io
-
 from collections.abc import Container
+from pathlib import Path
+
 from galsdk import file
 
 
@@ -144,7 +145,7 @@ class DictionaryCompressor:
         for i, (j, left, right) in enumerate(dictionary_entries):
             if current < j:
                 diff = j - current
-                if diff == 1 and (current <= span_end or dictionary_entries[i + 1][0] <= j + 2):
+                if diff == 1 and (current <= span_end or i + 1 >= len(dictionary_entries) or dictionary_entries[i + 1][0] <= j + 2):
                     if current > span_end:
                         count = self.start_span(1, j, dictionary_entries[i + 1:])
                         raw_dictionary.append(count)
@@ -302,7 +303,7 @@ class DictionaryCompressor:
             right_index, right_partial_match, right_symmetrical, right_repeating = self.check_half(right, indexes,
                                                                                                    desired_strings,
                                                                                                    is_odd)
-            partial_match_len = len(left) if left_partial_match else len(right) if right_partial_match else -1
+            neg_partial_match_len = i if left_partial_match else right_len if right_partial_match else -1
 
             if left_index is not None and right_index is not None:
                 new_index = {s: None}
@@ -311,11 +312,11 @@ class DictionaryCompressor:
 
             # as we go, keep a list of possible splits prioritized by minimizing the average "entropy" of the pair, as
             # strings with a lower number of unique bytes relative to their length should be possible to store more
-            # efficiently. the `not` is because we want splits that have a partial match to sort before strings that
+            # efficiently. the negative is because we want splits that have a partial match to sort before strings that
             # don't. finally, we put i last because it's the length of the left string, and we check the left string
             # first. that means that, if the two strings are nearly identical (common in long strings to have the same
             # byte repeated over and over) but one is longer (perhaps because the length is odd), the shorter string
-            # will be inserted first and will be available as component for the longer one.
+            # will be inserted first and will be available as a component for the longer one.
             pair = frozenset((left, right))
             if pair in known_combos:
                 continue
@@ -323,7 +324,7 @@ class DictionaryCompressor:
             known_combos.add(pair)
             repeating = left_repeating + right_repeating
             symmetrical = left_symmetrical + right_symmetrical
-            by_entropy.append((-partial_match_len, -repeating, -symmetrical,
+            by_entropy.append((-neg_partial_match_len, -repeating, -symmetrical,
                                (len(set(left)) / i + len(set(right)) / right_len) / 2, i))
 
         # at this point, the best cost we can hope for is 2: 1 for ourselves and 1 for at least one substring we'll need
@@ -338,7 +339,7 @@ class DictionaryCompressor:
         new_indexes = {}
         split_index = 0
         # to keep the number of comparisons reasonable, we only consider the first max_splits options
-        for not_partial_match, _, _, entropy, i in by_entropy[:max_splits]:
+        for neg_partial_match_len, _, _, entropy, i in by_entropy[:max_splits]:
             left_cost, left_indexes, _ = self.cost_to_add(s[:i], indexes, best_cost, desired_strings, max_splits)
             if left_cost >= best_cost:
                 continue
@@ -357,7 +358,7 @@ class DictionaryCompressor:
                     break
             # if the entropy is very high and we don't have a partial match, we're probably not going to do much better,
             # so give up and take what we've got
-            if entropy > max_entropy and not not_partial_match:
+            if entropy > max_entropy and neg_partial_match_len > 0:
                 break
 
         # +1 for ourselves
@@ -640,3 +641,43 @@ def decompress(data: bytes) -> list[tuple[int, bytes]]:
                     raise ValueError('Expected padding bytes')
 
     return results
+
+
+def cli_compress(output_path: Path, input_paths: list[Path]):
+    with output_path.open('wb') as f:
+        for input_path in input_paths:
+            f.write(compress(input_path.read_bytes()))
+
+
+def cli_decompress(input_path: Path, output_path: Path):
+    files = decompress(input_path.read_bytes())
+    for i, (_, data) in enumerate(files):
+        if output_path.is_dir():
+            file_path = output_path / f'{i:02}.TIM'
+        elif len(files) > 1:
+            file_path = output_path.with_stem(output_path.stem + f'_{i:02}')
+        else:
+            file_path = output_path
+        file_path.write_bytes(data)
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Compress or decompress files using the Galerians dictionary compression algorithm',
+    )
+    subparsers = parser.add_subparsers(required=True)
+
+    compress_parser = subparsers.add_parser('compress', help='Compress one or more files')
+    compress_parser.add_argument('output', type=Path, help='Compressed output file')
+    compress_parser.add_argument('files', nargs='+', type=Path, help='Files to compress')
+    compress_parser.set_defaults(action=lambda a: cli_compress(a.output, a.files))
+
+    decompress_parser = subparsers.add_parser('decompress', help='Decompress a file')
+    decompress_parser.add_argument('input', type=Path, help='Compressed input file')
+    decompress_parser.add_argument('output', type=Path, help='Decompressed output file(s). May be a directory.')
+    decompress_parser.set_defaults(action=lambda a: cli_decompress(a.input, a.output))
+
+    args = parser.parse_args()
+    args.action(args)
