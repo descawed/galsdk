@@ -1,5 +1,5 @@
 # galsdk
-Editor and utilities for the PSX game Galerians (1999). Requires Python 3.12.
+Editor and utilities for the PSX game Galerians (1999). Requires Python 3.12 or 3.13.
 
 ## Setup
 Packaged releases for Windows are available on the [Releases](https://github.com/descawed/galsdk/releases) tab.
