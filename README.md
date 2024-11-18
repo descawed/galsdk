@@ -1,5 +1,5 @@
 # galsdk
-Editor and utilities for the PSX game Galerians (1999). Requires Python 3.12.
+Editor and utilities for the PSX game Galerians (1999). Requires Python 3.12 or 3.13.
 
 ## Setup
 Packaged releases for Windows are available on the [Releases](https://github.com/descawed/galsdk/releases) tab.
@@ -188,6 +188,10 @@ The following modules have CLI interfaces:
 - `galsdk.animation` - Pack and unpack animation databases from MOT.CDB. You usually want to use the `--all` switch when
   unpacking, because animation databases can have gaps. `--all` exports empty files for animations that aren't present.
   Without these empty files, the animations will likely be in the wrong order when repacked.
+- `galsdk.compress.dictionary` - Compress and decompress files using the game's dictionary compression algorithm. The
+  game uses this for a number of TIM files. In most cases it's easier to use `galsdk.tim` to unpack and re-pack the TIM
+  archives as that handles compression and decompression as well. Note that files produced by the compression process
+  will generally not be identical to the original compressed files on the disc.
 - `galsdk.db` - Pack and unpack .CDB files. Note that MODULE.BIN is also a CDB file, despite the extension.
 - `galsdk.model` - Export the game's 3D models into other formats. To correctly export actor models, you need to know
   the actor ID (shown in the Actor tab of the editor or can be found in the actor list in galsdk/model.py). There is no
