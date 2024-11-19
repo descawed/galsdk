@@ -67,7 +67,8 @@ class Vertex(NamedTuple):
 class Segment:
     def __init__(self, index: int, clut_index: int, triangles: list[tuple[int, int, int]],
                  quads: list[tuple[int, int, int, int]], offset: tuple[int, int, int] = (0, 0, 0),
-                 total_offset: tuple[int, int, int] = None, children: list[Segment] = None):
+                 total_offset: tuple[int, int, int] = None, children: list[Segment] = None,
+                 can_change_translation: bool = False, file_index: int = None):
         self.index = index
         self.clut_index = clut_index
         self.triangles = triangles
@@ -75,6 +76,8 @@ class Segment:
         self.offset = offset
         self.total_offset = total_offset or offset
         self.children = children or []
+        self.can_change_translation = can_change_translation
+        self.file_index = index if file_index is None else file_index
 
     def __len__(self) -> int:
         return 1 + sum(len(child) for child in self.children)
@@ -449,6 +452,44 @@ class Model(FileFormat):
         texture = Texture()
         texture.load(panda_image)
         return texture
+
+    def _set_segment_panda_translation(self, segment_index: int, translation: Point, node_path: NodePath) -> bool:
+        name: str = node_path.getName()
+        if name == f'segment{segment_index}':
+            node_path.setPos(translation.panda_x, translation.panda_y, translation.panda_z)
+            return True
+
+        for child in node_path.getChildren():
+            if self._set_segment_panda_translation(segment_index, translation, child):
+                return True
+
+        return False
+
+    def set_segment_translation(self, segment_index: int, x: int = None, y: int = None, z: int = None) -> bool:
+        """
+        Set the translation of one of the model's segment, including updating the Panda3D model
+
+        Any axes that aren't provided (i.e. set to None) will retain their original values.
+
+        :param segment_index: The index of the segment whose translation to set
+        :param x: The new x translation
+        :param y: The new y translation
+        :param z: The new z translation
+        :return: True if the translation was changed, False if the new translation was identical to the old translation
+        """
+        segment = self.all_segments[segment_index]
+
+        old_x, old_y, old_z = segment.offset
+        new_offset = (old_x if x is None else x, old_y if y is None else y, old_z if z is None else z)
+        if new_offset == segment.offset:
+            return False
+
+        if not segment.can_change_translation:
+            raise ValueError(f'Translation of segment {segment_index} cannot be changed')
+
+        segment.offset = new_offset
+        self._set_segment_panda_translation(segment_index, Point(*new_offset), self.get_panda3d_model())
+        return True
 
     def focus_segment(self, index: int, node_path: NodePath = None, focus_alpha: float = 1., unfocus_alpha: float = 0.5):
         """
@@ -1103,12 +1144,17 @@ class ActorModel(Model):
 
         attributes = {}
         segments: list[Segment | None] = [None] * cls.NUM_SEGMENTS
-        for i in cls.SEGMENT_ORDER:
+        for j, i in enumerate(cls.SEGMENT_ORDER):
             try:
                 offset = (offsets[i * 3], offsets[i * 3 + 1], offsets[i * 3 + 2])
+                can_change_translation = True
             except IndexError:
                 offset = (0, 0, 0)
-            segments[i] = cls._read_segment(f, i, attributes, offset)
+                can_change_translation = False
+            segment = cls._read_segment(f, i, attributes, offset)
+            segment.can_change_translation = can_change_translation
+            segment.file_index = j
+            segments[i] = segment
 
         root = segments[0]
         cls.add_segment(root, segments, actor.skeleton[0])

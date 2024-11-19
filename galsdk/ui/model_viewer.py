@@ -116,15 +116,15 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
 
         self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
-        self.model_frame.grid(row=0, column=2, sticky=tk.NE)
-        anim_frame.grid(row=1, column=2, sticky=tk.S + tk.EW)
+        self.model_frame.grid(row=0, column=3, sticky=tk.NS + tk.E)
+        anim_frame.grid(row=1, column=3, sticky=tk.S + tk.EW)
         anim_set_label.pack(padx=10, side=tk.LEFT)
         self.anim_set_select.pack(padx=10, side=tk.LEFT)
         anim_label.pack(padx=10, side=tk.LEFT)
         self.anim_select.pack(padx=10, side=tk.LEFT)
 
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(2, weight=1)
+        self.grid_columnconfigure(3, weight=1)
 
         self.tree.bind('<<TreeviewSelect>>', self.select_model)
         self.tree.bind('<Button-3>', self.handle_right_click)
@@ -132,7 +132,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
 
     def resize_3d(self, _=None):
         self.update()
-        x, y, width, height = self.grid_bbox(2, 0)
+        x, y, width, height = self.grid_bbox(3, 0)
         self.model_frame.resize(width, height)
 
     @abstractmethod
