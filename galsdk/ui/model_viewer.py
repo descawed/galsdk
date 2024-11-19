@@ -81,7 +81,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
     def __init__(self, name: str, project: Project, base: ShowBase):
         super().__init__(name, project)
         self.base = base
-        self.models = []
+        self.models: list[Model] = []
         self.current_index = None
         self.exportable_ids = set()
         self.export_index = None
@@ -200,6 +200,19 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         if did_set_animations:
             model.set_animations(None)
 
+    def set_model(self, index: int):
+        if index == self.current_index:
+            return
+
+        self.current_index = index
+        model = self.models[index]
+        self.model_frame.set_model(model)
+        self.anim_set_select.configure(state='readonly')
+        if model.anim_index is not None:
+            self.set_anim_set_index(model.anim_index)
+        else:
+            self.anim_set_var.set('None')
+
     def select_model(self, _):
         self.export_menu.unpost()
         try:
@@ -208,15 +221,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
             # not a model
             return
 
-        if index != self.current_index:
-            self.current_index = index
-            model = self.models[index]
-            self.model_frame.set_model(model)
-            self.anim_set_select.configure(state='readonly')
-            if model.anim_index is not None:
-                self.set_anim_set_index(model.anim_index)
-            else:
-                self.anim_set_var.set('None')
+        self.set_model(index)
 
     def set_active(self, is_active: bool):
         self.model_frame.set_active(is_active)

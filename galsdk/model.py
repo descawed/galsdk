@@ -8,7 +8,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, BinaryIO, Iterator, Self
+from typing import Any, BinaryIO, Iterator, NamedTuple, Self
 
 import numpy as np
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
@@ -54,6 +54,14 @@ class Glb(IntEnum):
     MAGIC = 0x46546C67
     JSON = 0x4E4F534A
     BIN = 0x004E4942
+
+
+class Vertex(NamedTuple):
+    x: int
+    y: int
+    z: int
+    u: int
+    v: int
 
 
 class Segment:
@@ -102,10 +110,8 @@ class Segment:
 
         return node_path
 
-    def flatten(self, new_attributes: dict[tuple[int, int, int, int, int], int],
-                original_attributes: list[tuple[int, int, int, int, int]],
-                rotations: list[np.ndarray] = None,
-                parent_transform: np.ndarray = None) -> list[tuple[int, int, int]]:
+    def flatten(self, new_attributes: dict[Vertex, int], original_attributes: list[Vertex],
+                rotations: list[np.ndarray] = None, parent_transform: np.ndarray = None) -> list[tuple[int, int, int]]:
         if rotations and self.index < len(rotations):
             rotation = rotations[self.index]
         else:
@@ -137,7 +143,7 @@ class Segment:
                 vert = np.array([x / 4096, y / 4096, z / 4096, 1.])
                 transformed = transform @ vert
                 cartesian = transformed[:3] / transformed[3]
-                new_vert = (int(cartesian[0] * 4096), int(cartesian[1] * 4096), int(cartesian[2] * 4096), u, v)
+                new_vert = Vertex(int(cartesian[0] * 4096), int(cartesian[1] * 4096), int(cartesian[2] * 4096), u, v)
                 new_tri.append(new_attributes.setdefault(new_vert, len(new_attributes)))
             new_tris.append(tuple(new_tri))
         for child in self.children:
@@ -393,7 +399,7 @@ UV_SIZE = 2 * 4
 class Model(FileFormat):
     """A 3D model of a game object"""
 
-    def __init__(self, attributes: list[tuple[int, int, int, int, int]], root_segments: list[Segment],
+    def __init__(self, attributes: list[Vertex], root_segments: list[Segment],
                  all_segments: list[Segment], texture: Tim, use_transparency: bool = False, anim_index: int = None):
         self.attributes = attributes
         self.root_segments = root_segments
@@ -444,11 +450,48 @@ class Model(FileFormat):
         texture.load(panda_image)
         return texture
 
+    def focus_segment(self, index: int, node_path: NodePath = None, focus_alpha: float = 1., unfocus_alpha: float = 0.5):
+        """
+        Make all segments except for the focused segment transparent
+
+        :param index: The index of the segment to focus
+        :param node_path: For internal use only
+        :param focus_alpha: For internal use only
+        :param unfocus_alpha: For internal use only
+        """
+
+        if node_path is None:
+            node_path = self.get_panda3d_model()
+
+        name: str = node_path.getName()
+        if name != f'segment{index}':
+            node_path.setColorScale(1., 1., 1., unfocus_alpha)
+            new_unfocus_alpha = 1.  # just keep alpha from the parent
+            new_focus_alpha = focus_alpha / unfocus_alpha  # scale back to the desired value
+        else:
+            node_path.setColorScale(1., 1., 1., focus_alpha)
+            new_unfocus_alpha = 0.5  # any children of the focused segment need the alpha reapplied
+            new_focus_alpha = focus_alpha  # we shouldn't need this again, so just keep the old value
+
+        for child in node_path.getChildren():
+            self.focus_segment(index, child, new_focus_alpha, new_unfocus_alpha)
+
+    def unfocus(self, node_path: NodePath = None):
+        """
+        Clear any focus effect set with focus_segment
+        """
+        if node_path is None:
+            node_path = self.get_panda3d_model()
+
+        node_path.clearColorScale()
+        for child in node_path.getChildren():
+            self.unfocus(child)
+
     @property
     def texture_height(self) -> int:
         return TEXTURE_HEIGHT * self.texture.num_palettes
 
-    def _flatten(self) -> tuple[list[tuple[int, int, int]], list[tuple[int, int, int, int, int]]]:
+    def _flatten(self) -> tuple[list[tuple[int, int, int]], list[Vertex]]:
         new_tris = []
         new_attributes = {}
         for segment in self.root_segments:
@@ -962,7 +1005,7 @@ illum 0
         return image
 
     @staticmethod
-    def _read_chunk(f: BinaryIO, num_vertices: int, extra_len: int = 0) -> list[tuple[int, int, int, int, int]]:
+    def _read_chunk(f: BinaryIO, num_vertices: int, extra_len: int = 0) -> list[Vertex]:
         num_shorts = num_vertices * 3
         num_bytes = num_vertices * 2
         data_size = num_shorts * 2 + num_bytes
@@ -981,7 +1024,7 @@ illum 0
                 v = rest[m * 2 + 1]
                 attr_index = m + k * num_vertices
                 attrs = attributes[attr_index]
-                attributes[attr_index] = (attrs[0], attrs[1], attrs[2], u, v)
+                attributes[attr_index] = Vertex(attrs[0], attrs[1], attrs[2], u, v)
         return attributes
 
     @staticmethod
@@ -997,7 +1040,7 @@ illum 0
         return tim
 
     @classmethod
-    def _read_segment(cls, f: BinaryIO, index: int, attributes: dict[tuple[int, int, int, int, int], int],
+    def _read_segment(cls, f: BinaryIO, index: int, attributes: dict[Vertex, int],
                       offset: tuple[int, int, int] = (0, 0, 0)) -> Segment:
         clut_index = int.from_bytes(f.read(2), 'little')
         tri_attrs = []
@@ -1009,7 +1052,7 @@ illum 0
         tri_attrs.extend(cls._read_chunk(f, 3, 0x12))
 
         tri_attrs_final, quad_attrs_final = ([
-            attributes.setdefault((x, y, z, u, v + TEXTURE_HEIGHT * clut_index), len(attributes))
+            attributes.setdefault(Vertex(x, y, z, u, v + TEXTURE_HEIGHT * clut_index), len(attributes))
             for x, y, z, u, v in attrs
         ] for attrs in [tri_attrs, quad_attrs])
 
@@ -1030,8 +1073,8 @@ class ActorModel(Model):
     NUM_SEGMENTS = 19
     SEGMENT_ORDER = [0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 5, 15, 16, 8, 17, 18]
 
-    def __init__(self, name: str, actor_id: int, attributes: list[tuple[int, int, int, int, int]],
-                 root: Segment, all_segments: list[Segment], texture: Tim, anim_index: int = None):
+    def __init__(self, name: str, actor_id: int, attributes: list[Vertex], root: Segment, all_segments: list[Segment],
+                 texture: Tim, anim_index: int = None):
         super().__init__(attributes, [root], all_segments, texture, anim_index=anim_index)
         self.name = name
         self.id = actor_id
@@ -1083,8 +1126,8 @@ class ItemModel(Model):
 
     MAX_SEGMENTS = 19
 
-    def __init__(self, name: str, attributes: list[tuple[int, int, int, int, int]],
-                 segments: list[Segment], texture: Tim, use_transparency: bool = False):
+    def __init__(self, name: str, attributes: list[Vertex], segments: list[Segment], texture: Tim,
+                 use_transparency: bool = False):
         super().__init__(attributes, segments, segments, texture, use_transparency)
         self.name = name
 
