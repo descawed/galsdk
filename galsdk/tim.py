@@ -10,7 +10,7 @@ from PIL import Image
 
 from galsdk import file
 from galsdk.compress import dictionary as dictcmp
-from galsdk.format import Archive, FileFormat
+from galsdk.format import Archive, FileFormat, JsonType
 from psx.tim import Tim
 
 
@@ -134,7 +134,7 @@ class TimDb(Archive[Tim]):
         """Create a new, empty TIM database"""
         super().__init__()
         self.images = []
-        self.offsets = {}
+        self.offsets: dict[int, int] = {}
         self.format = fmt
         self.allow_flatten = allow_flatten
 
@@ -301,15 +301,24 @@ class TimDb(Archive[Tim]):
         return self.format == self.Format.COMPRESSED_DB
 
     @property
+    def addresses(self) -> dict[int, int]:
+        if len(self.offsets) != len(self.images):
+            # do a dummy write to update our addresses
+            with io.BytesIO() as buf:
+                self.write(buf)
+
+        return self.offsets
+
+    @property
     def should_flatten(self) -> bool:
         return self.allow_flatten and self.format.is_stream and len(self.images) == 1
 
     @property
-    def metadata(self) -> dict[str, str]:
+    def metadata(self) -> dict[str, JsonType]:
         return {'fmt': self.format.extension}
 
     @classmethod
-    def from_metadata(cls, metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+    def from_metadata(cls, metadata: dict[str, JsonType]) -> Self:
         return cls(cls.Format.from_extension(metadata['fmt']))
 
     @classmethod

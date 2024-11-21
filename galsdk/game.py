@@ -266,7 +266,7 @@ class GameVersion:
                 'Two-Headed Eagle',
                 "Dr. Lem's Notes",
                 "Lilia's image data",
-                'Materials Disk',  # not sure about this translation; 資料ディスク
+                'Data Disk',
                 'Control Room Key',
                 'Two-Headed Monkey',
                 'Research Lab Key',
@@ -335,6 +335,7 @@ class GameVersion:
                 '3 Ball',
                 'Shed Key',
                 'Letter from Lilia',
+                'Vial',
             ]
 
     @property
@@ -410,6 +411,20 @@ class GameVersion:
     def flag_counts(self) -> list[int]:
         # TODO: update these counts for Zanmai
         return [154, 112, 147, 83]
+
+    def get_item_transparency(self, item_id: int, num_model_segments: int) -> bool:
+        """
+        Determine whether the second segment of an item model should be transparent
+
+        The second segment is the only one that is ever transparent in any version of the game
+
+        :param item_id: The ID of the item to check
+        :param num_model_segments: The number of segments in the item model
+        :return: Whether the second segment should be transparent
+        """
+        if item_id == 24 and not self.is_zanmai:  # Lilia's doll
+            return False
+        return num_model_segments >= 2
 
 
 VERSIONS = [

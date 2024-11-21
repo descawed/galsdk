@@ -19,7 +19,7 @@ from galsdk.font import Font, LatinFont, JapaneseFont
 from galsdk.game import Stage, NUM_MAPS, MAP_NAMES, MODULE_ENTRY_SIZE, STAGE_MAPS, GameVersion, VERSIONS, ADDRESSES
 from galsdk.manifest import FromManifest, Manifest
 from galsdk.menu import ComponentInstance, Menu
-from galsdk.model import ACTORS, ZANMAI_ACTORS, ActorModel, ItemModel
+from galsdk.model import ACTORS, ZANMAI_ACTORS, Actor, ActorModel, ItemModel
 from galsdk.module import RoomModule
 from galsdk.movie import Movie
 from galsdk.string import StringDb, LatinStringDb, JapaneseStringDb
@@ -31,11 +31,22 @@ from psx.exe import Exe, Region
 
 
 @dataclass
+class ItemArt:
+    model_id: int
+    background_index: int
+    scale: int
+    num_model_segments: int
+
+
+@dataclass
 class Item:
     id: int
     name: str
     model: ItemModel | None
+    background_index: int | None
+    scale: int | None
     description_index: int
+    model_id: int | None
     is_key_item: bool = True
 
 
@@ -88,6 +99,8 @@ class Project:
         self.module_sets = module_sets or []
         self.x_scales = x_scales or []
         self.option_menu = option_menu or []
+        self.key_item_descriptions = []
+        self.med_item_descriptions = []
         self.addresses = ADDRESSES[self.version.id]
 
     @classmethod
@@ -432,47 +445,6 @@ class Project:
                     item_art_manifest.rename(37, 'key_item_icons')
                     item_art_manifest.rename(41, 'ability_icons')
 
-        num_key_items = version.num_key_items
-        num_med_items = version.num_med_items
-        raw_item_art = struct.unpack(f'<{4 * num_key_items}I',
-                                     exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * num_key_items])
-        item_art = [(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
-                    for i in range(0, len(raw_item_art), 4)]
-
-        key_item_descriptions = list(
-            struct.unpack(f'<{num_key_items}I',
-                          exe[addresses['KeyItemDescriptions']:addresses['KeyItemDescriptions'] + 4 * num_key_items])
-        )
-        if 'MedItemDescriptions' in addresses:
-            med_item_descriptions = list(
-                struct.unpack(f'<{num_med_items}I',
-                              exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * num_med_items]
-                              )
-            )
-        else:
-            med_item_descriptions = []
-        if version.region == Region.NTSC_J:
-            # the Japanese version uses offsets instead of indexes, so we need to convert
-            menu_db_path = game_data / 'MENU.CDB'
-            with menu_db_path.open('rb') as f:
-                menu_db = Database.read(f)
-            item_art_db = TimDb.read_bytes(menu_db[item_art_id],
-                                           fmt=TimDb.Format.from_extension(item_art_manifest.type))
-            for i in range(len(key_item_descriptions)):
-                key_item_descriptions[i] = item_art_db.get_index_from_offset(key_item_descriptions[i])
-            for i in range(len(med_item_descriptions)):
-                med_item_descriptions[i] = item_art_db.get_index_from_offset(med_item_descriptions[i])
-
-        item_path = project_path / 'item.json'
-        items = []
-        for i in range(len(item_art)):
-            items.append({'id': i, 'model': item_art[i][0], 'flags': item_art[i][3],
-                          'description': key_item_descriptions[i]})
-        for i in range(len(med_item_descriptions)):
-            items.append({'id': i, 'model': None, 'flags': 0, 'description': med_item_descriptions[i]})
-        with item_path.open('w') as f:
-            json.dump(items, f)
-
         sound_dir = project_path / 'sound'
         sound_dir.mkdir(exist_ok=True)
         sound_db_path = game_data / 'SOUND.CDB'
@@ -508,12 +480,12 @@ class Project:
         return project
 
     @property
-    def actors(self) -> list[ACTORS]:
+    def actors(self) -> list[Actor]:
         return ZANMAI_ACTORS if self.version.is_zanmai else ACTORS
 
     @property
     def num_actors(self) -> int:
-        return max(actor.id if actor.model_index is None else -1 for actor in self.actors) + 1
+        return 1 + max(actor.id if actor.model_index is None else -1 for actor in self.actors)
 
     @staticmethod
     def _get_maps(module_set_addr: int, exe: Exe) -> list[list[dict[str, int]]]:
@@ -746,8 +718,7 @@ class Project:
         module_set_addrs = struct.unpack(f'<{NUM_MAPS}I',
                                          exe[module_set_addr:module_set_addr + 4 * NUM_MAPS])
         for (map_, address) in zip(maps, module_set_addrs, strict=True):
-            map_bytes = map_.to_bytes()
-            exe[address:address + len(map_bytes)] = map_bytes
+            exe.patch(address, map_.to_bytes())
         with exe_path.open('wb') as f:
             exe.write(f)
 
@@ -797,50 +768,74 @@ class Project:
         for path in sorted((self.project_dir / 'art').iterdir()):
             yield Manifest.load_from(path)
 
-    def get_item_info(self) -> list[dict[str, int | None]]:
-        # FIXME: we can only partially reload the info from the exe because we have no way to get back to the offsets
-        #  after unpacking the TIM DB
-        num_key_items = self.version.num_key_items
+    def _get_item_art(self, exe: Exe) -> list[ItemArt]:
         addresses = self.addresses
-        raw_item_art = struct.unpack(f'<{4 * num_key_items}I',
-                                     self.exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * num_key_items])
-        item_art = [(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
-                    for i in range(0, len(raw_item_art), 4)]
 
-        json_path = self.project_dir / 'item.json'
-        with json_path.open() as f:
-            info = json.load(f)
-        for entry in info:
-            if entry['model'] is not None:
-                entry['model'] = item_art[entry['id']][0]
-                entry['flags'] = item_art[entry['id']][3]
-        with json_path.open('w') as f:
-            json.dump(info, f)
-        return info
+        num_key_items = self.version.num_key_items
+        raw_item_art = struct.unpack(f'<{4 * num_key_items}I',
+                                     exe[addresses['ItemArt']:addresses['ItemArt'] + 16 * num_key_items])
+        return [ItemArt(raw_item_art[i], raw_item_art[i + 1], raw_item_art[i + 2], raw_item_art[i + 3])
+                for i in range(0, len(raw_item_art), 4)]
+
+    def _get_item_descriptions(self, exe: Exe) -> tuple[list[int], list[int]]:
+        addresses = self.addresses
+
+        num_key_items = self.version.num_key_items
+        key_item_descriptions = list(
+            struct.unpack(f'<{num_key_items}I',
+                          exe[addresses['KeyItemDescriptions']:addresses['KeyItemDescriptions'] + 4 * num_key_items])
+        )
+
+        num_med_items = self.version.num_med_items
+        if 'MedItemDescriptions' in addresses:
+            med_item_descriptions = list(
+                struct.unpack(f'<{num_med_items}I',
+                              exe[addresses['MedItemDescriptions']:addresses['MedItemDescriptions'] + 4 * num_med_items]
+                              )
+            )
+        else:
+            med_item_descriptions = []
+
+        if self.version.region == Region.NTSC_J:
+            # the Japanese version uses offsets instead of indexes, so we need to convert
+            menu_manifest = Manifest.load_from(self.project_dir / 'art' / 'MENU')
+            for i in range(len(key_item_descriptions)):
+                key_item_descriptions[i] = menu_manifest.get_index_from_address(key_item_descriptions[i])
+            for i in range(len(med_item_descriptions)):
+                med_item_descriptions[i] = menu_manifest.get_index_from_address(med_item_descriptions[i])
+
+        return key_item_descriptions, med_item_descriptions
 
     def get_items(self, key_items: bool | None = None) -> Iterator[Item]:
-        model_manifest = Manifest.load_from(self.project_dir / 'models')
-        info = self.get_item_info()
-        for entry in info:
-            is_key_item = entry['model'] is not None
-            if key_items is not None and is_key_item != key_items:
-                continue
-            if is_key_item:
-                name = self.version.key_item_names[entry['id']]
-                model_file = model_manifest[entry['model']]
-                with model_file.path.open('rb') as f:
-                    model = ItemModel.read(f, name=name, use_transparency=entry['flags'] & 1 == 0)
-            else:
-                name = self.version.med_item_names[entry['id']]
-                model = None
-            yield Item(entry['id'], name, model, entry['description'], is_key_item)
+        include_key_items = key_items is not False
+        include_med_items = key_items is not True
 
-    def get_all_models(self) -> tuple[dict[int, ActorModel], dict[int, ItemModel], dict[int, ItemModel]]:
+        exe = self.exe
+
+        item_art = self._get_item_art(exe)
+        key_item_descriptions, med_item_descriptions = self._get_item_descriptions(exe)
+
+        if include_key_items:
+            model_manifest = Manifest.load_from(self.project_dir / 'models')
+            for i in range(len(item_art)):
+                name = self.version.key_item_names[i]
+                this_art = item_art[i]
+                model_file = model_manifest[this_art.model_id]
+                transparent_segments = [1] if self.version.get_item_transparency(i, this_art.num_model_segments) else []
+                with model_file.path.open('rb') as f:
+                    model = ItemModel.read(f, name=name, num_segments=this_art.num_model_segments,
+                                           transparent_segments=transparent_segments, scale=this_art.scale)
+                yield Item(i, name, model, this_art.background_index, this_art.scale, key_item_descriptions[i],
+                           this_art.model_id)
+
+        if include_med_items:
+            for i in range(len(med_item_descriptions)):
+                name = self.version.med_item_names[i]
+                yield Item(i, name, None, None, None, med_item_descriptions[i], None, False)
+
+    def get_all_models(self) -> tuple[dict[int, FromManifest[ActorModel]], dict[int, FromManifest[ItemModel]], dict[int, FromManifest[ItemModel]]]:
         is_zanmai = self.version.is_zanmai
         model_manifest = Manifest.load_from(self.project_dir / 'models')
-        json_path = self.project_dir / 'item.json'
-        with json_path.open() as f:
-            item_info = json.load(f)
 
         actor_models = {}
         for actor in self.actors:
@@ -856,29 +851,30 @@ class Project:
             if model_index not in actor_models:
                 actor_models[model_index] = (actor, anim_index)
 
-        item_models = {}
-        for entry in item_info:
-            if entry['model'] is not None and entry['model'] not in item_models:
-                item_models[entry['model']] = (self.version.key_item_names[entry['id']], entry['flags'] & 1 == 0)
+        item_art = self._get_item_art(self.exe)
+        item_models = {art.model_id: i for i, art in enumerate(item_art)}
 
         actors = {}
         items = {}
         other = {}
         for i, model_file in enumerate(model_manifest):
-            with model_file.path.open('rb') as f:
-                if i in actor_models:
-                    actor, anim_index = actor_models[i]
-                    actors[i] = ActorModel.read(f, actor=actor, anim_index=anim_index)
-                elif i in item_models:
-                    name, use_transparency = item_models[i]
-                    items[i] = ItemModel.read(f, name=name, use_transparency=use_transparency)
-                else:
-                    try:
-                        other[i] = ActorModel.read(f) if model_file.format == '.G3A' else ItemModel.read(f, name=str(i))
-                    except Exception:
-                        # swallow exceptions for Zanmai as we don't have all those models working yet
-                        if not is_zanmai:
-                            raise
+            if i in actor_models:
+                actor, anim_index = actor_models[i]
+                actors[i] = model_manifest.load_file(i, ActorModel, actor=actor, anim_index=anim_index)
+            elif i in item_models:
+                item_id = item_models[i]
+                art = item_art[item_id]
+                name = self.version.key_item_names[item_id]
+                transparent_segments = [1] if self.version.get_item_transparency(item_id, art.num_model_segments) else []
+                items[i] = model_manifest.load_file(i, ItemModel, name=name, num_segments=art.num_model_segments,
+                                                    transparent_segments=transparent_segments, scale=art.scale)
+            else:
+                try:
+                    other[i] = model_manifest.load_file(i, ActorModel) if model_file.format == '.G3A' else model_manifest.load_file(i, ItemModel, name=str(i))
+                except Exception:
+                    # swallow exceptions for Zanmai as we don't have all those models working yet
+                    if not is_zanmai:
+                        raise
 
         return actors, items, other
 

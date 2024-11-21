@@ -8,7 +8,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, BinaryIO, Iterator, NamedTuple, Self
+from typing import Any, BinaryIO, Container, Iterator, NamedTuple, Self, Sequence
 
 import numpy as np
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
@@ -68,7 +68,8 @@ class Segment:
     def __init__(self, index: int, clut_index: int, triangles: list[tuple[int, int, int]],
                  quads: list[tuple[int, int, int, int]], offset: tuple[int, int, int] = (0, 0, 0),
                  total_offset: tuple[int, int, int] = None, children: list[Segment] = None,
-                 can_change_translation: bool = False, file_index: int = None):
+                 can_change_translation: bool = False, file_index: int = None,
+                 has_transparency: bool = False):
         self.index = index
         self.clut_index = clut_index
         self.triangles = triangles
@@ -78,6 +79,7 @@ class Segment:
         self.children = children or []
         self.can_change_translation = can_change_translation
         self.file_index = index if file_index is None else file_index
+        self.has_transparency = has_transparency
 
     def __len__(self) -> int:
         return 1 + sum(len(child) for child in self.children)
@@ -403,17 +405,23 @@ class Model(FileFormat):
     """A 3D model of a game object"""
 
     def __init__(self, attributes: list[Vertex], root_segments: list[Segment],
-                 all_segments: list[Segment], texture: Tim, use_transparency: bool = False, anim_index: int = None):
+                 all_segments: list[Segment], texture: Tim, use_transparency: bool = False, anim_index: int = None,
+                 scale: int = None):
         self.attributes = attributes
         self.root_segments = root_segments
         self.all_segments = all_segments
         self.texture = texture
         self.use_transparency = use_transparency
         self.anim_index = anim_index
+        self.scale = scale
         self.animations = None
 
     def set_animations(self, animations: AnimationDb | None):
         self.animations = animations
+
+    @property
+    def panda_scale(self) -> float:
+        return 1. if self.scale is None else self.scale / 100
 
     @property
     @abstractmethod
@@ -438,6 +446,10 @@ class Model(FileFormat):
         for segment in self.root_segments:
             child_path = segment.as_node_path(vdata)
             child_path.reparentTo(node_path)
+
+        if self.scale is not None:
+            node_path.setScale(self.panda_scale)
+
         return node_path
 
     @functools.cache
@@ -1037,10 +1049,13 @@ illum 0
         raise NotImplementedError
 
     def get_texture_image(self) -> Image:
+        if self.use_transparency:
+            transparent_palettes = {segment.clut_index for segment in self.all_segments if segment.has_transparency}
+        else:
+            transparent_palettes = set()
         image = Image.new('RGBA', (TEXTURE_WIDTH, self.texture_height))
         for i in range(self.texture.num_palettes):
-            # FIXME: the exact transparency level seems to vary from item to item and I don't know what controls it
-            transparency = Transparency.SEMI if self.use_transparency and i > 0 else Transparency.NONE
+            transparency = Transparency.SEMI if i in transparent_palettes else Transparency.NONE
             sub_image = self.texture.to_image(i, transparency)
             image.paste(sub_image, (0, TEXTURE_HEIGHT * i))
         return image
@@ -1054,7 +1069,7 @@ illum 0
         attributes = []
         for k in range(count):
             data = f.read(data_size)
-            raw_face = struct.unpack(f'{num_shorts}h{num_bytes}B', data)
+            raw_face = struct.unpack(f'<{num_shorts}h{num_bytes}B', data)
             f.seek(extra_len, 1)
             for m in range(num_vertices):
                 x, y, z = raw_face[m * 3:(m + 1) * 3]
@@ -1069,6 +1084,21 @@ illum 0
         return attributes
 
     @staticmethod
+    def _write_chunk(f: BinaryIO, polygons: list[Sequence[Vertex]], extra_len: int = 0):
+        num_polygons = len(polygons)
+        f.write(num_polygons.to_bytes(2, 'little'))
+        if num_polygons == 0:
+            return
+
+        dummy_data = bytes(extra_len)
+        for polygon in polygons:
+            for vertex in polygon:
+                f.write(struct.pack('<3h', vertex.x, vertex.y, vertex.z))
+            for vertex in polygon:
+                f.write(struct.pack('<2B', vertex.u, vertex.v % TEXTURE_HEIGHT))
+            f.write(dummy_data)
+
+    @staticmethod
     def _read_tim(f: BinaryIO) -> Tim:
         texture = f.read(0x8000)
         clut = f.read(0x80)
@@ -1080,9 +1110,25 @@ illum 0
 
         return tim
 
+    def _write_tim(self, f: BinaryIO):
+        f.write(self.texture.image_data)
+        f.write(self.texture.clut_data)
+
+    def _write_segment(self, f: BinaryIO, segment: Segment):
+        f.write(segment.clut_index.to_bytes(2, 'little'))
+        tri_verts = [[self.attributes[i] for i in triangle] for triangle in segment.triangles]
+        quad_verts = [[self.attributes[i] for i in quad] for quad in segment.quads]
+        # don't know how or why to break each polygon up in the two groups, so we'll just write them all in the first
+        # group and leave the second one empty
+        self._write_chunk(f, quad_verts)
+        self._write_chunk(f, tri_verts)
+        self._write_chunk(f, [])
+        self._write_chunk(f, [])
+
     @classmethod
     def _read_segment(cls, f: BinaryIO, index: int, attributes: dict[Vertex, int],
-                      offset: tuple[int, int, int] = (0, 0, 0)) -> Segment:
+                      offset: tuple[int, int, int] = (0, 0, 0), can_change_translation: bool = False,
+                      file_index: int = None, has_transparency: bool = False) -> Segment:
         clut_index = int.from_bytes(f.read(2), 'little')
         tri_attrs = []
         quad_attrs = []
@@ -1105,7 +1151,8 @@ illum 0
             for i in range(0, len(quad_attrs), 4)
         ]
 
-        return Segment(index, clut_index, triangles, quads, offset)
+        return Segment(index, clut_index, triangles, quads, offset, can_change_translation=can_change_translation,
+                       file_index=index if file_index is None else file_index, has_transparency=has_transparency)
 
 
 class ActorModel(Model):
@@ -1151,9 +1198,7 @@ class ActorModel(Model):
             except IndexError:
                 offset = (0, 0, 0)
                 can_change_translation = False
-            segment = cls._read_segment(f, i, attributes, offset)
-            segment.can_change_translation = can_change_translation
-            segment.file_index = j
+            segment = cls._read_segment(f, i, attributes, offset, can_change_translation, j)
             segments[i] = segment
 
         root = segments[0]
@@ -1166,6 +1211,14 @@ class ActorModel(Model):
 
         return cls(actor.name, actor.id, list(attributes), root, segments, tim, anim_index)
 
+    def write(self, f: BinaryIO, **kwargs):
+        all_offsets = [o for segment in self.all_segments for o in segment.offset]
+        f.write(struct.pack('<46h', *all_offsets[:46]))
+        self._write_tim(f)
+
+        for segment in sorted(self.all_segments, key=lambda s: s.file_index):
+            self._write_segment(f, segment)
+
 
 class ItemModel(Model):
     """A 3D model of an item"""
@@ -1173,7 +1226,7 @@ class ItemModel(Model):
     MAX_SEGMENTS = 19
 
     def __init__(self, name: str, attributes: list[Vertex], segments: list[Segment], texture: Tim,
-                 use_transparency: bool = False):
+                 use_transparency: bool = False, scale: int = None):
         super().__init__(attributes, segments, segments, texture, use_transparency)
         self.name = name
 
@@ -1193,22 +1246,34 @@ class ItemModel(Model):
 
     @classmethod
     def read(cls, f: BinaryIO, *, name: str = '', use_transparency: bool = False, strict_mode: bool = False,
+             num_segments: int = None, transparent_segments: Container[int] = None, scale: int = None,
              **kwargs) -> ItemModel:
+        if transparent_segments:
+            use_transparency = True
+        else:
+            transparent_segments = []
+
         tim = cls._read_tim(f)
 
         attributes = {}
         segments = []
-        for i in range(cls.MAX_SEGMENTS):
+        for i in range(cls.MAX_SEGMENTS if num_segments is None else num_segments):
             try:
-                segments.append(cls._read_segment(f, i, attributes))
+                segments.append(cls._read_segment(f, i, attributes, has_transparency=i in transparent_segments))
             except ValueError:
                 # MODEL.CDB 92 and 93 fail to load with this enabled, but it's appropriate for sniffing
-                if strict_mode:
+                # if num_segments is set,
+                if strict_mode or num_segments is not None:
                     raise
                 break
             except struct.error:
                 break
-        return cls(name, list(attributes), segments, tim, use_transparency)
+        return cls(name, list(attributes), segments, tim, use_transparency, scale)
+
+    def write(self, f: BinaryIO, **kwargs):
+        self._write_tim(f)
+        for segment in self.all_segments:
+            self._write_segment(f, segment)
 
 
 def export(model_path: str, target_path: str, animation_path: str | None, actor_id: int | None, differential: bool):

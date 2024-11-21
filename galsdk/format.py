@@ -8,6 +8,9 @@ from typing import BinaryIO, Iterable, Iterator, Self
 from galsdk.file import KeepReader
 
 
+type JsonType = bool | int | float | str | list | tuple | dict | None
+
+
 class FileFormat(ABC):
     @classmethod
     def sniff_bytes(cls, data: bytes) -> Self | None:
@@ -69,7 +72,17 @@ class Archive[T](FileFormat):
     @property
     @abstractmethod
     def supports_nesting(self) -> bool:
+        """Can this archive contain other archives?"""
         pass
+
+    @property
+    def addresses(self) -> dict[int, int]:
+        """
+        A mapping of addresses within the archive to indexes of the corresponding files
+
+        May be empty if this is not relevant to the specific type of archive
+        """
+        return {}
 
     @property
     def is_ready(self) -> bool:
@@ -86,11 +99,11 @@ class Archive[T](FileFormat):
         return False
 
     @property
-    def metadata(self) -> dict[str, bool | int | float | str | list | tuple | dict]:
+    def metadata(self) -> dict[str, JsonType]:
         return {}
 
     @classmethod
-    def from_metadata(cls, _metadata: dict[str, bool | int | float | str | list | tuple | dict]) -> Self:
+    def from_metadata(cls, _metadata: dict[str, JsonType]) -> Self:
         return cls()
 
     @abstractmethod

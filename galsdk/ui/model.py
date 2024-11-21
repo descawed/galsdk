@@ -13,6 +13,7 @@ class ModelTab(ModelViewerTab):
     """Tab for viewing arbitrary 3D models from the game"""
 
     def __init__(self, project: Project, base: ShowBase):
+        self.manifest_models = []
         super().__init__('Model', project, base)
         self.focus: tuple[int | None, int | None] = (None, None)
         self.changed_model_indexes = set()
@@ -92,8 +93,10 @@ class ModelTab(ModelViewerTab):
         self.tree.insert('', tk.END, text='Other', iid='other', open=False)
 
         for category, models in zip(['actors', 'items', 'other'], self.project.get_all_models()):
-            for i, model in models.items():
+            for i, manifest_model in models.items():
                 model_id = len(self.models)
+                self.manifest_models.append(manifest_model)
+                model = manifest_model.obj
                 self.models.append(model)
                 iid = str(model_id)
                 self.tree.insert(category, tk.END, text=f'#{i}: {model.name}', iid=iid)
@@ -170,6 +173,23 @@ class ModelTab(ModelViewerTab):
             model.focus_segment(segment_index)
         else:
             model.unfocus()
+
+    def save(self):
+        for model_id in self.changed_model_indexes:
+            self.manifest_models[model_id].save()
+            model_iid = str(model_id)
+            label = self.tree.item(model_iid, 'text')
+            if label.startswith('* '):
+                self.tree.item(model_iid, text=label[2:])
+
+        for model_id, segment_id in self.changed_segments:
+            segment_iid = f'{model_id}_segment_{segment_id}'
+            label = self.tree.item(segment_iid, 'text')
+            if label.startswith('* '):
+                self.tree.item(segment_iid, text=label[2:])
+
+        self.changed_model_indexes.clear()
+        self.changed_segments.clear()
 
     @property
     def has_unsaved_changes(self) -> bool:
