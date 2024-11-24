@@ -8,7 +8,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, BinaryIO, Container, Iterator, NamedTuple, Self, Sequence
+from typing import Any, BinaryIO, Container, Iterator, Self, Sequence
 
 import numpy as np
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
@@ -56,12 +56,33 @@ class Glb(IntEnum):
     BIN = 0x004E4942
 
 
-class Vertex(NamedTuple):
+@dataclass(eq=True, frozen=True)
+class Vertex:
     x: int
     y: int
     z: int
     u: int
     v: int
+    nx: int = None
+    ny: int = None
+    nz: int = None
+    has_original_normals: bool = False
+
+    def with_uv(self, u: int, v: int) -> Self:
+        return replace(self, u=u, v=v)
+
+    def with_normal(self, nx: int, ny: int, nz: int, is_original: bool = True) -> Self:
+        return replace(self, nx=nx, ny=ny, nz=nz, has_original_normals=is_original)
+
+    @property
+    def normal(self) -> np.ndarray:
+        norm = Point(self.nx, self.ny, self.nz).ndarray
+        if np.all(norm == 0):
+            return norm
+
+        norm /= np.linalg.norm(norm)
+        # PS1 normals point inwards, so need to flip them
+        return -norm
 
 
 class Segment:
@@ -144,11 +165,15 @@ class Segment:
         for tri in self.all_triangles:
             new_tri = []
             for index in tri:
-                x, y, z, u, v = original_attributes[index]
-                vert = np.array([x / 4096, y / 4096, z / 4096, 1.])
+                v = original_attributes[index]
+                vert = np.array([v.x / 4096, v.y / 4096, v.z / 4096, 1.])
                 transformed = transform @ vert
                 cartesian = transformed[:3] / transformed[3]
-                new_vert = Vertex(int(cartesian[0] * 4096), int(cartesian[1] * 4096), int(cartesian[2] * 4096), u, v)
+                normal = np.array([v.nx / 4096, v.ny / 4096, v.nz / 4096, 1.])
+                transformed_normal = transform @ normal
+                cartesian_normal = transformed_normal[:3] / transformed_normal[3]
+                new_vert = replace(v, x=int(cartesian[0] * 4096), y=int(cartesian[1] * 4096), z=int(cartesian[2] * 4096),
+                                   nx=int(cartesian_normal[0] * 4096), ny=int(cartesian_normal[1] * 4096), nz=int(cartesian_normal[2] * 4096))
                 new_tri.append(new_attributes.setdefault(new_vert, len(new_attributes)))
             new_tris.append(tuple(new_tri))
         for child in self.children:
@@ -430,17 +455,22 @@ class Model(FileFormat):
 
     @functools.cache
     def get_panda3d_model(self) -> NodePath:
-        vdata = GeomVertexData('', GeomVertexFormat.getV3t2(), Geom.UHStatic)
+        vdata = GeomVertexData('', GeomVertexFormat.getV3n3t2(), Geom.UHStatic)
         vdata.setNumRows(len(self.attributes))
 
         vertex = GeomVertexWriter(vdata, 'vertex')
+        normal = GeomVertexWriter(vdata, 'normal')
         texcoord = GeomVertexWriter(vdata, 'texcoord')
 
         tex_height = self.texture_height
-        for x, y, z, u, v in self.attributes:
-            point = Point(x, y, z)
+        for vert in self.attributes:
+            point = Point(vert.x, vert.y, vert.z)
+            # by this point all vertices should have normals because we should've calculated them for the ones that
+            # didn't have them
+            norm = vert.normal
             vertex.addData3(point.panda_x, point.panda_y, point.panda_z)
-            texcoord.addData2(u / TEXTURE_WIDTH, (tex_height - v) / tex_height)
+            normal.addData3(norm[0], norm[1], norm[2])
+            texcoord.addData2(vert.u / TEXTURE_WIDTH, (tex_height - vert.v) / tex_height)
 
         node_path = NodePath(PandaNode('model_root'))
         for segment in self.root_segments:
@@ -605,6 +635,7 @@ class Model(FileFormat):
             cls._gltf_add_segment(gltf, node, buffer, child, node_map, view_start)
 
     def as_gltf(self) -> tuple[dict[str, Any], bytes, Image.Image]:
+        # FIXME: normals
         stride = VERT_SIZE + UV_SIZE
         num_attrs = len(self.attributes)
         buffer = bytearray(num_attrs * stride)
@@ -615,23 +646,23 @@ class Model(FileFormat):
         max_x = max_y = max_z = max_u = max_v = minf
         min_x = min_y = min_z = min_u = min_v = inf
         for vert in self.attributes:
-            x = vert[0] / Dimension.SCALE_FACTOR
+            x = vert.x / Dimension.SCALE_FACTOR
             min_x = min(x, min_x)
             max_x = max(x, max_x)
 
-            y = vert[1] / Dimension.SCALE_FACTOR
+            y = vert.y / Dimension.SCALE_FACTOR
             min_y = min(y, min_y)
             max_y = max(y, max_y)
 
-            z = vert[2] / Dimension.SCALE_FACTOR
+            z = vert.z / Dimension.SCALE_FACTOR
             min_z = min(z, min_z)
             max_z = max(z, max_z)
 
-            u = vert[3] / TEXTURE_WIDTH
+            u = vert.u / TEXTURE_WIDTH
             min_u = min(u, min_u)
             max_u = max(u, max_u)
 
-            v = vert[4] / tex_height
+            v = vert.v / tex_height
             min_v = min(v, min_v)
             max_v = max(v, max_v)
 
@@ -945,6 +976,7 @@ class Model(FileFormat):
         return bytes(glb)
 
     def as_ply(self) -> str:
+        # FIXME: normals
         tris, attributes = self._flatten()
         ply = f"""ply
 format ascii 1.0
@@ -957,7 +989,7 @@ property list uchar uint vertex_indices
 end_header
 """
         for v in attributes:
-            point = Point(v[0], v[1], v[2])
+            point = Point(v.x, v.x, v.z)
             ply += f'{point.panda_x} {point.panda_y} {point.panda_z}\n'
         for t in tris:
             ply += f'3 {t[0]} {t[1]} {t[2]}\n'
@@ -973,13 +1005,20 @@ end_header
             obj += f'mtllib {material_path}\n'
         tex_height = self.texture_height
         for v in attributes:
-            obj +=\
-                f'v {v[0] / Dimension.SCALE_FACTOR} {v[1] / Dimension.SCALE_FACTOR} {v[2] / Dimension.SCALE_FACTOR}\n'\
-                f'vt {v[3] / TEXTURE_WIDTH} {(tex_height - v[4]) / tex_height}\n'
+            # OBJ format uses the same coordinate system as the PlayStation, so we don't want to do the usual
+            # coordinate transformation here. we still need to flip the normal vector, though
+            obj += (
+                f'v {v.x / Dimension.SCALE_FACTOR} {v.y / Dimension.SCALE_FACTOR} {v.z / Dimension.SCALE_FACTOR}\n'
+                f'vt {v.u / TEXTURE_WIDTH} {(tex_height - v.v) / tex_height}\n'
+                f'vn {-v.nx / 4096} {-v.ny / 4096} {-v.nz / 4096}\n'
+            )
         if material_name is not None:
             obj += f'usemtl {material_name}\n'
         for t in tris:
-            obj += f'f {t[0] + 1}/{t[0] + 1} {t[1] + 1}/{t[1] + 1} {t[2] + 1}/{t[2] + 1}\n'
+            v1 = t[0] + 1
+            v2 = t[1] + 1
+            v3 = t[2] + 1
+            obj += f'f {v1}/{v1}/{v1} {v3}/{v3}/{v3} {v2}/{v2}/{v2}\n'
 
         if material_name is not None:
             mtl = f"""newmtl {material_name}
@@ -1061,30 +1100,83 @@ illum 0
         return image
 
     @staticmethod
-    def _read_chunk(f: BinaryIO, num_vertices: int, extra_len: int = 0) -> list[Vertex]:
+    def _set_tri_normals(vertices: list[Vertex]):
+        if not vertices:
+            return
+
+        # calculate surface normals for flat shading
+        v1 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[::3]])
+        v2 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[1::3]])
+        v3 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[2::3]])
+        # we won't normalize yet, we'll do that together with the game's own normals later
+        normals = np.cross(v2 - v1, v3 - v1)
+        for i, normal in enumerate(normals):
+            # flip the vector for consistency with the game's own normals
+            point = Point.from_ndarray(-normal)
+            for j in range(3):
+                index = i * 3 + j
+                vert = vertices[index]
+                vertices[index] = vert.with_normal(point.game_x, point.game_y, point.game_z, False)
+
+    @staticmethod
+    def _set_quad_normals(vertices: list[Vertex]):
+        if not vertices:
+            return
+
+        # calculate surface normals for flat shading
+        v1 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[::4]])
+        v2 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[1::4]])
+        v3 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[2::4]])
+        v4 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[3::4]])
+        normals1 = np.cross(v2 - v1, v3 - v1)
+        normals2 = np.cross(v4 - v3, v1 - v3)
+        # we won't normalize yet, we'll do that together with the game's own normals later
+        normals = normals1 + normals2
+        for i, normal in enumerate(normals):
+            # flip the vector for consistency with the game's own normals
+            point = Point.from_ndarray(-normal)
+            for j in range(4):
+                index = i * 4 + j
+                vert = vertices[index]
+                vertices[index] = vert.with_normal(point.game_x, point.game_y, point.game_z, False)
+
+    @staticmethod
+    def _read_chunk(f: BinaryIO, num_vertices: int, has_normals: bool = False) -> list[Vertex]:
         num_shorts = num_vertices * 3
         num_bytes = num_vertices * 2
-        data_size = num_shorts * 2 + num_bytes
+        num_normal_shorts = num_shorts if has_normals else 0
+        data_size = (num_shorts + num_normal_shorts) * 2 + num_bytes
         count = file.int_from_bytes(f.read(2))
         attributes = []
+        fmt = f'<{num_shorts}h{num_bytes}B'
+        if has_normals:
+            fmt += f'{num_normal_shorts}h'
         for k in range(count):
             data = f.read(data_size)
-            raw_face = struct.unpack(f'<{num_shorts}h{num_bytes}B', data)
-            f.seek(extra_len, 1)
+            raw_face = struct.unpack(fmt, data)
             for m in range(num_vertices):
                 x, y, z = raw_face[m * 3:(m + 1) * 3]
-                attributes.append((x, y, z, 0, 0))
+                attributes.append(Vertex(x, y, z, 0, 0))
             rest = raw_face[num_shorts:]
             for m in range(num_vertices):
                 u = rest[m * 2]
                 v = rest[m * 2 + 1]
                 attr_index = m + k * num_vertices
-                attrs = attributes[attr_index]
-                attributes[attr_index] = Vertex(attrs[0], attrs[1], attrs[2], u, v)
+                attr = attributes[attr_index]
+                attributes[attr_index] = attr.with_uv(u, v)
+            if has_normals:
+                rest = rest[num_bytes:]
+                for m in range(num_vertices):
+                    nx, ny, nz = rest[m * 3:(m + 1) * 3]
+                    attr_index = m + k * num_vertices
+                    attr = attributes[attr_index]
+                    attributes[attr_index] = attr.with_normal(nx, ny, nz)
+
         return attributes
 
     @staticmethod
     def _write_chunk(f: BinaryIO, polygons: list[Sequence[Vertex]], extra_len: int = 0):
+        # FIXME: normals
         num_polygons = len(polygons)
         f.write(num_polygons.to_bytes(2, 'little'))
         if num_polygons == 0:
@@ -1132,15 +1224,20 @@ illum 0
         clut_index = int.from_bytes(f.read(2), 'little')
         tri_attrs = []
         quad_attrs = []
+
+        # flat-shaded polygons
         quad_attrs.extend(cls._read_chunk(f, 4))
+        cls._set_quad_normals(quad_attrs)
         tri_attrs.extend(cls._read_chunk(f, 3))
-        # the "extra" data is skipped by the game as well
-        quad_attrs.extend(cls._read_chunk(f, 4, 0x18))
-        tri_attrs.extend(cls._read_chunk(f, 3, 0x12))
+        cls._set_tri_normals(tri_attrs)
+
+        # gouraud-shaded polygons
+        quad_attrs.extend(cls._read_chunk(f, 4, True))
+        tri_attrs.extend(cls._read_chunk(f, 3, True))
 
         tri_attrs_final, quad_attrs_final = ([
-            attributes.setdefault(Vertex(x, y, z, u, v + TEXTURE_HEIGHT * clut_index), len(attributes))
-            for x, y, z, u, v in attrs
+            attributes.setdefault(replace(vert, v=vert.v + TEXTURE_HEIGHT * clut_index), len(attributes))
+            for vert in attrs
         ] for attrs in [tri_attrs, quad_attrs])
 
         triangles = [
