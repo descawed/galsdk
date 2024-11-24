@@ -193,5 +193,4 @@ class ModelTab(ModelViewerTab):
 
     @property
     def has_unsaved_changes(self) -> bool:
-        # TODO: implement saving
         return bool(self.changed_segments)
