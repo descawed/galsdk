@@ -1207,20 +1207,20 @@ illum 0
         return attributes
 
     @staticmethod
-    def _write_chunk(f: BinaryIO, polygons: list[Sequence[Vertex]], extra_len: int = 0):
-        # FIXME: normals
+    def _write_chunk(f: BinaryIO, polygons: list[Sequence[Vertex]], has_normals: bool = False):
         num_polygons = len(polygons)
         f.write(num_polygons.to_bytes(2, 'little'))
         if num_polygons == 0:
             return
 
-        dummy_data = bytes(extra_len)
         for polygon in polygons:
             for vertex in polygon:
                 f.write(struct.pack('<3h', vertex.x, vertex.y, vertex.z))
             for vertex in polygon:
                 f.write(struct.pack('<2B', vertex.u, vertex.v % TEXTURE_HEIGHT))
-            f.write(dummy_data)
+            if has_normals:
+                for vertex in polygon:
+                    f.write(struct.pack('<3h', vertex.nx, vertex.ny, vertex.nz))
 
     @staticmethod
     def _read_tim(f: BinaryIO) -> Tim:
@@ -1240,14 +1240,19 @@ illum 0
 
     def _write_segment(self, f: BinaryIO, segment: Segment):
         f.write(segment.clut_index.to_bytes(2, 'little'))
-        tri_verts = [[self.attributes[i] for i in triangle] for triangle in segment.triangles]
-        quad_verts = [[self.attributes[i] for i in quad] for quad in segment.quads]
-        # don't know how or why to break each polygon up in the two groups, so we'll just write them all in the first
-        # group and leave the second one empty
-        self._write_chunk(f, quad_verts)
-        self._write_chunk(f, tri_verts)
-        self._write_chunk(f, [])
-        self._write_chunk(f, [])
+        triangles = [[self.attributes[i] for i in triangle] for triangle in segment.triangles]
+        quads = [[self.attributes[i] for i in quad] for quad in segment.quads]
+        # split into flat-shaded vs gouraud-shaded groups
+        gouraud_tris = [poly for poly in triangles if all(vert.has_original_normals for vert in poly)]
+        flat_tris = [poly for poly in triangles if any(not vert.has_original_normals for vert in poly)]
+
+        gouraud_quads = [poly for poly in quads if all(vert.has_original_normals for vert in poly)]
+        flat_quads = [poly for poly in quads if any(not vert.has_original_normals for vert in poly)]
+
+        self._write_chunk(f, flat_quads)
+        self._write_chunk(f, flat_tris)
+        self._write_chunk(f, gouraud_quads, True)
+        self._write_chunk(f, gouraud_tris, True)
 
     @classmethod
     def _read_segment(cls, f: BinaryIO, index: int, attributes: dict[Vertex, int],
