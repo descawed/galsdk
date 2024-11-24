@@ -1030,6 +1030,7 @@ end_header
             mtl = f"""newmtl {material_name}
 Ka 1.000 1.000 1.000
 Kd 1.000 1.000 1.000
+Ks 0.000 0.000 0.000
 d 1.0
 illum 0
 """
