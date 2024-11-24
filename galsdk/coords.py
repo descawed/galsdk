@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import math
 
+import numpy as np
 from panda3d.core import Point3
 
 
@@ -231,6 +232,22 @@ class Point:
         self.panda_x = value[0]
         self.panda_y = value[1]
         self.panda_z = value[2]
+
+    @property
+    def ndarray(self) -> np.ndarray:
+        return np.array([self.panda_x, self.panda_y, self.panda_z])
+
+    @ndarray.setter
+    def ndarray(self, value: np.ndarray):
+        self.panda_x = value[0]
+        self.panda_y = value[1]
+        self.panda_z = value[2]
+
+    @classmethod
+    def from_ndarray(cls, ndarray: np.ndarray) -> Point:
+        point = cls()
+        point.ndarray = ndarray
+        return point
 
 
 class Line2d:

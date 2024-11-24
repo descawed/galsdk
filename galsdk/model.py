@@ -8,7 +8,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, BinaryIO, Iterator, Self
+from typing import Any, BinaryIO, Container, Iterator, Self, Sequence
 
 import numpy as np
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
@@ -56,10 +56,40 @@ class Glb(IntEnum):
     BIN = 0x004E4942
 
 
+@dataclass(eq=True, frozen=True)
+class Vertex:
+    x: int
+    y: int
+    z: int
+    u: int
+    v: int
+    nx: int = None
+    ny: int = None
+    nz: int = None
+    has_original_normals: bool = False
+
+    def with_uv(self, u: int, v: int) -> Self:
+        return replace(self, u=u, v=v)
+
+    def with_normal(self, nx: int, ny: int, nz: int, is_original: bool = True) -> Self:
+        return replace(self, nx=nx, ny=ny, nz=nz, has_original_normals=is_original)
+
+    @property
+    def normal(self) -> np.ndarray:
+        norm = Point(self.nx, self.ny, self.nz).ndarray
+        if np.all(norm == 0):
+            return norm
+
+        norm /= np.linalg.norm(norm)
+        return norm
+
+
 class Segment:
     def __init__(self, index: int, clut_index: int, triangles: list[tuple[int, int, int]],
                  quads: list[tuple[int, int, int, int]], offset: tuple[int, int, int] = (0, 0, 0),
-                 total_offset: tuple[int, int, int] = None, children: list[Segment] = None):
+                 total_offset: tuple[int, int, int] = None, children: list[Segment] = None,
+                 can_change_translation: bool = False, file_index: int = None,
+                 has_transparency: bool = False):
         self.index = index
         self.clut_index = clut_index
         self.triangles = triangles
@@ -67,6 +97,9 @@ class Segment:
         self.offset = offset
         self.total_offset = total_offset or offset
         self.children = children or []
+        self.can_change_translation = can_change_translation
+        self.file_index = index if file_index is None else file_index
+        self.has_transparency = has_transparency
 
     def __len__(self) -> int:
         return 1 + sum(len(child) for child in self.children)
@@ -102,10 +135,8 @@ class Segment:
 
         return node_path
 
-    def flatten(self, new_attributes: dict[tuple[int, int, int, int, int], int],
-                original_attributes: list[tuple[int, int, int, int, int]],
-                rotations: list[np.ndarray] = None,
-                parent_transform: np.ndarray = None) -> list[tuple[int, int, int]]:
+    def flatten(self, new_attributes: dict[Vertex, int], original_attributes: list[Vertex],
+                rotations: list[np.ndarray] = None, parent_transform: np.ndarray = None) -> list[tuple[int, int, int]]:
         if rotations and self.index < len(rotations):
             rotation = rotations[self.index]
         else:
@@ -133,11 +164,15 @@ class Segment:
         for tri in self.all_triangles:
             new_tri = []
             for index in tri:
-                x, y, z, u, v = original_attributes[index]
-                vert = np.array([x / 4096, y / 4096, z / 4096, 1.])
+                v = original_attributes[index]
+                vert = np.array([v.x / 4096, v.y / 4096, v.z / 4096, 1.])
                 transformed = transform @ vert
                 cartesian = transformed[:3] / transformed[3]
-                new_vert = (int(cartesian[0] * 4096), int(cartesian[1] * 4096), int(cartesian[2] * 4096), u, v)
+                normal = np.array([v.nx / 4096, v.ny / 4096, v.nz / 4096, 1.])
+                transformed_normal = transform @ normal
+                cartesian_normal = transformed_normal[:3] / transformed_normal[3]
+                new_vert = replace(v, x=int(cartesian[0] * 4096), y=int(cartesian[1] * 4096), z=int(cartesian[2] * 4096),
+                                   nx=int(cartesian_normal[0] * 4096), ny=int(cartesian_normal[1] * 4096), nz=int(cartesian_normal[2] * 4096))
                 new_tri.append(new_attributes.setdefault(new_vert, len(new_attributes)))
             new_tris.append(tuple(new_tri))
         for child in self.children:
@@ -393,18 +428,24 @@ UV_SIZE = 2 * 4
 class Model(FileFormat):
     """A 3D model of a game object"""
 
-    def __init__(self, attributes: list[tuple[int, int, int, int, int]], root_segments: list[Segment],
-                 all_segments: list[Segment], texture: Tim, use_transparency: bool = False, anim_index: int = None):
+    def __init__(self, attributes: list[Vertex], root_segments: list[Segment],
+                 all_segments: list[Segment], texture: Tim, use_transparency: bool = False, anim_index: int = None,
+                 scale: int = None):
         self.attributes = attributes
         self.root_segments = root_segments
         self.all_segments = all_segments
         self.texture = texture
         self.use_transparency = use_transparency
         self.anim_index = anim_index
+        self.scale = scale
         self.animations = None
 
     def set_animations(self, animations: AnimationDb | None):
         self.animations = animations
+
+    @property
+    def panda_scale(self) -> float:
+        return 1. if self.scale is None else self.scale / 100
 
     @property
     @abstractmethod
@@ -413,22 +454,31 @@ class Model(FileFormat):
 
     @functools.cache
     def get_panda3d_model(self) -> NodePath:
-        vdata = GeomVertexData('', GeomVertexFormat.getV3t2(), Geom.UHStatic)
+        vdata = GeomVertexData('', GeomVertexFormat.getV3n3t2(), Geom.UHStatic)
         vdata.setNumRows(len(self.attributes))
 
         vertex = GeomVertexWriter(vdata, 'vertex')
+        normal = GeomVertexWriter(vdata, 'normal')
         texcoord = GeomVertexWriter(vdata, 'texcoord')
 
         tex_height = self.texture_height
-        for x, y, z, u, v in self.attributes:
-            point = Point(x, y, z)
+        for vert in self.attributes:
+            point = Point(vert.x, vert.y, vert.z)
+            # by this point all vertices should have normals because we should've calculated them for the ones that
+            # didn't have them
+            norm = vert.normal
             vertex.addData3(point.panda_x, point.panda_y, point.panda_z)
-            texcoord.addData2(u / TEXTURE_WIDTH, (tex_height - v) / tex_height)
+            normal.addData3(norm[0], norm[1], norm[2])
+            texcoord.addData2(vert.u / TEXTURE_WIDTH, (tex_height - vert.v) / tex_height)
 
         node_path = NodePath(PandaNode('model_root'))
         for segment in self.root_segments:
             child_path = segment.as_node_path(vdata)
             child_path.reparentTo(node_path)
+
+        if self.scale is not None:
+            node_path.setScale(self.panda_scale)
+
         return node_path
 
     @functools.cache
@@ -444,11 +494,86 @@ class Model(FileFormat):
         texture.load(panda_image)
         return texture
 
+    def _set_segment_panda_translation(self, segment_index: int, translation: Point, node_path: NodePath) -> bool:
+        name: str = node_path.getName()
+        if name == f'segment{segment_index}':
+            node_path.setPos(translation.panda_x, translation.panda_y, translation.panda_z)
+            return True
+
+        for child in node_path.getChildren():
+            if self._set_segment_panda_translation(segment_index, translation, child):
+                return True
+
+        return False
+
+    def set_segment_translation(self, segment_index: int, x: int = None, y: int = None, z: int = None) -> bool:
+        """
+        Set the translation of one of the model's segment, including updating the Panda3D model
+
+        Any axes that aren't provided (i.e. set to None) will retain their original values.
+
+        :param segment_index: The index of the segment whose translation to set
+        :param x: The new x translation
+        :param y: The new y translation
+        :param z: The new z translation
+        :return: True if the translation was changed, False if the new translation was identical to the old translation
+        """
+        segment = self.all_segments[segment_index]
+
+        old_x, old_y, old_z = segment.offset
+        new_offset = (old_x if x is None else x, old_y if y is None else y, old_z if z is None else z)
+        if new_offset == segment.offset:
+            return False
+
+        if not segment.can_change_translation:
+            raise ValueError(f'Translation of segment {segment_index} cannot be changed')
+
+        segment.offset = new_offset
+        self._set_segment_panda_translation(segment_index, Point(*new_offset), self.get_panda3d_model())
+        return True
+
+    def focus_segment(self, index: int, node_path: NodePath = None, focus_alpha: float = 1., unfocus_alpha: float = 0.5):
+        """
+        Make all segments except for the focused segment transparent
+
+        :param index: The index of the segment to focus
+        :param node_path: For internal use only
+        :param focus_alpha: For internal use only
+        :param unfocus_alpha: For internal use only
+        """
+
+        if node_path is None:
+            node_path = self.get_panda3d_model()
+
+        name: str = node_path.getName()
+        if name != f'segment{index}':
+            node_path.setColorScale(1., 1., 1., unfocus_alpha)
+            new_unfocus_alpha = 1.  # just keep alpha from the parent
+            new_focus_alpha = focus_alpha / unfocus_alpha  # scale back to the desired value
+        else:
+            node_path.setColorScale(1., 1., 1., focus_alpha)
+            new_unfocus_alpha = 0.5  # any children of the focused segment need the alpha reapplied
+            new_focus_alpha = focus_alpha  # we shouldn't need this again, so just keep the old value
+
+        for child in node_path.getChildren():
+            self.focus_segment(index, child, new_focus_alpha, new_unfocus_alpha)
+
+    def unfocus(self, node_path: NodePath = None):
+        """
+        Clear any focus effect set with focus_segment
+        """
+        if node_path is None:
+            node_path = self.get_panda3d_model()
+
+        node_path.clearColorScale()
+        for child in node_path.getChildren():
+            self.unfocus(child)
+
     @property
     def texture_height(self) -> int:
         return TEXTURE_HEIGHT * self.texture.num_palettes
 
-    def _flatten(self) -> tuple[list[tuple[int, int, int]], list[tuple[int, int, int, int, int]]]:
+    def _flatten(self) -> tuple[list[tuple[int, int, int]], list[Vertex]]:
         new_tris = []
         new_attributes = {}
         for segment in self.root_segments:
@@ -497,7 +622,8 @@ class Model(FileFormat):
                 {
                     'attributes': {
                         'POSITION': 0,
-                        'TEXCOORD_0': 1,
+                        'NORMAL': 1,
+                        'TEXCOORD_0': 2,
                     },
                     'indices': index_accessor,
                     'material': 0,
@@ -509,37 +635,52 @@ class Model(FileFormat):
             cls._gltf_add_segment(gltf, node, buffer, child, node_map, view_start)
 
     def as_gltf(self) -> tuple[dict[str, Any], bytes, Image.Image]:
-        stride = VERT_SIZE + UV_SIZE
+        # * 2 for position + normal
+        stride = VERT_SIZE * 2 + UV_SIZE
         num_attrs = len(self.attributes)
         buffer = bytearray(num_attrs * stride)
         buf_len = 0
         tex_height = self.texture_height
         inf = float('inf')
         minf = float('-inf')
-        max_x = max_y = max_z = max_u = max_v = minf
-        min_x = min_y = min_z = min_u = min_v = inf
+        max_x = max_y = max_z = max_u = max_v = max_nx = max_ny = max_nz = minf
+        min_x = min_y = min_z = min_u = min_v = min_nx = min_ny = min_nz = inf
         for vert in self.attributes:
-            x = vert[0] / Dimension.SCALE_FACTOR
+            x = vert.x / Dimension.SCALE_FACTOR
             min_x = min(x, min_x)
             max_x = max(x, max_x)
 
-            y = vert[1] / Dimension.SCALE_FACTOR
+            y = vert.y / Dimension.SCALE_FACTOR
             min_y = min(y, min_y)
             max_y = max(y, max_y)
 
-            z = vert[2] / Dimension.SCALE_FACTOR
+            z = vert.z / Dimension.SCALE_FACTOR
             min_z = min(z, min_z)
             max_z = max(z, max_z)
 
-            u = vert[3] / TEXTURE_WIDTH
+            u = vert.u / TEXTURE_WIDTH
             min_u = min(u, min_u)
             max_u = max(u, max_u)
 
-            v = vert[4] / tex_height
+            v = vert.v / tex_height
             min_v = min(v, min_v)
             max_v = max(v, max_v)
 
-            struct.pack_into('<5f', buffer, buf_len, x, y, z, u, v)
+            normal = -vert.normal
+
+            nx = -normal[0]
+            min_nx = min(nx, min_nx)
+            max_nx = max(nx, max_nx)
+
+            ny = normal[2]
+            min_ny = min(ny, min_ny)
+            max_ny = max(ny, max_ny)
+
+            nz = normal[1]
+            min_nz = min(nz, min_nz)
+            max_nz = max(nz, max_nz)
+
+            struct.pack_into('<8f', buffer, buf_len, x, y, z, nx, ny, nz, u, v)
             buf_len += stride
 
         gltf: dict[str, Any] = {
@@ -624,9 +765,19 @@ class Model(FileFormat):
                     'max': [max_x, max_y, max_z],
                 },
                 {
-                    'name': 'texcoords',
+                    'name': 'normals',
                     'bufferView': 0,
                     'byteOffset': VERT_SIZE,
+                    'componentType': Gltf.FLOAT,
+                    'count': num_attrs,
+                    'type': 'VEC3',
+                    'min': [min_nx, min_ny, min_nz],
+                    'max': [max_nx, max_ny, max_nz],
+                },
+                {
+                    'name': 'texcoords',
+                    'bufferView': 0,
+                    'byteOffset': VERT_SIZE * 2,
                     'componentType': Gltf.FLOAT,
                     'count': num_attrs,
                     'type': 'VEC2',
@@ -856,13 +1007,21 @@ element vertex {len(attributes)}
 property float x
 property float y
 property float z
+property float nx
+property float ny
+property float nz
+property float s
+property float t
 element face {len(tris)}
 property list uchar uint vertex_indices
 end_header
 """
         for v in attributes:
-            point = Point(v[0], v[1], v[2])
-            ply += f'{point.panda_x} {point.panda_y} {point.panda_z}\n'
+            point = Point(v.x, v.y, v.z)
+            normal = v.normal
+            s = v.u / TEXTURE_WIDTH
+            t = 1. - (v.v / self.texture_height)
+            ply += f'{point.panda_x} {point.panda_y} {point.panda_z} {normal[0]} {normal[1]} {normal[2]} {s} {t}\n'
         for t in tris:
             ply += f'3 {t[0]} {t[1]} {t[2]}\n'
 
@@ -877,18 +1036,26 @@ end_header
             obj += f'mtllib {material_path}\n'
         tex_height = self.texture_height
         for v in attributes:
-            obj +=\
-                f'v {v[0] / Dimension.SCALE_FACTOR} {v[1] / Dimension.SCALE_FACTOR} {v[2] / Dimension.SCALE_FACTOR}\n'\
-                f'vt {v[3] / TEXTURE_WIDTH} {(tex_height - v[4]) / tex_height}\n'
+            # OBJ format uses the same coordinate system as the PlayStation, so we don't want to do the usual
+            # coordinate transformation here. we still need to flip the normal vector, though
+            obj += (
+                f'v {v.x / Dimension.SCALE_FACTOR} {v.y / Dimension.SCALE_FACTOR} {v.z / Dimension.SCALE_FACTOR}\n'
+                f'vt {v.u / TEXTURE_WIDTH} {(tex_height - v.v) / tex_height}\n'
+                f'vn {-v.nx / 4096} {-v.ny / 4096} {-v.nz / 4096}\n'
+            )
         if material_name is not None:
             obj += f'usemtl {material_name}\n'
         for t in tris:
-            obj += f'f {t[0] + 1}/{t[0] + 1} {t[1] + 1}/{t[1] + 1} {t[2] + 1}/{t[2] + 1}\n'
+            v1 = t[0] + 1
+            v2 = t[1] + 1
+            v3 = t[2] + 1
+            obj += f'f {v1}/{v1}/{v1} {v3}/{v3}/{v3} {v2}/{v2}/{v2}\n'
 
         if material_name is not None:
             mtl = f"""newmtl {material_name}
 Ka 1.000 1.000 1.000
 Kd 1.000 1.000 1.000
+Ks 0.000 0.000 0.000
 d 1.0
 illum 0
 """
@@ -953,36 +1120,107 @@ illum 0
         raise NotImplementedError
 
     def get_texture_image(self) -> Image:
+        if self.use_transparency:
+            transparent_palettes = {segment.clut_index for segment in self.all_segments if segment.has_transparency}
+        else:
+            transparent_palettes = set()
         image = Image.new('RGBA', (TEXTURE_WIDTH, self.texture_height))
         for i in range(self.texture.num_palettes):
-            # FIXME: the exact transparency level seems to vary from item to item and I don't know what controls it
-            transparency = Transparency.SEMI if self.use_transparency and i > 0 else Transparency.NONE
+            transparency = Transparency.SEMI if i in transparent_palettes else Transparency.NONE
             sub_image = self.texture.to_image(i, transparency)
             image.paste(sub_image, (0, TEXTURE_HEIGHT * i))
         return image
 
     @staticmethod
-    def _read_chunk(f: BinaryIO, num_vertices: int, extra_len: int = 0) -> list[tuple[int, int, int, int, int]]:
+    def _set_tri_normals(vertices: list[Vertex]):
+        if not vertices:
+            return
+
+        # calculate surface normals for flat shading
+        v1 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[::3]])
+        v2 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[1::3]])
+        v3 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[2::3]])
+        # we won't normalize yet, we'll do that together with the game's own normals later
+        normals = np.cross(v2 - v1, v3 - v1)
+        for i, normal in enumerate(normals):
+            # flip the vector for consistency with the game's own normals
+            point = Point.from_ndarray(-normal)
+            for j in range(3):
+                index = i * 3 + j
+                vert = vertices[index]
+                vertices[index] = vert.with_normal(point.game_x, point.game_y, point.game_z, False)
+
+    @staticmethod
+    def _set_quad_normals(vertices: list[Vertex]):
+        if not vertices:
+            return
+
+        # calculate surface normals for flat shading
+        v1 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[::4]])
+        v2 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[1::4]])
+        v3 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[2::4]])
+        v4 = np.array([Point(vert.x, vert.y, vert.z).ndarray for vert in vertices[3::4]])
+        normals1 = np.cross(v2 - v1, v3 - v1)
+        normals2 = np.cross(v4 - v3, v1 - v3)
+        # we won't normalize yet, we'll do that together with the game's own normals later
+        normals = normals1 + normals2
+        for i, normal in enumerate(normals):
+            # flip the vector for consistency with the game's own normals
+            point = Point.from_ndarray(-normal)
+            for j in range(4):
+                index = i * 4 + j
+                vert = vertices[index]
+                vertices[index] = vert.with_normal(point.game_x, point.game_y, point.game_z, False)
+
+    @staticmethod
+    def _read_chunk(f: BinaryIO, num_vertices: int, has_normals: bool = False) -> list[Vertex]:
         num_shorts = num_vertices * 3
         num_bytes = num_vertices * 2
-        data_size = num_shorts * 2 + num_bytes
+        num_normal_shorts = num_shorts if has_normals else 0
+        data_size = (num_shorts + num_normal_shorts) * 2 + num_bytes
         count = file.int_from_bytes(f.read(2))
         attributes = []
+        fmt = f'<{num_shorts}h{num_bytes}B'
+        if has_normals:
+            fmt += f'{num_normal_shorts}h'
         for k in range(count):
             data = f.read(data_size)
-            raw_face = struct.unpack(f'{num_shorts}h{num_bytes}B', data)
-            f.seek(extra_len, 1)
+            raw_face = struct.unpack(fmt, data)
             for m in range(num_vertices):
                 x, y, z = raw_face[m * 3:(m + 1) * 3]
-                attributes.append((x, y, z, 0, 0))
+                attributes.append(Vertex(x, y, z, 0, 0))
             rest = raw_face[num_shorts:]
             for m in range(num_vertices):
                 u = rest[m * 2]
                 v = rest[m * 2 + 1]
                 attr_index = m + k * num_vertices
-                attrs = attributes[attr_index]
-                attributes[attr_index] = (attrs[0], attrs[1], attrs[2], u, v)
+                attr = attributes[attr_index]
+                attributes[attr_index] = attr.with_uv(u, v)
+            if has_normals:
+                rest = rest[num_bytes:]
+                for m in range(num_vertices):
+                    nx, ny, nz = rest[m * 3:(m + 1) * 3]
+                    attr_index = m + k * num_vertices
+                    attr = attributes[attr_index]
+                    attributes[attr_index] = attr.with_normal(nx, ny, nz)
+
         return attributes
+
+    @staticmethod
+    def _write_chunk(f: BinaryIO, polygons: list[Sequence[Vertex]], has_normals: bool = False):
+        num_polygons = len(polygons)
+        f.write(num_polygons.to_bytes(2, 'little'))
+        if num_polygons == 0:
+            return
+
+        for polygon in polygons:
+            for vertex in polygon:
+                f.write(struct.pack('<3h', vertex.x, vertex.y, vertex.z))
+            for vertex in polygon:
+                f.write(struct.pack('<2B', vertex.u, vertex.v % TEXTURE_HEIGHT))
+            if has_normals:
+                for vertex in polygon:
+                    f.write(struct.pack('<3h', vertex.nx, vertex.ny, vertex.nz))
 
     @staticmethod
     def _read_tim(f: BinaryIO) -> Tim:
@@ -996,21 +1234,47 @@ illum 0
 
         return tim
 
+    def _write_tim(self, f: BinaryIO):
+        f.write(self.texture.image_data)
+        f.write(self.texture.clut_data)
+
+    def _write_segment(self, f: BinaryIO, segment: Segment):
+        f.write(segment.clut_index.to_bytes(2, 'little'))
+        triangles = [[self.attributes[i] for i in triangle] for triangle in segment.triangles]
+        quads = [[self.attributes[i] for i in quad] for quad in segment.quads]
+        # split into flat-shaded vs gouraud-shaded groups
+        gouraud_tris = [poly for poly in triangles if all(vert.has_original_normals for vert in poly)]
+        flat_tris = [poly for poly in triangles if any(not vert.has_original_normals for vert in poly)]
+
+        gouraud_quads = [poly for poly in quads if all(vert.has_original_normals for vert in poly)]
+        flat_quads = [poly for poly in quads if any(not vert.has_original_normals for vert in poly)]
+
+        self._write_chunk(f, flat_quads)
+        self._write_chunk(f, flat_tris)
+        self._write_chunk(f, gouraud_quads, True)
+        self._write_chunk(f, gouraud_tris, True)
+
     @classmethod
-    def _read_segment(cls, f: BinaryIO, index: int, attributes: dict[tuple[int, int, int, int, int], int],
-                      offset: tuple[int, int, int] = (0, 0, 0)) -> Segment:
+    def _read_segment(cls, f: BinaryIO, index: int, attributes: dict[Vertex, int],
+                      offset: tuple[int, int, int] = (0, 0, 0), can_change_translation: bool = False,
+                      file_index: int = None, has_transparency: bool = False) -> Segment:
         clut_index = int.from_bytes(f.read(2), 'little')
         tri_attrs = []
         quad_attrs = []
+
+        # flat-shaded polygons
         quad_attrs.extend(cls._read_chunk(f, 4))
+        cls._set_quad_normals(quad_attrs)
         tri_attrs.extend(cls._read_chunk(f, 3))
-        # the "extra" data is skipped by the game as well
-        quad_attrs.extend(cls._read_chunk(f, 4, 0x18))
-        tri_attrs.extend(cls._read_chunk(f, 3, 0x12))
+        cls._set_tri_normals(tri_attrs)
+
+        # gouraud-shaded polygons
+        quad_attrs.extend(cls._read_chunk(f, 4, True))
+        tri_attrs.extend(cls._read_chunk(f, 3, True))
 
         tri_attrs_final, quad_attrs_final = ([
-            attributes.setdefault((x, y, z, u, v + TEXTURE_HEIGHT * clut_index), len(attributes))
-            for x, y, z, u, v in attrs
+            attributes.setdefault(replace(vert, v=vert.v + TEXTURE_HEIGHT * clut_index), len(attributes))
+            for vert in attrs
         ] for attrs in [tri_attrs, quad_attrs])
 
         triangles = [
@@ -1021,7 +1285,8 @@ illum 0
             for i in range(0, len(quad_attrs), 4)
         ]
 
-        return Segment(index, clut_index, triangles, quads, offset)
+        return Segment(index, clut_index, triangles, quads, offset, can_change_translation=can_change_translation,
+                       file_index=index if file_index is None else file_index, has_transparency=has_transparency)
 
 
 class ActorModel(Model):
@@ -1030,8 +1295,8 @@ class ActorModel(Model):
     NUM_SEGMENTS = 19
     SEGMENT_ORDER = [0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 5, 15, 16, 8, 17, 18]
 
-    def __init__(self, name: str, actor_id: int, attributes: list[tuple[int, int, int, int, int]],
-                 root: Segment, all_segments: list[Segment], texture: Tim, anim_index: int = None):
+    def __init__(self, name: str, actor_id: int, attributes: list[Vertex], root: Segment, all_segments: list[Segment],
+                 texture: Tim, anim_index: int = None):
         super().__init__(attributes, [root], all_segments, texture, anim_index=anim_index)
         self.name = name
         self.id = actor_id
@@ -1060,12 +1325,15 @@ class ActorModel(Model):
 
         attributes = {}
         segments: list[Segment | None] = [None] * cls.NUM_SEGMENTS
-        for i in cls.SEGMENT_ORDER:
+        for j, i in enumerate(cls.SEGMENT_ORDER):
             try:
                 offset = (offsets[i * 3], offsets[i * 3 + 1], offsets[i * 3 + 2])
+                can_change_translation = True
             except IndexError:
                 offset = (0, 0, 0)
-            segments[i] = cls._read_segment(f, i, attributes, offset)
+                can_change_translation = False
+            segment = cls._read_segment(f, i, attributes, offset, can_change_translation, j)
+            segments[i] = segment
 
         root = segments[0]
         cls.add_segment(root, segments, actor.skeleton[0])
@@ -1077,14 +1345,22 @@ class ActorModel(Model):
 
         return cls(actor.name, actor.id, list(attributes), root, segments, tim, anim_index)
 
+    def write(self, f: BinaryIO, **kwargs):
+        all_offsets = [o for segment in self.all_segments for o in segment.offset]
+        f.write(struct.pack('<46h', *all_offsets[:46]))
+        self._write_tim(f)
+
+        for segment in sorted(self.all_segments, key=lambda s: s.file_index):
+            self._write_segment(f, segment)
+
 
 class ItemModel(Model):
     """A 3D model of an item"""
 
     MAX_SEGMENTS = 19
 
-    def __init__(self, name: str, attributes: list[tuple[int, int, int, int, int]],
-                 segments: list[Segment], texture: Tim, use_transparency: bool = False):
+    def __init__(self, name: str, attributes: list[Vertex], segments: list[Segment], texture: Tim,
+                 use_transparency: bool = False, scale: int = None):
         super().__init__(attributes, segments, segments, texture, use_transparency)
         self.name = name
 
@@ -1104,22 +1380,34 @@ class ItemModel(Model):
 
     @classmethod
     def read(cls, f: BinaryIO, *, name: str = '', use_transparency: bool = False, strict_mode: bool = False,
+             num_segments: int = None, transparent_segments: Container[int] = None, scale: int = None,
              **kwargs) -> ItemModel:
+        if transparent_segments:
+            use_transparency = True
+        else:
+            transparent_segments = []
+
         tim = cls._read_tim(f)
 
         attributes = {}
         segments = []
-        for i in range(cls.MAX_SEGMENTS):
+        for i in range(cls.MAX_SEGMENTS if num_segments is None else num_segments):
             try:
-                segments.append(cls._read_segment(f, i, attributes))
+                segments.append(cls._read_segment(f, i, attributes, has_transparency=i in transparent_segments))
             except ValueError:
                 # MODEL.CDB 92 and 93 fail to load with this enabled, but it's appropriate for sniffing
-                if strict_mode:
+                # if num_segments is set,
+                if strict_mode or num_segments is not None:
                     raise
                 break
             except struct.error:
                 break
-        return cls(name, list(attributes), segments, tim, use_transparency)
+        return cls(name, list(attributes), segments, tim, use_transparency, scale)
+
+    def write(self, f: BinaryIO, **kwargs):
+        self._write_tim(f)
+        for segment in self.all_segments:
+            self._write_segment(f, segment)
 
 
 def export(model_path: str, target_path: str, animation_path: str | None, actor_id: int | None, differential: bool):

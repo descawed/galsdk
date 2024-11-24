@@ -69,6 +69,9 @@ class Exe:
         start, stop, step = self._get_address_slice(key)
         self.data[start:stop:step] = value
 
+    def patch(self, address: int, data: bytes | bytearray | memoryview):
+        self[address:address + len(data)] = data
+
     @classmethod
     def read(cls, source: BinaryIO) -> Exe:
         magic = source.read(8)
@@ -100,8 +103,11 @@ class Exe:
 
     def write(self, destination: BinaryIO):
         data_len = len(self.data)
-        data_pad = data_len % 2048  # data size must be a multiple of 2048
-        data_len += data_pad
+        data_pad = 0
+        bytes_over = data_len % 2048  # data size must be a multiple of 2048
+        if bytes_over > 0:
+            data_pad = 2048 - bytes_over
+            data_len += data_pad
 
         destination.write(self.MAGIC)
         destination.write(b'\0' * 8)

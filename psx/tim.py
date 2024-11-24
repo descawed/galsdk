@@ -86,6 +86,8 @@ class Tim:
             b = (pixel >> 10) & 0x1f
             stp = (pixel >> 15) != 0
             if stp:
+                # this assumes semi-transparency rate 0; it's not possible to reproduce the other semi-transparency
+                # rates with an alpha channel
                 a = 0x7f
             elif r == g == b == 0:
                 a = 0
@@ -134,6 +136,10 @@ class Tim:
     @clut_y.setter
     def clut_y(self, y: int):
         self.raw_clut_bounds = (self.raw_clut_bounds[0], y, *self.raw_clut_bounds[2:])
+
+    @property
+    def clut_data(self) -> bytes:
+        return b''.join(self._encode_pixel_16(palette) for palette in self.palettes)
 
     @property
     def image_x(self) -> int:
@@ -360,9 +366,8 @@ class Tim:
         destination.write(flags.to_bytes(4, 'little'))
 
         if has_clut:
-            clut = b''.join(self._encode_pixel_16(palette) for palette in self.palettes)
             x, y, w, h = self.raw_clut_bounds
-            self._write_block(Block(x, y, w, h, clut), destination)
+            self._write_block(Block(x, y, w, h, self.clut_data), destination)
 
         x, y, w, h = self.raw_image_bounds
         self._write_block(Block(x, y, w, h, self.image_data), destination)

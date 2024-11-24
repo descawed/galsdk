@@ -11,7 +11,7 @@ from weakref import WeakValueDictionary
 
 from galsdk import file
 from galsdk.db import Database
-from galsdk.format import Archive, FileFormat
+from galsdk.format import Archive, FileFormat, JsonType
 from galsdk.sniff import sniff_file
 from galsdk.tim import TimDb
 from galsdk.vab import VabDb
@@ -85,11 +85,11 @@ class AddManifest:
 
 
 type ManifestChange = Delete | Rename | AddFile | AddManifest
-type JsonType = bool | int | float | str | list | tuple | dict | None
 
 
 @dataclass
 class FromManifest[T: FileFormat]:
+    """A wrapper for FileFormat objects that keeps information about the manifest they were loaded from"""
     manifest: Manifest
     key: int | str
     file: ManifestFile
@@ -134,6 +134,7 @@ class Manifest:
         self.name = name
         self.files = []
         self.name_map = {}
+        self.address_map = {}
         self.type = db_type
         self.metadata = metadata or {}
         self.deleted_files = []
@@ -189,12 +190,63 @@ class Manifest:
                 with manifest:
                     manifest.rename(0, mf.name, False)
 
+    def load_archive(self, mtime: float = 0., **kwargs) -> Archive:
+        """
+        Load the contents of this manifest into an Archive object of the type the manifest was created from
+
+        :param mtime: A modification timestamp. If the manifest contents have not been modified since this timestamp
+                      and the manifest retains a copy of the original archive file, the original archive data will be
+                      loaded, skipping the process of reading the individual files in the manifest.
+        :param kwargs: Any keyword arguments to pass to the Archive's read method in the case that the original archive
+                       data is loaded.
+        :return: An Archive containing the files in this manifest
+        """
+        archive_type = ARCHIVE_FORMATS[self.type]
+
+        if mtime > 0. and not self.is_modified_since(mtime) and self.original:
+            # nothing has changed, we can just serve the original file
+            with self.original.open('rb') as f:
+                return archive_type.read(f, **kwargs)
+
+        archive = archive_type.from_metadata(self.metadata)
+        for mf in self.files:
+            if mf.is_manifest:
+                sub_manifest = Manifest.load_from(mf.path)
+                data = sub_manifest.pack_archive(mtime)
+            else:
+                data = mf.path.read_bytes()
+            archive.append_raw(data)
+
+        return archive
+
     def unpack_archive(self, archive: Archive, extension: str = '', sniff: bool | list[type[FileFormat]] = False,
                        flatten: bool = False, recursive: bool = True, original_path: Path = None):
+        """
+        Unpack an archive and add its contents to this manifest
+
+        :param archive: The archive to unpack
+        :param extension: The file extension to use for the files unpacked from the archive
+        :param sniff: If True, the format of unknown binary files in the archive will be auto-detected during the
+                      unpacking process. You may also provide a list of FileFormat types to restrict the set of
+                      formats considered. When the format of a file is successfully detected, a default file extension
+                      will be appended unless a different one was provided to the extension parameter. If a file is
+                      determined to be an archive and the recursive parameter is set to True, that archive will be
+                      recursively unpacked.
+        :param flatten: If True, any sub-archives containing a single file will be replaced with that one file.
+        :param recursive: If True, any sub-archives will be recursively unpacked.
+        :param original_path: The original path of the unpacked archive. If provided, a copy of the original file will
+                              be retained in the manifest directory. Until changes are made to the manifest, the
+                              original data will be used for any operations that require the binary archive data. This
+                              is more efficient and will reduce unnecessary diffs from the original disc image when
+                              exporting. Any time the manifest is re-packed, the new archive contents will become the
+                              original data going forward.
+        """
+
         if extension and extension[0] != '.':
             extension = '.' + extension
         self.type = archive.suggested_extension[1:].lower()
         self.metadata = archive.metadata
+        self.address_map = archive.addresses
         save_path = self.path / 'original.bin'
         if original_path is not None:
             shutil.copy(original_path, save_path)
@@ -214,18 +266,21 @@ class Manifest:
             self._unpack_file(mf, archive, i, sniff, flatten, recursive)
 
     def pack_archive(self, mtime: float = 0.) -> bytes:
-        if not self.is_modified_since(mtime) and self.original:
+        """
+        Pack the contents of this manifest into a binary archive in the format that the manifest was created from
+
+        This will update the saved original data to be the data returned by this method.
+
+        :param mtime: A modification timestamp. If the manifest contents have not been modified since this timestamp
+                      and the manifest retains a copy of the original archive file, the original archive data will be
+                      returned, skipping the serialization process.
+        :return: The binary archive data
+        """
+        if mtime > 0. and not self.is_modified_since(mtime) and self.original:
             # nothing has changed, we can just serve the original file
             return self.original.read_bytes()
 
-        archive = ARCHIVE_FORMATS[self.type].from_metadata(self.metadata)
-        for mf in self.files:
-            if mf.is_manifest:
-                sub_manifest = Manifest.load_from(mf.path)
-                data = sub_manifest.pack_archive(mtime)
-            else:
-                data = mf.path.read_bytes()
-            archive.append_raw(data)
+        archive = self.load_archive()
 
         if not self.original:
             self.original = self.path / 'original.bin'
@@ -240,6 +295,10 @@ class Manifest:
         with f:
             archive.write(f)
             # TODO: should we truncate here? might be necessary for stream formats
+
+        # update any metadata that may have changed
+        self.metadata = archive.metadata
+        self.address_map = archive.addresses
         return self.original.read_bytes()
 
     def _update_path(self, new_path: Path):
@@ -280,6 +339,7 @@ class Manifest:
                                            entry.get('flatten', False)))
         self.name_map = {mf.name: mf for mf in self.files}
         self.type = manifest['type']
+        self.address_map = manifest.get('address_map', {})
         self.metadata = manifest['metadata']
         self.original = (self.path / manifest['original']) if manifest['original'] else None
         deletions = manifest.get('deletions', [])
@@ -293,6 +353,12 @@ class Manifest:
         """
         Create a FileFormat instance of the given type from the file identified by key, returning a FromManifest
         instance that tracks the file and manifest the object originated from.
+
+        :param key: An index or name identifying which file in the manifest to load
+        :param constructor: A FileFormat type or a callable that accepts a path and returns an instance of a FileFormat
+        :param kwargs: Any additional keyword arguments to pass to the read method of the FileFormat type. Not used if
+                       constructor is not a FileFormat type.
+        :return: A FromManifest object wrapping the loaded file
         """
         manifest_file = self.expand_file(self[key])
         if isinstance(constructor, type) and issubclass(constructor, FileFormat):
@@ -346,6 +412,7 @@ class Manifest:
                     for mf in self.files
                 ],
                 'type': self.type,
+                'addresses': self.address_map,
                 'metadata': self.metadata,
                 'deletions': [
                     {'timestamp': mtime, 'name': mf.name, 'path': str(mf.path.relative_to(self.path))}
@@ -390,6 +457,7 @@ class Manifest:
             num_changes -= 1
 
     def delete(self):
+        """Permanently delete this manifest and all its contents"""
         shutil.rmtree(self.path)
         self.original = None
         self.files = []
@@ -466,6 +534,9 @@ class Manifest:
 
     def index(self, name: str) -> int:
         return self.files.index(self.name_map[name])
+
+    def get_index_from_address(self, address: int) -> int:
+        return self.address_map[address]
 
     def try_undelete(self, name: str) -> tuple[float, ManifestFile] | None:
         """If the given name is in the deleted files list, remove it from the list"""

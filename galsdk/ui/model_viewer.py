@@ -81,7 +81,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
     def __init__(self, name: str, project: Project, base: ShowBase):
         super().__init__(name, project)
         self.base = base
-        self.models = []
+        self.models: list[Model] = []
         self.current_index = None
         self.exportable_ids = set()
         self.export_index = None
@@ -116,15 +116,15 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
 
         self.tree.grid(row=0, column=0, rowspan=2, sticky=tk.NS + tk.W)
         scroll.grid(row=0, column=1, rowspan=2, sticky=tk.NS)
-        self.model_frame.grid(row=0, column=2, sticky=tk.NE)
-        anim_frame.grid(row=1, column=2, sticky=tk.S + tk.EW)
+        self.model_frame.grid(row=0, column=3, sticky=tk.NS + tk.E)
+        anim_frame.grid(row=1, column=3, sticky=tk.S + tk.EW)
         anim_set_label.pack(padx=10, side=tk.LEFT)
         self.anim_set_select.pack(padx=10, side=tk.LEFT)
         anim_label.pack(padx=10, side=tk.LEFT)
         self.anim_select.pack(padx=10, side=tk.LEFT)
 
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(2, weight=1)
+        self.grid_columnconfigure(3, weight=1)
 
         self.tree.bind('<<TreeviewSelect>>', self.select_model)
         self.tree.bind('<Button-3>', self.handle_right_click)
@@ -132,7 +132,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
 
     def resize_3d(self, _=None):
         self.update()
-        x, y, width, height = self.grid_bbox(2, 0)
+        x, y, width, height = self.grid_bbox(3, 0)
         self.model_frame.resize(width, height)
 
     @abstractmethod
@@ -200,6 +200,19 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
         if did_set_animations:
             model.set_animations(None)
 
+    def set_model(self, index: int):
+        if index == self.current_index:
+            return
+
+        self.current_index = index
+        model = self.models[index]
+        self.model_frame.set_model(model)
+        self.anim_set_select.configure(state='readonly')
+        if model.anim_index is not None:
+            self.set_anim_set_index(model.anim_index)
+        else:
+            self.anim_set_var.set('None')
+
     def select_model(self, _):
         self.export_menu.unpost()
         try:
@@ -208,15 +221,7 @@ class ModelViewerTab(Tab, metaclass=ABCMeta):
             # not a model
             return
 
-        if index != self.current_index:
-            self.current_index = index
-            model = self.models[index]
-            self.model_frame.set_model(model)
-            self.anim_set_select.configure(state='readonly')
-            if model.anim_index is not None:
-                self.set_anim_set_index(model.anim_index)
-            else:
-                self.anim_set_var.set('None')
+        self.set_model(index)
 
     def set_active(self, is_active: bool):
         self.model_frame.set_active(is_active)
