@@ -81,8 +81,7 @@ class Vertex:
             return norm
 
         norm /= np.linalg.norm(norm)
-        # PS1 normals point inwards, so need to flip them
-        return -norm
+        return norm
 
 
 class Segment:
@@ -976,7 +975,6 @@ class Model(FileFormat):
         return bytes(glb)
 
     def as_ply(self) -> str:
-        # FIXME: normals
         tris, attributes = self._flatten()
         ply = f"""ply
 format ascii 1.0
@@ -984,13 +982,21 @@ element vertex {len(attributes)}
 property float x
 property float y
 property float z
+property float nx
+property float ny
+property float nz
+property float s
+property float t
 element face {len(tris)}
 property list uchar uint vertex_indices
 end_header
 """
         for v in attributes:
-            point = Point(v.x, v.x, v.z)
-            ply += f'{point.panda_x} {point.panda_y} {point.panda_z}\n'
+            point = Point(v.x, v.y, v.z)
+            normal = v.normal
+            s = v.u / TEXTURE_WIDTH
+            t = 1. - (v.v / self.texture_height)
+            ply += f'{point.panda_x} {point.panda_y} {point.panda_z} {normal[0]} {normal[1]} {normal[2]} {s} {t}\n'
         for t in tris:
             ply += f'3 {t[0]} {t[1]} {t[2]}\n'
 
