@@ -622,7 +622,8 @@ class Model(FileFormat):
                 {
                     'attributes': {
                         'POSITION': 0,
-                        'TEXCOORD_0': 1,
+                        'NORMAL': 1,
+                        'TEXCOORD_0': 2,
                     },
                     'indices': index_accessor,
                     'material': 0,
@@ -634,16 +635,16 @@ class Model(FileFormat):
             cls._gltf_add_segment(gltf, node, buffer, child, node_map, view_start)
 
     def as_gltf(self) -> tuple[dict[str, Any], bytes, Image.Image]:
-        # FIXME: normals
-        stride = VERT_SIZE + UV_SIZE
+        # * 2 for position + normal
+        stride = VERT_SIZE * 2 + UV_SIZE
         num_attrs = len(self.attributes)
         buffer = bytearray(num_attrs * stride)
         buf_len = 0
         tex_height = self.texture_height
         inf = float('inf')
         minf = float('-inf')
-        max_x = max_y = max_z = max_u = max_v = minf
-        min_x = min_y = min_z = min_u = min_v = inf
+        max_x = max_y = max_z = max_u = max_v = max_nx = max_ny = max_nz = minf
+        min_x = min_y = min_z = min_u = min_v = min_nx = min_ny = min_nz = inf
         for vert in self.attributes:
             x = vert.x / Dimension.SCALE_FACTOR
             min_x = min(x, min_x)
@@ -665,7 +666,21 @@ class Model(FileFormat):
             min_v = min(v, min_v)
             max_v = max(v, max_v)
 
-            struct.pack_into('<5f', buffer, buf_len, x, y, z, u, v)
+            normal = -vert.normal
+
+            nx = -normal[0]
+            min_nx = min(nx, min_nx)
+            max_nx = max(nx, max_nx)
+
+            ny = normal[2]
+            min_ny = min(ny, min_ny)
+            max_ny = max(ny, max_ny)
+
+            nz = normal[1]
+            min_nz = min(nz, min_nz)
+            max_nz = max(nz, max_nz)
+
+            struct.pack_into('<8f', buffer, buf_len, x, y, z, nx, ny, nz, u, v)
             buf_len += stride
 
         gltf: dict[str, Any] = {
@@ -750,9 +765,19 @@ class Model(FileFormat):
                     'max': [max_x, max_y, max_z],
                 },
                 {
-                    'name': 'texcoords',
+                    'name': 'normals',
                     'bufferView': 0,
                     'byteOffset': VERT_SIZE,
+                    'componentType': Gltf.FLOAT,
+                    'count': num_attrs,
+                    'type': 'VEC3',
+                    'min': [min_nx, min_ny, min_nz],
+                    'max': [max_nx, max_ny, max_nz],
+                },
+                {
+                    'name': 'texcoords',
+                    'bufferView': 0,
+                    'byteOffset': VERT_SIZE * 2,
                     'componentType': Gltf.FLOAT,
                     'count': num_attrs,
                     'type': 'VEC2',
