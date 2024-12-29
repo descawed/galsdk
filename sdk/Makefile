@@ -1,5 +1,5 @@
 CC = mipsel-linux-gnu-gcc
-CFLAGS = -Iinclude -march=mips1 -mfp32 -mno-abicalls -Wa,-mno-pdr -fno-pic -nostdlib -Wall -Wextra -Wpedantic
+CFLAGS = -Iinclude -march=mips1 -mfp32 -mno-abicalls -Wa,-mno-pdr -fno-pic -fno-ident -nostdlib -Wall -Wextra -Wpedantic
 LD = mipsel-linux-gnu-ld
 LDFLAGS = --oformat binary -T ldscripts/na.ld -s -static -nostdlib -z defs --unresolved-symbols=report-all
 
