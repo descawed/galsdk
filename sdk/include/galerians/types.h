@@ -176,17 +176,17 @@ assert_size(Interactable, 0x0A);
 /**
  * Key items and files.
  */
-#define ITEM_UNUSED_0                            0
+#define ITEM_MEMORY_CHIP_15F                     0
 #define ITEM_SECURITY_CARD                       1
 #define ITEM_BEEJECT                             2
 #define ITEM_FREEZER_ROOM_KEY                    3
 #define ITEM_PPEC_STORAGE_KEY                    4
 #define ITEM_FUSE                                5
 #define ITEM_LIQUID_EXPLOSIVE                    6
-#define ITEM_UNUSED_7                            7
+#define ITEM_MEMORY_CHIP_14F                     7
 #define ITEM_SECURITY_CARD_REFORMATTED           8
 #define ITEM_SPECIAL_PPEC_OFFICE_KEY             9
-#define ITEM_UNUSED_10                          10
+#define ITEM_MEMORY_CHIP_13F                    10
 #define ITEM_TEST_LAB_KEY                       11
 #define ITEM_CONTROL_ROOM_KEY                   12
 #define ITEM_RESEARCH_LAB_KEY                   13
@@ -194,7 +194,7 @@ assert_size(Interactable, 0x0A);
 #define ITEM_TWO_HEADED_MONKEY                  15
 #define ITEM_TWO_HEADED_WOLF                    16
 #define ITEM_TWO_HEADED_EAGLE                   17
-#define ITEM_UNUSED_18                          18
+#define ITEM_YOUR_HOUSE_MEMORY_CHIP             18
 #define ITEM_BACKDOOR_KEY                       19
 #define ITEM_DOOR_KNOB                          20
 #define ITEM_9_BALL                             21
