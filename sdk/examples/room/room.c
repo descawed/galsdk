@@ -185,19 +185,19 @@ void cubeTrigger(GameState* game) {
             msgId = 211; // copied from stage C
             break;
         case 11:
-            itemId = ITEM_UNUSED_0;
+            itemId = ITEM_MEMORY_CHIP_15F;
             msgId = 212;
             break;
         case 12:
-            itemId = ITEM_UNUSED_7;
+            itemId = ITEM_MEMORY_CHIP_14F;
             msgId = 213;
             break;
         case 13:
-            itemId = ITEM_UNUSED_10;
+            itemId = ITEM_MEMORY_CHIP_13F;
             msgId = 214;
             break;
         case 14:
-            itemId = ITEM_UNUSED_18;
+            itemId = ITEM_YOUR_HOUSE_MEMORY_CHIP;
             msgId = 215;
             break;
         default:

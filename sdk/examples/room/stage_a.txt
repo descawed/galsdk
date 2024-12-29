@@ -210,10 +210,10 @@ You got a book entitled$w$r$c(4)"New Replicative Computer Theory".$c(0)$w
 You got $c(4)Dr. Pascalle's diary.$c(0)$w
 You got a $c(4)letter from your mom.$c(0)$w
 You got a $c(4)letter from Lilia.$c(0)$w
-You got $c(4)unused item #0$c(0).$w
-You got $c(4)unused item #7$c(0).$w
-You got $c(4)unused item #10$c(0).$w
-You got $c(4)unused item #18$c(0).$w
+You got the $c(4)15F memory chip$c(0).$w
+You got the $c(4)14F memory chip$c(0).$w
+You got the $c(4)13F memory chip$c(0).$w
+You got $c(4)your house's memory chip$c(0).$w
 Keep using this object to see the unused 3D models for files.$w$rIt will also give you the four unused items in the game.$w
 This object cycles through all the scan images ("item TIMs").$w
 Would you like to fight the unused variant of the mech enemy?$y
