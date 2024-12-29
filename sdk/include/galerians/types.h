@@ -68,7 +68,7 @@ typedef struct _Actor Actor;
  */
 typedef struct _Collider {
     uint32_t type;      // 00
-    void *shape;        // 04
+    void* shape;        // 04
     int32_t unknown08;  // 08
 } Collider;
 assert_size(Collider, 0x0C);
@@ -216,16 +216,17 @@ assert_size(Interactable, 0x0A);
 #define ITEM_3_BALL                             37
 #define ITEM_SHED_KEY                           38
 #define ITEM_LETTER_FROM_LILIA                  39
+#define ITEM_VIAL                               40
 
 /**
  * An action to be triggered when interacting with an interactable region.
  */
 typedef struct _Trigger {
-    int32_t (*enabledCallback)(GameState *);// 00
+    int32_t (*enabledCallback)(GameState*); // 00
     uint8_t type;                           // 04
     uint8_t flags;                          // 05
     uint16_t itemId;                        // 06
-    void (*triggerCallback)(GameState *);   // 08
+    void (*triggerCallback)(GameState*);    // 08
     uint32_t unknown0C;                     // 0C
 } Trigger;
 assert_size(Trigger, 0x10);
@@ -280,7 +281,7 @@ assert_size(Background, 8);
 typedef struct _ModelSegment {
     uint16_t segmentIndex;      // 00
     uint16_t unknown02;         // 02
-    int32_t *(*prims)[4];       // 04
+    int32_t* (*prims)[4];       // 04
     uint8_t unknown08[128];     // 08
     MATRIX rotMatrix;           // 88
     VECTOR fullTfmModelOffsets; // A8
@@ -511,18 +512,18 @@ struct _GameState {
     uint8_t currentCameraId;                    // 011
     int8_t newCameraIndex;                      // 012
     uint8_t pad013;                             // 013
-    Camera *cameras;                            // 014
-    Background *backgrounds;                    // 018
-    CameraCut *cuts;                            // 01C
+    Camera* cameras;                            // 014
+    Background* backgrounds;                    // 018
+    CameraCut* cuts;                            // 01C
     uint32_t unknown020;                        // 020
     int16_t numTriggers;                        // 024
     int16_t unknown026;                         // 026
     int16_t activeTriggerId;                    // 028
     uint16_t unknown02A;                        // 02A
-    ActorLayout *actorLayout;                   // 02C
-    Trigger *triggers;                          // 030
-    Interactable *interactables;                // 034
-    MapRoom *map;                               // 038
+    ActorLayout* actorLayout;                   // 02C
+    Trigger* triggers;                          // 030
+    Interactable* interactables;                // 034
+    MapRoom* map;                               // 038
     uint32_t flags03C;                          // 03C
     uint32_t flags040;                          // 040
     int32_t messageId;                          // 044
@@ -650,19 +651,19 @@ struct _Actor {
     uint16_t animFrameSize;                     // 0074
     int16_t animDataOffset;                     // 0076
     AnimationFrame (*animation)[100];           // 0078
-    AnimationFrame *currentAnimFrame;           // 007C
+    AnimationFrame* currentAnimFrame;           // 007C
     int16_t unknownIndex0080;                   // 0080
     int16_t unknown0082;                        // 0082
-    uint16_t *unknown0084;                      // 0084
+    uint16_t* unknown0084;                      // 0084
     ModelSegment segments[20];                  // 0088
     uint16_t numSegments;                       // 1398
     uint8_t unknown139A[16];                    // 139A
     uint16_t showHeldObject;                    // 13AA
     ModelSegment unknownSegment;                // 13AC
     uint8_t unknown14A0[684];                   // 14A0
-    MeleeAttack *equippedAttack;                // 174C
-    MeleeAttack *hitByAttack;                   // 1750
-    MeleeAttack *incomingAttack;                // 1754
+    MeleeAttack* equippedAttack;                // 174C
+    MeleeAttack* hitByAttack;                   // 1750
+    MeleeAttack* incomingAttack;                // 1754
     RangedAttack rangedAttack;                  // 1758
     int16_t timer1;                             // 175C
     int16_t timer2;                             // 175E
@@ -711,7 +712,7 @@ struct _Actor {
     int16_t currentChargeLevel;                 // 182E
     int16_t unknown1830;                        // 1830
     uint16_t unknown1832;                       // 1832
-    void *soundSet;                             // 1834
+    void* soundSet;                             // 1834
     uint8_t unknown1838[32];                    // 1838
     uint32_t flags;                             // 1858
     uint16_t aiState;                           // 185C
@@ -736,7 +737,7 @@ typedef struct _Database {
   uint32_t isExtended;              // 00
   char path[20];                    // 04
   uint8_t gap18[60];                // 18
-  void *directory;                  // 54
+  void* directory;                  // 54
   int32_t unknown58;                // 58
   uint32_t unknown5C;               // 5C
   uint32_t unknown60;               // 60
@@ -753,7 +754,7 @@ assert_size(Database, 0x74);
  */
 typedef struct _ColliderArray {
     uint32_t numColliders;  // 00
-    Collider *colliders;    // 04
+    Collider* colliders;    // 04
 } ColliderArray;
 assert_size(ColliderArray, 8);
 
@@ -770,7 +771,7 @@ assert_size(ColliderArray, 8);
  * Position and sound information for playing an item pick-up animation.
  */
 typedef struct _PickupAnimation {
-    void *soundSet;     // 00
+    void* soundSet;     // 00
     int16_t soundId;    // 04
     int16_t voiceIndex; // 06
     int16_t x;          // 08

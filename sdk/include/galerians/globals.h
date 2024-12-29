@@ -13,9 +13,9 @@ extern uint16_t FrameCount;
 extern uint32_t CircleWallThreshold; // circle colliders larger than this will be treated as walls. only used by room D0003.
 
 #ifdef GALERIANS_REGION_JAPAN
-extern void *ModuleLoadAddresses[5];
+extern void* ModuleLoadAddresses[5];
 #else
-extern void *ModuleLoadAddresses[4];
+extern void* ModuleLoadAddresses[4];
 #endif
 
 extern Database BgTimADb;
