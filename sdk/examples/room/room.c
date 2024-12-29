@@ -135,7 +135,7 @@ Background background = {
     .masks = masks,
 };
 
-void cubeTrigger(GameState *game) {
+void cubeTrigger(GameState* game) {
     static size_t fileItemIndex = 0;
     int32_t itemId;
     int32_t msgId;
@@ -217,7 +217,7 @@ void cubeTrigger(GameState *game) {
     PickUpKeyItem(game, itemId, msgId, ITEM_PICKUP_RESTORE_CAMERA | ITEM_PICKUP_ANIM_STAND, &pickupAnimation);
 }
 
-void cylinderTrigger(GameState *game) {
+void cylinderTrigger(GameState* game) {
     static int32_t timIndex = -1;
 
     if (timIndex++ < 0) {
@@ -272,7 +272,7 @@ Trigger triggers[3] = {
     },
 };
 
-void room(GameState *game) {
+void room(GameState* game) {
     SetupRoom(&layout);
     game->currentCameraId = -1;
     game->actorLayout = &actors;
