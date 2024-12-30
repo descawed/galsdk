@@ -268,7 +268,7 @@ assert_size(BackgroundMask, 0x10);
 typedef struct _Background {
     int16_t index;          // 00
     uint16_t numMasks;      // 02
-    BackgroundMask *masks;  // 04
+    BackgroundMask* masks;  // 04
 } Background;
 assert_size(Background, 8);
 
