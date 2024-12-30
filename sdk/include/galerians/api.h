@@ -37,7 +37,7 @@ void SetupActors(ActorLayout* layout);
  * @param buffer Pointer to the buffer to load the file to. If NULL, the buffer will be allocated dynamically.
  * @return Pointer to the buffer where the file data was loaded.
  */
-void *LoadFileFromDb(Database* db, uint32_t index, void* buffer);
+void* LoadFileFromDb(Database* db, uint32_t index, void* buffer);
 /**
  * Get the value (0 or 1) of a state flag for the current stage.
  *
