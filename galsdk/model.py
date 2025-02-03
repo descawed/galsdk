@@ -13,7 +13,7 @@ from typing import Any, BinaryIO, Container, Iterator, Self, Sequence
 import numpy as np
 from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath,\
     PandaNode, PNMImage, StringStream, Texture
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from galsdk import file, graphics
 from galsdk.animation import Animation, AnimationDb
@@ -1119,7 +1119,7 @@ illum 0
     def write(self, f: BinaryIO, **kwargs):
         raise NotImplementedError
 
-    def get_texture_image(self) -> Image:
+    def get_texture_image(self) -> Image.Image:
         if self.use_transparency:
             transparent_palettes = {segment.clut_index for segment in self.all_segments if segment.has_transparency}
         else:
@@ -1129,6 +1129,36 @@ illum 0
             transparency = Transparency.SEMI if i in transparent_palettes else Transparency.NONE
             sub_image = self.texture.to_image(i, transparency)
             image.paste(sub_image, (0, TEXTURE_HEIGHT * i))
+        return image
+
+    def get_true_color_texture_image(self) -> Image.Image:
+        image = Image.new('RGBA', (TEXTURE_WIDTH, TEXTURE_HEIGHT))
+        stacked_image = self.get_texture_image()
+        # initially fill the final image in with the first palette just to make sure we have a value for every pixel
+        image.paste(stacked_image.crop((0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT)), (0, 0))
+
+        for segment in self.all_segments:
+            mask = Image.new('L', (TEXTURE_WIDTH, TEXTURE_HEIGHT))
+            draw = ImageDraw.Draw(mask)
+            for tri in segment.all_triangles:
+                v1 = self.attributes[tri[0]]
+                v2 = self.attributes[tri[1]]
+                v3 = self.attributes[tri[2]]
+
+                poly = [
+                    (v1.u, v1.v % TEXTURE_HEIGHT),
+                    (v2.u, v2.v % TEXTURE_HEIGHT),
+                    (v3.u, v3.v % TEXTURE_HEIGHT),
+                ]
+
+                # don't copy pixels for polygons with zero area
+                area = abs(poly[0][0] * (poly[1][1] - poly[2][1]) + poly[1][0] * (poly[2][1] - poly[0][1]) +
+                           poly[2][0] * (poly[0][1] - poly[1][1])) / 2
+                if area > 0:
+                    draw.polygon(poly, fill=255)
+
+            image.paste(stacked_image.crop((0, segment.clut_index * TEXTURE_HEIGHT, TEXTURE_WIDTH, (segment.clut_index + 1) * TEXTURE_HEIGHT)), None, mask)
+
         return image
 
     @staticmethod
@@ -1410,7 +1440,8 @@ class ItemModel(Model):
             self._write_segment(f, segment)
 
 
-def export(model_path: str, target_path: str, animation_path: str | None, actor_id: int | None, differential: bool):
+def export(model_path: str, target_path: str, animation_path: str | None, actor_id: int | None, differential: bool,
+           true_color: bool):
     model_path = Path(model_path)
     target_path = Path(target_path)
     with model_path.open('rb') as f:
@@ -1424,7 +1455,14 @@ def export(model_path: str, target_path: str, animation_path: str | None, actor_
         with open(animation_path, 'rb') as f:
             db = AnimationDb.read(f, differential=differential)
         model.set_animations(db)
-    model.export(target_path, target_path.suffix)
+
+    if target_path.suffix.lower() == '.png':
+        if true_color:
+            model.get_true_color_texture_image().save(target_path)
+        else:
+            model.get_texture_image().save(target_path)
+    else:
+        model.export(target_path, target_path.suffix)
 
 
 if __name__ == '__main__':
@@ -1438,10 +1476,17 @@ if __name__ == '__main__':
     parser.add_argument('-u', '--uncompressed', help="The provided animation database doesn't use differential "
                         'compression. Only use this with animations from the ASCII Zanmai demo disc.',
                         action='store_true')
+    parser.add_argument('-t', '--true-color', help='When exporting the texture to PNG, attempt to use the '
+                        'model UVs to identify the correct palette for each pixel and output a full-color 256x256 image '
+                        'instead of stacking the palettes into a 256x1024 image.',
+                        action='store_true')
     parser.add_argument('model', help='The model file to be exported')
     parser.add_argument('target', help='The path to export the model to. The format will be detected from the file '
-                        'extension. Supported extensions are ply, obj, gltf, glb, bam, and tim (in which case only the '
-                        'texture will be exported).')
+                        'extension. Supported extensions are ply, obj, gltf, glb, and bam for model data. The texture '
+                        'can also be exported with extensions tim or png. When exporting to PNG, by default the '
+                        'image will contain each of the palettes in the texture stacked vertically for a 256x1024 image. '
+                        'Use the --true-color option to attempt to use the model UVs to identify the correct palette '
+                        'for each pixel and output a single full-color 256x256 image instead.')
 
     args = parser.parse_args()
-    export(args.model, args.target, args.animation, args.actor, not args.uncompressed)
+    export(args.model, args.target, args.animation, args.actor, not args.uncompressed, args.true_color)
