@@ -44,7 +44,7 @@ of the `MODULE_ID` section. All of the modules that ship with the game start wit
 actually used by the game, so it's technically optional. However, the editor does expect it to be there and displays it
 in the GUI. So, if you want to be able to view your room in the editor, or if you just want to be consistent with the
 game's own modules, you should have a 32-bit ID in a section called `MODULE_ID` which will be placed at the beginning of
-the binary.
+the binary. galerians.h defines a `MODULE_ID` macro to simplify defining the ID of the current module.
 
 ## examples
 Module example code. Currently, only an example room is provided, but I'd like to add an example AI module at some point
