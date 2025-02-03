@@ -1,27 +1,31 @@
-[tool.poetry]
+[project]
 name = "galsdk"
 version = "0.10.0"
 description = "Mod tools for the PSX game Galerians"
-authors = ["descawed <github@descawed.com>"]
+authors = [
+    { name = "descawed", email = "github@descawed.com" },
+]
 readme = "README.md"
-repository = "https://github.com/descawed/galsdk"
+requires-python = ">= 3.12"
+dependencies = [
+    "panda3d ~= 1.10.15",
+    "pillow ~= 11.1.0",
+    "pmw ~= 2.1.1",
+    "ffmpeg-python ~= 0.2.0",
+    "numpy ~= 2.2.2",
+    "rabbitizer ~= 1.12.5",
+    "json-five ~= 1.1.2",
+]
 
-[tool.poetry.dependencies]
-python = "^3.12"
-panda3d = "^1.10.15"
-pillow = "^11.0.0"
-pmw = "^2.1.1"
-ffmpeg-python = "^0.2.0"
-numpy = "^2.2.1"
-rabbitizer = "^1.12.5"
-json-five = "^1.1.2"
+[project.urls]
+source = "https://github.com/descawed/galsdk"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3.3"
-pre-commit = "^3.8.0"
+pytest = "^8.3.4"
+pre-commit = "^4.1.0"
 
 [tool.poetry.group.build.dependencies]
-cx-freeze = "^7.2.2"
+cx-freeze = "^7.2.9"
 
 [tool.cxfreeze]
 executables = [
