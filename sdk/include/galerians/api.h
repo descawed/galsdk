@@ -15,7 +15,7 @@ extern "C" {
  * @param colliders Receives the length of and pointer to the colliders array.
  * @param layout Room layout to use.
  */
-void SetRoomLayout(GameState* game, ColliderArray *colliders, RoomLayout* layout);
+void SetRoomLayout(GameState* game, ColliderArray* colliders, RoomLayout* layout);
 /**
  * Set collision objects for the current room.
  *

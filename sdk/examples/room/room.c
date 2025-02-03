@@ -231,7 +231,7 @@ void cylinderTrigger(GameState* game) {
     ShowItemTim(game, timIndex);
 }
 
-void sphereTrigger(GameState *game __attribute__((unused))) {
+void sphereTrigger(GameState* game __attribute__((unused))) {
     if ((Actors[1].flags & ACTOR_FLAG_INVISIBLE) == 0) {
         if (WaitForMessage(219)) {
             /*
