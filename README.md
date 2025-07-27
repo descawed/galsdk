@@ -112,18 +112,18 @@ them up based on the file modification timestamps.
     - $l - Probably left-align. Seems buggy. Never used.
     - $$ - A literal dollar sign.
   - The Japanese version of the game is more complicated. The message format is binary, but the editor will display
-    control codes in the $ format above for consistency. The game uses two font images - a basic image consisting of
+    control codes in the \$ format above for consistency. The game uses two font images - a basic image consisting of
     common characters (digits, punctuation, latin characters, and kana) and a second image consisting of kanji
     characters which differs from stage to stage. The strings don't use a common encoding (e.g. Shift-JIS or UTF-8) but
     are just a series of indexes into the two font images. This has a couple implications. The first is that I only have
     a transcription of the kanji used by Stage A, so when viewing strings for the other stages, kanji characters will
-    display as a $k code followed by the kanji index (e.g. $k(26)). If anyone feels like transcribing the kanji for the
+    display as a \$k code followed by the kanji index (e.g. \$k(26)). If anyone feels like transcribing the kanji for the
     other three stages, I would appreciate it! The second implication is that, on any given stage, you can only use
     kanji that are present in that stage's kanji image.
     
     With that out of the way, we can discuss control codes. The same set of control codes from the other versions are
-    supported, and the $l code seems to work properly in this version. In addition to the $k code used for unknown
-    kanji, the editor also supports a $u code which can be used for unknown values in the message data, e.g. $u(1234).
+    supported, and the \$l code seems to work properly in this version. In addition to the \$k code used for unknown
+    kanji, the editor also supports a \$u code which can be used for unknown values in the message data, e.g. \$u(1234).
     
     The last caveat is that the Japanese version of the game references strings by their offset in the file rather than
     by index like the Western versions do. This means that if you change the length of a string, you'll break every
