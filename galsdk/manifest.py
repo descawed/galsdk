@@ -339,7 +339,8 @@ class Manifest:
                                            entry.get('flatten', False)))
         self.name_map = {mf.name: mf for mf in self.files}
         self.type = manifest['type']
-        self.address_map = manifest.get('address_map', {})
+        # keys are always strings in JSON, so need to turn them back to ints
+        self.address_map = {int(k): v for k, v in manifest.get('addresses', {}).items()}
         self.metadata = manifest['metadata']
         self.original = (self.path / manifest['original']) if manifest['original'] else None
         deletions = manifest.get('deletions', [])
