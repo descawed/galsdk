@@ -799,10 +799,11 @@ class Project:
         if self.version.region == Region.NTSC_J:
             # the Japanese version uses offsets instead of indexes, so we need to convert
             menu_manifest = Manifest.load_from(self.project_dir / 'art' / 'MENU')
+            item_art_manifest = menu_manifest.get_manifest('item_art')
             for i in range(len(key_item_descriptions)):
-                key_item_descriptions[i] = menu_manifest.get_index_from_address(key_item_descriptions[i])
+                key_item_descriptions[i] = item_art_manifest.get_index_from_address(key_item_descriptions[i])
             for i in range(len(med_item_descriptions)):
-                med_item_descriptions[i] = menu_manifest.get_index_from_address(med_item_descriptions[i])
+                med_item_descriptions[i] = item_art_manifest.get_index_from_address(med_item_descriptions[i])
 
         return key_item_descriptions, med_item_descriptions
 
