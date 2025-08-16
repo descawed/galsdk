@@ -335,7 +335,7 @@ class GameVersion:
                 '3 Ball',
                 'Shed Key',
                 'Letter from Lilia',
-                'Vial',
+                'D-Felon', # specifically when Joule gives it to you initially
             ]
 
     @property
