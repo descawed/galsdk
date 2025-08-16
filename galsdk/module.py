@@ -1133,8 +1133,8 @@ class RoomModule(FileFormat):
                     in_delay_slot = True
                     do_return = inst.isJrRa()
                     if not do_return:
-                        # this could be a switch statement through a jump table. let's see if saw a count of cases and
-                        # a potential jump table.
+                        # this could be a switch statement through a jump table. let's see if we saw a count of cases
+                        # and a potential jump table.
                         sltiu_address, num_cases = switch
                         # we'll somewhat arbitrarily choose 20 instructions as the threshold. if the sltiu was further
                         # away than that, it's probably unrelated to this instruction.
@@ -1256,7 +1256,8 @@ class RoomModule(FileFormat):
                             # the condition checking the count
                             room_address.num_entrances = cls.find_entrance_count(data, dest, module_space)
 
-                    if is_branch or inst.isJump():
+                    # jalr is a jump, but the target is dynamic, so getBranchVramGeneric won't work
+                    if (is_branch or inst.isJump()) and inst.getOpcodeName() != 'jalr':
                         ever_branched = True
                         dest = inst.getBranchVramGeneric()
 
