@@ -9,11 +9,11 @@ readme = "README.md"
 requires-python = ">= 3.12"
 dependencies = [
     "panda3d ~= 1.10.15",
-    "pillow ~= 11.1.0",
+    "pillow ~= 11.3.0",
     "pmw ~= 2.1.1",
     "ffmpeg-python ~= 0.2.0",
-    "numpy ~= 2.2.2",
-    "rabbitizer ~= 1.12.5",
+    "numpy ~= 2.3.0",
+    "rabbitizer ~= 1.13.0",
     "json-five ~= 1.1.2",
 ]
 
