@@ -216,7 +216,7 @@ assert_size(Interactable, 0x0A);
 #define ITEM_3_BALL                             37
 #define ITEM_SHED_KEY                           38
 #define ITEM_LETTER_FROM_LILIA                  39
-#define ITEM_VIAL                               40
+#define ITEM_DFELON                             40
 
 /**
  * An action to be triggered when interacting with an interactable region.
